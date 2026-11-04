@@ -741,7 +741,11 @@ async function startHelper() {
 	);
 	const next = new HelperClient(
 		(event) => {
-			if (event.event === "open-url") void openExternal(event.url).catch(() => {});
+			if (event.event === "desktop-open") {
+				showLocal(event.section);
+				window?.show();
+				window?.focus();
+			} else if (event.event === "open-url") void openExternal(event.url).catch(() => {});
 			else if (event.event === "snapshot") {
 				send("snapshot", event.data);
 				void syncDesktopNotifications();

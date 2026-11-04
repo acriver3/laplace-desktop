@@ -1,4 +1,3 @@
-import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -25,6 +24,7 @@ import { ycUiTools, YC_UI_URI } from "@repo/project-protocol/mcp/yc-schema";
 import { z } from "zod";
 
 import { BROWSER_APPROVAL_URI } from "../shared/browser-approval";
+import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
 import { desktopVersion } from "../shared/version";
 import {
 	ConnectorManagement,
@@ -32,6 +32,7 @@ import {
 	isConnectorManagementTool,
 } from "./connector-tools";
 import type { CredentialBroker, CredentialPrincipal } from "./credentials";
+import { desktopManagementTool, manageDesktop, type DesktopSection } from "./desktop-tools";
 import type { HostedConnections } from "./hosted-oauth";
 import type { DesktopManager } from "./manager";
 import { desktopYcView, ycConnections, ycInvocationTools } from "./yc-ui";
@@ -54,9 +55,10 @@ type Call = {
 export async function startMcpServer(
 	manager: DesktopManager,
 	hosted: Pick<HostedConnections, "tools" | "call"> &
-		Partial<Pick<HostedConnections, "refreshTools">>,
+		Partial<Pick<HostedConnections, "refreshTools" | "status" | "connect" | "disconnect">>,
 	credentials?: CredentialBroker,
 	connectors?: ConnectorManagement,
+	openDesktop?: (section: DesktopSection) => void,
 ) {
 	const principal = (clientId: string): CredentialPrincipal => ({
 		id: `local:${clientId}`,
@@ -73,11 +75,25 @@ export async function startMcpServer(
 		const hostedTools = hosted.tools(clientId);
 		if (
 			hostedTools.some(
-				(tool) => isLocalConnectorToolName(tool.name) || isConnectorManagementTool(tool.name),
+				(tool) =>
+					tool.name === desktopManagementTool.name ||
+					isLocalConnectorToolName(tool.name) ||
+					isConnectorManagementTool(tool.name),
 			)
 		)
 			throw new Error("Conflicting tool catalog entries: reserved local connector namespace");
 		const entries: CatalogEntry<Tool>[] = [
+			{
+				id: "desktop:manage",
+				tool: desktopManagementTool,
+				route: { executor: "desktop", target: desktopManagementTool.name },
+				available:
+					!!hosted.status &&
+					!!hosted.connect &&
+					!!hosted.disconnect &&
+					!!openDesktop &&
+					manager.clientToolAllowed(clientId, desktopManagementTool.name),
+			},
 			...brokerTools(true).map((tool) => ({
 				id: "broker:" + tool.name,
 				tool: ToolSchema.parse(tool),
@@ -233,6 +249,31 @@ export async function startMcpServer(
 						request.params.name,
 						input,
 						{
+							desktop: async (_route, args) => {
+								try {
+									const result = await manageDesktop(
+										manager,
+										hosted as HostedConnections,
+										clientId,
+										args,
+										openDesktop!,
+									);
+									return {
+										content: [{ type: "text" as const, text: JSON.stringify(result) }],
+										structuredContent: result,
+									};
+								} catch {
+									return {
+										isError: true,
+										content: [
+											{
+												type: "text" as const,
+												text: "Desktop operation failed. Inspect status and permissions before retrying. No operation was automatically replayed.",
+											},
+										],
+									};
+								}
+							},
 							broker: async (route, args) => {
 								const input = brokerToolInput.parse(args);
 								checkBrokerTool(route.target, input);

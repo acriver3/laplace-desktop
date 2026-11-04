@@ -234,6 +234,7 @@ export type DesktopSnapshot = {
 	stayLocalOnly: boolean;
 };
 export type HelperEvent =
+	| { event: "desktop-open"; section: "servers" | "clients" | "device" | "updates" | "credentials" }
 	| { event: "broker-focus" }
 	| { event: "browser-approval"; requestId: string }
 	| { event: "ready" }

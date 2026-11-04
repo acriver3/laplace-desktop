@@ -141,6 +141,7 @@ export async function startHelper() {
 			new ConnectorManagement(manager, catalog, portable, browserApprovals, (requestId) =>
 				send({ event: "browser-approval", requestId }),
 			),
+			(section) => send({ event: "desktop-open", section }),
 		);
 	} catch (error) {
 		credentials.close();

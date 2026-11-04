@@ -272,6 +272,13 @@ try {
 	const discovered = (await clients[0].listTools()).tools;
 	assert.ok(discovered.some((tool) => tool.name === "local_connectors_install"));
 	assert.ok(discovered.some((tool) => tool.name === "local_credential_broker"));
+	assert.ok(discovered.some((tool) => tool.name === "local_desktop_manage"));
+	const desktopStatus = await clients[0].callTool({
+		name: "local_desktop_manage",
+		arguments: { action: "status" },
+	});
+	assert.equal(desktopStatus.structuredContent.mode, "local-only");
+	assert.equal(desktopStatus.structuredContent.assistant.hosted, "disconnected");
 	assert.ok(
 		discovered.some(
 			(tool) =>
@@ -291,7 +298,9 @@ try {
 	assert.equal(denied.isError, true);
 	const tools = discovered.filter(
 		(tool) =>
-			!tool.name.startsWith("local_connectors_") && !tool.name.startsWith("local_credential"),
+			!tool.name.startsWith("local_connectors_") &&
+			!tool.name.startsWith("local_credential") &&
+			tool.name !== "local_desktop_manage",
 	);
 	assert.equal(tools.length, 4);
 	assert.ok(tools.every((tool) => tool.name.startsWith("local_")));
