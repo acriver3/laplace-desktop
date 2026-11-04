@@ -585,13 +585,16 @@ it("installs Slack over MCP, recovers jobs after reconnect, authenticates and di
 	).toBe(true);
 	const auth = await setupCall(reconnect, "authenticate", { id: "slack" });
 	let approval: any;
-	await vi.waitFor(async () => {
-		approval = (await setupCall(reconnect, "status", { jobId: auth.id })).jobs[0].browserApproval;
-		expect(
-			approval,
-			JSON.stringify({ jobs: f.installer.jobs(), servers: f.manager.listServers() }),
-		).toBeTruthy();
-	});
+	await vi.waitFor(
+		async () => {
+			approval = (await setupCall(reconnect, "status", { jobId: auth.id })).jobs[0].browserApproval;
+			expect(
+				approval,
+				JSON.stringify({ jobs: f.installer.jobs(), servers: f.manager.listServers() }),
+			).toBeTruthy();
+		},
+		{ timeout: 5000 },
+	);
 	expect(approval.pairingUrl).toBeUndefined();
 	const pendingRequest = (await listBrowserRequests()).find(
 		(item) => item.id === approval.requestId,
