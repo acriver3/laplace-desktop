@@ -5,6 +5,7 @@ import {
 } from "@repo/project-protocol/credential-broker";
 import { z } from "zod";
 
+import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
 import { BrokerBrowser } from "./broker-browser";
 import type { CatalogInstaller } from "./catalog";
 import type { ConnectionBrokerAdapter, BrokerExecution } from "./connection-broker";
@@ -17,19 +18,16 @@ export function desktopBrokerAdapter(
 	credentials: CredentialBroker,
 	catalog: CatalogInstaller,
 	portable: PortableConnectors,
-	focus: () => void,
+	focus: (section?: "servers" | "device" | "clients" | "credentials") => void,
+	unlock?: (sessionId: string) => void,
+	prepareHosted?: (principal: CredentialPrincipal, session: BrokerSession) => Promise<void>,
 ): ConnectionBrokerAdapter {
-	const browser = new BrokerBrowser(() => credentials.snapshot().settings.cdpEndpoint);
+	const preparations = new Map<string, boolean>();
+	const localBrowser = new BrokerBrowser(() => credentials.snapshot().settings.cdpEndpoint);
+	const managedBrowser = credentials.brokerChrome;
 	async function authorize(principal: CredentialPrincipal) {
-		if (process.env.ENABLE_CREDENTIAL_BROKERING !== "true")
-			throw Error("Credential brokering is disabled.");
+		if (!credentialBrokeringEnabled()) throw Error("Credential brokering is disabled.");
 		await principal.authorize();
-		if (!credentials.allowed(principal)) throw Error("Enable this assistant in Credentials.");
-		if (!principal.hosted) {
-			const id = principal.id.replace(/^local:/, "");
-			if (!manager.clientToolAllowed(id, "local_connectors_manage"))
-				throw Error("Enable connector management for this assistant.");
-		}
 	}
 	async function gateway(session: BrokerSession, action: string, item?: BrokerItem) {
 		return (await manager.credentialRelayApi()).post("broker", {
@@ -45,7 +43,19 @@ export function desktopBrokerAdapter(
 		item: BrokerItem,
 	) {
 		await authorize(principal);
-		if (!credentials.brokerAllowed(principal))
+		if (!principal.hosted) {
+			const id = principal.id.replace(/^local:/, "");
+			if (!manager.clientToolAllowed(id, "local_connectors_manage"))
+				throw Error("Enable connector management for this assistant.");
+		}
+		if (item.target.location === "local" && ["browser", "oauth2"].includes(item.target.authType))
+			throw Error(
+				"This local connector requires manual authentication. Chrome brokering is not supported by this connector yet.",
+			);
+		if (
+			item.matches.some((m) => m.source.kind === "bitwarden") &&
+			!credentials.brokerAllowed(principal)
+		)
 			throw Error("Authorize this assistant for credential matching in Desktop.");
 		if (manager.status().mode === "linked") {
 			const details = (await gateway(session, "describe")) as { targets: BrokerItem["target"][] };
@@ -55,12 +65,18 @@ export function desktopBrokerAdapter(
 		}
 		const login = item.matches.filter((m) => m.source.kind === "bitwarden");
 		if (item.target.authType === "oauth2" || item.target.authType === "browser") {
-			if (login.length !== 1 || item.matches.length !== 1 || login[0]!.field !== "login")
-				throw Error("Choose one login.");
-			const source = login[0]!.source;
 			if (
-				source.kind !== "bitwarden" ||
-				!(await credentials.brokerCandidates(principal)).some((c) => c.id === source.credentialId)
+				!(item.target.authType === "oauth2" && !item.matches.length) &&
+				(login.length !== 1 || item.matches.length !== 1 || login[0]!.field !== "login")
+			)
+				throw Error("Choose one login.");
+			const source = login[0]?.source;
+			if (
+				source &&
+				(source.kind !== "bitwarden" ||
+					!(await credentials.brokerCandidates(principal)).some(
+						(c) => c.id === source.credentialId,
+					))
 			)
 				throw Error("Login unavailable.");
 		} else if (item.matches.some((m) => m.source.kind !== "doppler"))
@@ -124,17 +140,134 @@ export function desktopBrokerAdapter(
 			installationId: manager.status().installationId,
 		}),
 		epoch: () => credentials.brokerEpoch,
+		automatic: true,
+		async prepare(principal, session) {
+			if (
+				!prepareHosted ||
+				principal.hosted ||
+				manager.status().mode !== "linked" ||
+				preparations.get(session.id) === true ||
+				session.expiresAt <= Date.now()
+			)
+				return;
+			if (
+				!manager.clientToolAllowed(principal.id.replace(/^local:/, ""), "local_connectors_manage")
+			)
+				return;
+			try {
+				await prepareHosted(principal, session);
+				preparations.set(session.id, true);
+			} catch {
+				preparations.set(session.id, false);
+			}
+		},
+		unlock,
+		readiness(principal, session) {
+			if (
+				!principal.hosted &&
+				(!manager.clientToolAllowed(
+					principal.id.replace(/^local:/, ""),
+					"local_connectors_manage",
+				) ||
+					preparations.get(session.id) === false)
+			)
+				return {
+					code: "authorize_management",
+					message:
+						"Connect this assistant to Laplace and authorize Desktop management in AI clients. This request will resume when access is ready.",
+					action: "desktop",
+				};
+			if (
+				session.items.some((i) => i.target.location === "cloud") &&
+				manager.status().mode !== "linked"
+			)
+				return {
+					code: "link_account",
+					message: "Link this Desktop to the destination Laplace account.",
+					action: "desktop",
+				};
+			if (
+				session.items.some(
+					(i) =>
+						i.target.location === "local" &&
+						["browser", "oauth2"].includes(i.target.authType) &&
+						!["connected", "cancelled", "expired"].includes(i.state),
+				)
+			)
+				return {
+					code: "manual_setup",
+					message:
+						"This local connector does not yet support sign-in through the Chrome extension. Use its manual setup on this device.",
+					action: "desktop",
+				};
+			const needsVault = session.items.some(
+				(i) =>
+					!["connected", "cancelled", "expired"].includes(i.state) &&
+					(i.matches.some((m) => m.source.kind === "bitwarden") ||
+						i.target.authType === "browser" ||
+						(i.target.authType === "oauth2" &&
+							(i.credentialRequested || (i.attempted && i.state === "matching")))),
+			);
+			if (needsVault) {
+				if (!credentials.snapshot().settings.enabled)
+					return {
+						code: "connect_vault",
+						message: "Connect Bitwarden in Credentials to choose a saved login.",
+						action: "desktop",
+					};
+				if (!credentials.brokerAllowed(principal))
+					return {
+						code: "authorize_assistant",
+						message: "Enable this assistant in Credentials → Assistant access.",
+						action: "desktop",
+					};
+				if (!credentials.snapshot().unlocked)
+					return {
+						code: "unlock_vault",
+						message: "Unlock Bitwarden to continue this request.",
+						action: "unlock",
+					};
+			}
+			if (
+				session.items.some(
+					(i) => i.state === "matching" && !(i.target.authType === "oauth2" && !i.attempted),
+				)
+			)
+				return {
+					code: "choose_credential",
+					message: "Choose a saved credential for the connection.",
+					action: "choose",
+				};
+			if (
+				session.items.some(
+					(i) =>
+						i.target.location === "cloud" &&
+						i.browserTargetId &&
+						["running", "user_action_required", "verifying"].includes(i.state) &&
+						managedBrowser.isReady?.(i.browserTargetId) === false,
+				)
+			)
+				return {
+					code: "enable_chrome",
+					message:
+						"Finish connecting the Laplace extension in your regular Chrome profile. This sign-in request stays open.",
+					action: "desktop",
+				};
+			return { code: "ready", message: "Ready to continue." };
+		},
 		focus,
 		cancel: async (session) => {
+			for (const item of session.items)
+				if (item.browserTargetId && item.target.location === "cloud")
+					managedBrowser.cancel(item.browserTargetId);
 			if (manager.status().mode === "linked") await gateway(session, "cancel");
 		},
 		validate,
 		async candidates(principal, session) {
 			await authorize(principal);
-			if (!credentials.brokerAllowed(principal))
-				throw Error("Authorize this assistant for credential matching in Desktop.");
+
 			const result: CredentialCandidate[] = [];
-			if (credentials.snapshot().unlocked)
+			if (credentials.brokerAllowed(principal) && credentials.snapshot().unlocked)
 				for (const item of await credentials.brokerCandidates(principal))
 					result.push({
 						source: { kind: "bitwarden", credentialId: item.id },
@@ -152,14 +285,27 @@ export function desktopBrokerAdapter(
 		async execute(principal, session, item, signal) {
 			await authorize(principal);
 			if (item.target.location === "cloud") {
+				const needsBrowser = item.target.authType === "oauth2";
+				if (needsBrowser) {
+					signal.throwIfAborted();
+					await validate(principal, session, item);
+				}
 				const result = (await gateway(session, "execute", item)) as { authorizationUrl?: string };
 				const out = receipt(result);
 				if (result.authorizationUrl) {
 					try {
-						out.browserTargetId = await browser.open(result.authorizationUrl, signal);
+						await authorize(principal);
+						signal.throwIfAborted();
+						out.browserTargetId = await managedBrowser.open(
+							result.authorizationUrl,
+							item.matches.length ? item.matches.flatMap((m) => m.origins ?? []) : [],
+							signal,
+						);
+						out.message =
+							"Sign-in opened in your existing Chrome session. Complete any extension permission or provider challenge; Laplace will continue automatically.";
 					} catch {
 						out.message =
-							"Setup is staged. Configure the Desktop browser or continue through the setup request manually.";
+							"Setup is staged, but the sign-in tab could not open. Continue through the setup request manually; do not repeat the connection request.";
 						focus();
 					}
 				}
@@ -236,6 +382,7 @@ export function desktopBrokerAdapter(
 			return out;
 		},
 		async browser(principal, session, item, command, signal) {
+			const browser = item.target.location === "cloud" ? managedBrowser : localBrowser;
 			await authorize(principal);
 			if (command.operation === "verify") {
 				if (item.target.location === "cloud")
@@ -293,13 +440,22 @@ export function desktopBrokerAdapter(
 					message: "Complete the browser challenge, then verify.",
 				};
 			}
+			if (item.target.location === "cloud" && item.matches.length)
+				managedBrowser.allowOrigins(
+					item.browserTargetId,
+					item.matches.flatMap((m) => m.origins ?? []),
+				);
 			const observation = await browser.inspect(item.browserTargetId, signal);
 			if (command.operation === "inspect" || observation.handoff)
 				return {
 					state: "user_action_required",
 					observation,
 					message: observation.handoff
-						? "Complete MFA or provider consent in the browser."
+						? observation.handoffReason === "permission_required"
+							? item.matches.length
+								? "Allow the requested sign-in site access in the Laplace extension tab in Chrome."
+								: "Continue in Chrome. If a login is needed, choose a saved credential here."
+							: "Complete the login challenge or provider consent in Chrome."
 						: "Login fields are ready.",
 				};
 			const match = item.matches.find((m) => m.source.kind === "bitwarden");
@@ -317,7 +473,7 @@ export function desktopBrokerAdapter(
 			);
 			return {
 				state: "user_action_required",
-				message: "Sign-in submitted. Inspect the next step or verify the connection.",
+				message: "Sign-in submitted. Checking the next step and verifying the connection.",
 			};
 		},
 	};

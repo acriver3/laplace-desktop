@@ -109,3 +109,148 @@ it("redeems local values directly, follows real installation IDs, and requires c
 		vi.unstubAllEnvs();
 	}
 });
+
+it("opens hosted OAuth through the existing Chrome extension only after approval and permission checks", async () => {
+	const credentialId = randomUUID();
+	const item: BrokerItem = {
+		target: {
+			id: randomUUID(),
+			service: "googlesheets",
+			label: "Sheets",
+			location: "cloud",
+			authType: "oauth2",
+		},
+		matches: [
+			{
+				field: "login",
+				source: { kind: "bitwarden", credentialId },
+				origins: ["https://accounts.google.com"],
+			},
+		],
+		state: "review_required",
+		message: "",
+	};
+	const session: BrokerSession = {
+		id: randomUUID(),
+		principalId: "local:client",
+		revision: 1,
+		createdAt: Date.now(),
+		expiresAt: Date.now() + 60000,
+		items: [item],
+		receipts: {},
+	};
+	const sequence: string[] = [];
+	const post = vi.fn(async (_: string, body: { action: string }) => {
+		if (body.action === "describe") return { targets: [item.target] };
+		if (body.action === "execute") {
+			sequence.push("execute");
+			return {
+				status: "requires_user_action",
+				requestId: randomUUID(),
+				authorizationUrl: "https://accounts.google.com/oauth",
+			};
+		}
+		return { valid: true };
+	});
+	const manager = {
+		status: () => ({ mode: "linked" }),
+		clientToolAllowed: () => true,
+		credentialRelayApi: async () => ({ post }),
+	} as unknown as DesktopManager;
+	let allowed = true;
+	const ensureOwned = vi.fn();
+	const open = vi.fn(async () => {
+		sequence.push("browser");
+		return "oauth-tab";
+	});
+	const credentials = {
+		allowed: () => allowed,
+		brokerAllowed: () => allowed,
+		brokerCandidates: async () => [{ id: credentialId }],
+		brokerBrowser: { ensureOwned },
+		brokerChrome: { open },
+	} as unknown as CredentialBroker;
+	const adapter = desktopBrokerAdapter(
+		manager,
+		credentials,
+		{} as CatalogInstaller,
+		{} as PortableConnectors,
+		() => {},
+	);
+	const principal = { id: "local:client", name: "Agent", hosted: false, authorize: () => {} };
+	await adapter.validate(principal, session, item);
+	expect(open).not.toHaveBeenCalled();
+	const result = await adapter.execute(principal, session, item, new AbortController().signal);
+	expect(sequence).toEqual(["execute", "browser"]);
+	expect(ensureOwned).not.toHaveBeenCalled();
+	expect(result).toMatchObject({ browserTargetId: "oauth-tab", state: "user_action_required" });
+	expect(open).toHaveBeenCalledWith(
+		"https://accounts.google.com/oauth",
+		["https://accounts.google.com"],
+		expect.any(AbortSignal),
+	);
+	post.mockClear();
+	open.mockClear();
+	allowed = false;
+	await expect(
+		adapter.execute(principal, session, item, new AbortController().signal),
+	).rejects.toThrow();
+	expect(post).not.toHaveBeenCalled();
+	expect(open).not.toHaveBeenCalled();
+});
+
+it("keeps preparation metadata available while assistant authorization is missing", async () => {
+	let permission = false,
+		hosted = false;
+	const manager = {
+		status: () => ({ mode: "linked" }),
+		clientToolAllowed: () => permission,
+	} as unknown as DesktopManager;
+	const credentials = {} as CredentialBroker;
+	const prepare = vi.fn(async () => {
+		if (!hosted) throw Error("Denied");
+	});
+	const adapter = desktopBrokerAdapter(
+		manager,
+		credentials,
+		{} as CatalogInstaller,
+		{} as PortableConnectors,
+		() => {},
+		undefined,
+		prepare,
+	);
+	const principal = { id: "local:client", name: "Agent", hosted: false, authorize: () => {} };
+	const item: BrokerItem = {
+		target: {
+			id: randomUUID(),
+			service: "sheets",
+			label: "Sheets",
+			location: "cloud",
+			authType: "oauth2",
+		},
+		matches: [],
+		state: "matching",
+		message: "",
+	};
+	const session: BrokerSession = {
+		id: randomUUID(),
+		principalId: principal.id,
+		revision: 0,
+		createdAt: Date.now(),
+		expiresAt: Date.now() + 60000,
+		items: [item],
+		receipts: {},
+	};
+	await adapter.authorize(principal);
+	expect(adapter.readiness!(principal, session).code).toBe("authorize_management");
+	await expect(adapter.validate(principal, session, item)).rejects.toThrow("connector management");
+	await adapter.prepare!(principal, session);
+	expect(prepare).not.toHaveBeenCalled();
+	permission = true;
+	await adapter.prepare!(principal, session);
+	expect(adapter.readiness!(principal, session).code).toBe("authorize_management");
+	hosted = true;
+	await adapter.prepare!(principal, session);
+	expect(adapter.readiness!(principal, session).code).toBe("ready");
+	expect(prepare).toHaveBeenCalledTimes(2);
+});

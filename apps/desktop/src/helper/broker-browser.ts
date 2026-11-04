@@ -4,12 +4,28 @@ import { browserTargets, cdpOrigin, Cdp } from "./credentials-cdp";
 
 /** Only this fixed inspection program runs in the page. No page text or values leave it. */
 function describeLogin() {
-	const visible = (e: Element) => e.getClientRects().length > 0;
+	const visible = (e: Element) => {
+		const rect = e.getBoundingClientRect(),
+			style = getComputedStyle(e);
+		return (
+			rect.width > 0 &&
+			rect.height > 0 &&
+			style.visibility !== "hidden" &&
+			style.display !== "none" &&
+			style.opacity !== "0"
+		);
+	};
 	if (
 		window !== window.top ||
 		[...document.querySelectorAll("iframe,input[autocomplete=one-time-code]")].some(visible)
 	)
-		return { handoff: true, fields: [] as string[], submit: false, form: "" };
+		return {
+			handoff: true,
+			reason: "unsupported_frame_or_challenge",
+			fields: [] as string[],
+			submit: false,
+			form: "",
+		};
 	const username = [
 		...document.querySelectorAll<HTMLInputElement>(
 			'input[autocomplete="username"],input[type="email"]',
@@ -19,7 +35,13 @@ function describeLogin() {
 		...document.querySelectorAll<HTMLInputElement>('input[type="password"]'),
 	].filter((e) => visible(e) && !e.disabled && !e.readOnly);
 	if (username.length > 1 || password.length > 1)
-		return { handoff: true, fields: [], submit: false, form: "" };
+		return {
+			handoff: true,
+			reason: "ambiguous_or_unsupported_form",
+			fields: [],
+			submit: false,
+			form: "",
+		};
 	const fields = [
 		...(username.length ? ["username"] : []),
 		...(password.length ? ["password"] : []),
@@ -31,7 +53,13 @@ function describeLogin() {
 		elements.some((e) => e.form !== form) ||
 		new URL(form.action || location.href, location.href).origin !== location.origin
 	)
-		return { handoff: true, fields: [], submit: false, form: "" };
+		return {
+			handoff: true,
+			reason: "ambiguous_or_unsupported_form",
+			fields: [],
+			submit: false,
+			form: "",
+		};
 	const buttons = [
 		...form.querySelectorAll<HTMLButtonElement | HTMLInputElement>(
 			"button[type=submit],button:not([type]),input[type=submit]",
@@ -58,6 +86,12 @@ function describeLogin() {
 	};
 	return {
 		handoff: fields.length === 0 || buttons.length !== 1,
+		reason:
+			fields.length === 0
+				? "no_login_fields"
+				: buttons.length !== 1
+					? "ambiguous_submit"
+					: undefined,
 		fields,
 		submit: buttons.length === 1,
 		form: handle(form) + "|" + new URL(form.action || location.href, location.href).href,
@@ -70,6 +104,7 @@ export interface LoginObservation {
 	fields: string[];
 	handles: string[];
 	handoff: boolean;
+	handoffReason?: string;
 }
 export class BrokerBrowser {
 	private revisions = new Map<string, { revision: string; origin: string; description: string }>();
@@ -138,6 +173,9 @@ export class BrokerBrowser {
 				fields: value.fields,
 				handles: value.handles ?? [],
 				handoff: value.handoff !== false,
+				...(value.handoff && typeof value.reason === "string"
+					? { handoffReason: value.reason }
+					: {}),
 			};
 		} finally {
 			cdp.close();

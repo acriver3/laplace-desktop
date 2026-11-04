@@ -1,4 +1,5 @@
 import { provider } from "./providers.js";
+import { connectBroker } from "./broker.js";
 const prefix = "laplaceBrowserApproval:";
 const pumping = new Set();
 
@@ -272,6 +273,22 @@ function connect() {
 	}
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+	if (
+		sender.id === chrome.runtime.id &&
+		sender.url?.split(/[?#]/, 1)[0] === chrome.runtime.getURL("broker.html") &&
+		message.action === "broker-connect"
+	) {
+		void (async () => {
+			if (!sender.documentId) throw Error();
+			const contexts = await chrome.runtime.getContexts({
+				documentIds: [sender.documentId],
+				contextTypes: ["TAB"],
+			});
+			if (contexts.length !== 1 || contexts[0].tabId !== message.tabId) throw Error();
+			return connectBroker(message.ticket, contexts[0].tabId);
+		})().then(respond, () => respond({ error: "Sign-in handoff failed. Return to Desktop." }));
+		return true;
+	}
 	if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL("panel.html"))
 		return false;
 	void (async () => {

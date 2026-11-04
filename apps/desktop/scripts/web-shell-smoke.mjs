@@ -361,7 +361,6 @@ export async function checkWebShell(app, invoke, until, origin, requests) {
 	for (const [label, section] of [
 		["AI clients", "clients"],
 		["Device", "device"],
-		["Credentials", "credentials"],
 		["Connections", "servers"],
 	]) {
 		await run(
@@ -374,6 +373,13 @@ export async function checkWebShell(app, invoke, until, origin, requests) {
 		);
 		assert.equal((await invoke("shell.status")).localEmbedded, true);
 	}
+	await click("/desktop/credentials");
+	await until(
+		async () => (await invoke("shell.status")).section === "credentials",
+		"Credentials sidebar did not open",
+	);
+	assert.equal((await invoke("shell.status")).localEmbedded, true);
+	await click("/desktop/local");
 	await run("document.querySelector('#collapse').click()");
 	await until(
 		async () => (await panelLayout()).bounds.x === 64,

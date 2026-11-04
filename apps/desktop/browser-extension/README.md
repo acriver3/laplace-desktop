@@ -61,3 +61,20 @@ a synthetic Slack origin, the real extension worker and bundled native host, and
 minimal MCP Apps host rendering the real approval card. The popup stays unopened. The same test
 checks tab closure, ticket renewal and manual reopening in real Chromium. This is
 not a claim of testing inside a live Codex chat or against a real Slack account.
+
+## Credential brokering (0.5.0)
+
+Approved hosted sign-in uses the regular Google Chrome profile and this extension.
+Desktop opens an extension handoff tab, then that same tab navigates to the provider.
+It does not launch a separate browser profile or enable remote debugging. Unrelated tabs
+are left alone. Chrome may request optional access to the specific approved credential
+origins. The optional HTTPS host pattern permits those individual runtime requests;
+it does not grant blanket access at install time.
+
+Only fixed inspection, fill/submit and focus operations run in the approved tab.
+Inspection returns labels for field types, opaque handles and an origin/revision, never
+page content or filled values. Values travel directly over an authenticated ephemeral
+loopback channel into an isolated extension script and are never stored in extension
+storage or receipts. Changed origins/forms, ambiguous fields, visible frames, MFA and
+OAuth consent stop automatic filling. Unlock, review and permission grants remain user
+controls. Cancellation or restart does not replay an uncertain browser submission.

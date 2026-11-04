@@ -32,6 +32,11 @@ it.skipIf(!existsSync(chromium.executablePath()))(
 				(t) => t.origin === "https://login-test.invalid",
 			)!;
 			const browser = new BrokerBrowser(() => endpoint);
+			await page.evaluate(() => {
+				const frame = document.createElement("iframe");
+				frame.style.cssText = "width:0;height:0;border:0";
+				document.body.append(frame);
+			});
 			const view = await browser.inspect(target.id, signal);
 			expect(view.fields).toEqual(["username", "password"]);
 			expect(view.handoff).toBe(false);

@@ -225,9 +225,9 @@ it.skipIf(
 			await panel.getByRole("button", { name: "Continue", exact: true }).click();
 			await panel.getByRole("checkbox", { name: /Codex/ }).check();
 			await panel.getByRole("button", { name: "Continue", exact: true }).click();
-			await browserExpect(panel.getByText("No compatible sessions found.")).toBeVisible();
-			await panel.getByRole("button", { name: "Set up browser later" }).click();
-			await browserExpect(panel.getByRole("button", { name: "Manage access" })).toBeVisible();
+			await browserExpect(panel.getByText("Use your existing Chrome profile")).toBeVisible();
+			await panel.getByRole("button", { name: "Finish setup" }).click();
+			await browserExpect(panel.getByRole("button", { name: "Manage saved logins" })).toBeVisible();
 			await panel.getByRole("button", { name: "Lock Bitwarden", exact: true }).click();
 			await panel.getByLabel("Master password", { exact: true }).fill("synthetic-master");
 			await panel.getByRole("button", { name: "Unlock Bitwarden", exact: true }).click();

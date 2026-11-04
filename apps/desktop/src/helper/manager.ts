@@ -27,6 +27,7 @@ import type { ClientSnapshot, DesktopSnapshot, ServerSnapshot } from "../shared/
 import { slackSetupNames } from "../shared/slack-browser";
 import { ycBrowserIdentity, ycSetupNames } from "../shared/yc-browser";
 import { connectorManagementTools } from "./connector-tools";
+import { desktopManagementTool } from "./desktop-tools";
 import { configurationSummary } from "./imports";
 import { assertLegacyProcessesStopped } from "./legacy-processes";
 import { bundleCatalog } from "./library-catalog";
@@ -532,6 +533,7 @@ export class DesktopManager {
 	}
 	localToolChoices() {
 		return [
+			{ name: desktopManagementTool.name, title: "Desktop: configuration and diagnostics" },
 			...connectorManagementTools.map((tool) => ({ name: tool.name, title: tool.title! })),
 			{ name: "local_credentials", title: "Bitwarden: use credentials" },
 			...this.supervisor.states().flatMap((s) =>

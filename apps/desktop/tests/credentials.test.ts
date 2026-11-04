@@ -487,3 +487,120 @@ it("requires per-assistant hosted matching authorization and revokes it immediat
 	await f.broker.configure({ ...f.settings, brokerAssistants: [] }, true);
 	await expect(f.broker.brokerCandidates(principal)).rejects.toThrow();
 });
+
+it("reviews a one-time local command and binds approval to its complete mapping", async () => {
+	const f = await fixture();
+	const input = {
+		action: "run_command",
+		requestId: randomUUID(),
+		credentialId: f.id,
+		command: {
+			executable: process.execPath,
+			cwd: tmpdir(),
+			args: ["agent.js"],
+			env: { TOKEN: "password", USER: "username" },
+			runtimeSeconds: 120,
+		},
+	};
+	expect(await f.broker.call(f.principal, input)).toMatchObject({ status: "pending" });
+	expect(f.executors.executeCommand).not.toHaveBeenCalled();
+	const pending = f.broker.snapshot().pending[0]!;
+	expect(pending).toMatchObject({ oneTimeOnly: true });
+	expect(pending.summary).toContain("TOKEN");
+	expect(pending.summary).toContain(process.execPath);
+	expect(JSON.stringify(pending)).not.toContain(f.secret);
+	await expect(
+		f.broker.call(f.principal, { ...input, command: { ...input.command, args: ["different.js"] } }),
+	).rejects.toThrow("different input");
+	await Promise.allSettled([
+		f.broker.approve(f.principal.id, input.requestId, true, true),
+		f.broker.approve(f.principal.id, input.requestId, true, true),
+	]);
+	await vi.waitFor(() => expect(f.executors.executeCommand).toHaveBeenCalledTimes(1));
+	expect(f.executors.executeCommand.mock.calls[0]).toEqual(
+		expect.arrayContaining([{ TOKEN: f.secret, USER: "test-user" }]),
+	);
+	expect(f.executors.executeCommand).toHaveBeenCalledWith(
+		expect.objectContaining({ resultFields: [] }),
+		{},
+		expect.any(Object),
+		"/unused",
+		expect.any(AbortSignal),
+		true,
+	);
+	await f.broker.call(f.principal, input);
+	expect(f.executors.executeCommand).toHaveBeenCalledTimes(1);
+	const next = { ...input, requestId: randomUUID() };
+	expect(await f.broker.call(f.principal, next)).toMatchObject({ status: "pending" });
+	await f.broker.approve(f.principal.id, next.requestId, false, false);
+	expect(f.executors.executeCommand).toHaveBeenCalledTimes(1);
+});
+it("rejects hosted command proposals, relative paths, and command TOTP mappings", async () => {
+	const f = await fixture();
+	const input = {
+		action: "run_command",
+		requestId: randomUUID(),
+		credentialId: f.id,
+		command: {
+			executable: process.execPath,
+			cwd: tmpdir(),
+			env: { TOKEN: "password" },
+		},
+	};
+	await expect(
+		f.broker.call(f.principal, { ...input, command: { ...input.command, executable: "node" } }),
+	).rejects.toThrow("absolute");
+	expect(
+		credentialInput.safeParse({ ...input, command: { ...input.command, env: { TOKEN: "totp" } } })
+			.success,
+	).toBe(false);
+	await f.broker.configure({ ...f.settings, hosted: true });
+	await expect(f.broker.call({ ...f.principal, hosted: true }, input)).rejects.toThrow(
+		"locally registered",
+	);
+	expect(f.executors.executeCommand).not.toHaveBeenCalled();
+});
+
+it.skipIf(process.platform === "win32")(
+	"runs a real proposed command with literal arguments and withholds all output",
+	async () => {
+		const result = await executeCommand(
+			{
+				id: randomUUID(),
+				label: "Canary command",
+				credentialId: randomUUID(),
+				kind: "command",
+				executable: process.execPath,
+				cwd: tmpdir(),
+				args: [
+					"-e",
+					"process.stdout.write(JSON.stringify({leak:process.env.TOKEN})); process.stderr.write(process.env.TOKEN); process.exit(process.argv[1] === '{{literal}}' && !!process.env.TOKEN ? 0 : 1);",
+					"{{literal}}",
+				],
+				env: { TOKEN: "password" },
+				parameters: {},
+				resultFields: ["leak"],
+			},
+			{},
+			{ TOKEN: "synthetic-command-canary" },
+			"/unused",
+			AbortSignal.timeout(5000),
+			true,
+		);
+		expect(result).toEqual({ exitCode: 0, fields: {} });
+		expect(JSON.stringify(result)).not.toContain("synthetic-command-canary");
+	},
+);
+it("revokes a pending command on vault lock without executing it", async () => {
+	const f = await fixture();
+	const input = {
+		action: "run_command",
+		requestId: randomUUID(),
+		credentialId: f.id,
+		command: { executable: process.execPath, cwd: tmpdir(), env: { TOKEN: "password" } },
+	};
+	await f.broker.call(f.principal, input);
+	f.broker.lock();
+	await expect(f.broker.approve(f.principal.id, input.requestId, true, false)).rejects.toThrow();
+	expect(f.executors.executeCommand).not.toHaveBeenCalled();
+});

@@ -153,10 +153,10 @@ export function LocalConnectionsPage({
 													connected={server.status === "online"}
 													icon={<ConnectionIcon />}
 												>
-													{installedCatalog.get(server.id) && (
+													{installedCatalog.get(server.id) && server.status !== "online" && (
 														<BrokerStart
 															entries={[installedCatalog.get(server.id)!]}
-															label="Reauthenticate with assistant"
+															label="Reconnect"
 														/>
 													)}
 													<DropdownMenu>
@@ -170,6 +170,13 @@ export function LocalConnectionsPage({
 															<DropdownMenuItem onClick={() => details(server)}>
 																View details
 															</DropdownMenuItem>
+															{installedCatalog.get(server.id) && (
+																<DropdownMenuItem
+																	onClick={() => setCatalogDetails(installedCatalog.get(server.id))}
+																>
+																	Reconnect with assistant
+																</DropdownMenuItem>
+															)}
 															<DropdownMenuItem onClick={() => edit(server)}>
 																Edit connection
 															</DropdownMenuItem>

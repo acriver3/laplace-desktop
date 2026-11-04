@@ -133,6 +133,10 @@ export class HostedConnections {
 		let redirected = false,
 			callbackUsed = false,
 			permitAuthorization = interactive;
+		let stage = "authorization discovery";
+		let httpFailure: number | undefined;
+		const failure = () =>
+			`Hosted authorization failed during ${stage}${httpFailure ? ` (HTTP ${httpFailure})` : ""}. Connect again.`;
 		const expected = () => {
 			this.manager.client(id);
 			if (generation !== c.generation) throw new Error("Authorization cancelled");
@@ -143,7 +147,9 @@ export class HostedConnections {
 			);
 			if (url.origin !== origin || url.username || url.password)
 				throw new Error("OAuth origin changed");
-			return fetch(input, { ...init, redirect: "error" });
+			const response = await fetch(input, { ...init, redirect: "error" });
+			if (!response.ok) httpFailure = response.status;
+			return response;
 		};
 		const provider: OAuthClientProvider = {
 			get redirectUrl() {
@@ -207,6 +213,8 @@ export class HostedConnections {
 		};
 		const connect = async () => {
 			expected();
+			stage = "MCP connection";
+			httpFailure = undefined;
 			const transport = new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), {
 				authProvider: provider,
 				fetch: safeFetch,
@@ -245,6 +253,8 @@ export class HostedConnections {
 			};
 			await client.connect(transport, { timeout: 30_000 });
 			expected();
+			stage = "tool discovery";
+			httpFailure = undefined;
 			await this.discover(c);
 			c.status = "connected";
 			c.error = undefined;
@@ -282,9 +292,14 @@ export class HostedConnections {
 			void (async () => {
 				try {
 					expected();
+					stage = "token exchange";
+					httpFailure = undefined;
 					const result = await auth(provider, {
 						serverUrl: `${origin}/mcp`,
 						authorizationCode: code,
+						// Preserve the issuer already checked by the callback guard. The SDK
+						// requires it when the server advertises RFC 9207 support.
+						iss: url.searchParams.get("iss")!,
 						scope: provider.clientMetadata.scope,
 						fetchFn: safeFetch,
 					});
@@ -296,7 +311,7 @@ export class HostedConnections {
 					});
 				} catch {
 					c.status = "needs-auth";
-					c.error = "Hosted authorization failed. Connect again.";
+					c.error = failure();
 					await this.closeRuntime(c);
 					this.manager.changed();
 				}

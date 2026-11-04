@@ -4,6 +4,25 @@ import { contextBridge, ipcRenderer } from "electron";
 if (process.isMainFrame) {
 	contextBridge.exposeInMainWorld("laplaceShell", {
 		version: 1,
+		credentialsVersion: 1,
+		onCredentialsNavigation: (listener: (value: { active: boolean; pending: number }) => void) => {
+			let active = true;
+			const receive = (
+				_event: Electron.IpcRendererEvent,
+				value: { active: boolean; pending: number },
+			) => listener(value);
+			ipcRenderer.on("laplace:credentials-navigation", receive);
+			void ipcRenderer
+				.invoke("laplace:web-shell", { kind: "credentials-navigation" })
+				.then((value) => {
+					if (active) listener(value);
+				})
+				.catch(() => {});
+			return () => {
+				active = false;
+				ipcRenderer.removeListener("laplace:credentials-navigation", receive);
+			};
+		},
 		showUpdates: () => ipcRenderer.invoke("laplace:web-shell", { kind: "show-updates" }),
 		onUpdateChange: (listener: (available: boolean) => void) => {
 			const receive = (_event: Electron.IpcRendererEvent, available: boolean) =>
