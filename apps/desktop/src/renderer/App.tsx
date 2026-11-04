@@ -278,6 +278,7 @@ export function App() {
 	const servers = snapshot?.servers ?? [];
 	const jobs = (snapshot?.jobs ?? []) as CatalogJob[];
 	const catalogRevision = jobs.map((job) => `${job.id}:${job.status}`).join("|");
+	const serverIds = JSON.stringify(servers.map(({ id }) => id).sort());
 	const refresh = useCallback(async () => {
 		setSnapshot(await invoke<DesktopSnapshot>("status"));
 	}, []);
@@ -311,6 +312,12 @@ export function App() {
 	const signIn = () => perform(() => invoke("shell.signIn"));
 	const confirm = (title: string, text: string, action: () => Promise<unknown>) =>
 		setDialog({ type: "confirm", title, message: text, action });
+	const removeConnection = (server: ServerSnapshot) =>
+		confirm(
+			`Delete ${server.name}?`,
+			"This removes its desktop configuration and imported credentials. External source files and provider sessions are preserved.",
+			() => invoke("server.remove", { id: server.id }),
+		);
 	useEffect(() => {
 		let mounted = true;
 		void invoke<ShellState>("shell.status").then((value) => {
@@ -347,7 +354,7 @@ export function App() {
 		return () => {
 			current = false;
 		};
-	}, [shell.profile, snapshot?.endpoint, snapshot?.runId, catalogRevision]);
+	}, [shell.profile, snapshot?.endpoint, snapshot?.runId, catalogRevision, serverIds]);
 	useLayoutEffect(() => {
 		const element = manager.current;
 		if (!element) return;
@@ -500,6 +507,7 @@ export function App() {
 								importFile={() => void importFile()}
 								details={(server) => setDialog({ type: "server-details", id: server.id })}
 								edit={(server) => setDialog({ type: "server", server })}
+								remove={removeConnection}
 								control={(server, action) =>
 									void perform(() => invoke(`server.${action}`, { id: server.id }))
 								}
@@ -618,13 +626,7 @@ export function App() {
 									linked={linked}
 									signedIn={!!shell.account}
 									edit={() => setDialog({ type: "server", server })}
-									remove={() =>
-										confirm(
-											`Remove ${server.name}?`,
-											"This removes its desktop configuration and imported credentials. External source files and provider sessions are preserved.",
-											() => invoke("server.remove", { id: server.id }),
-										)
-									}
+									remove={() => removeConnection(server)}
 								/>
 							</div>
 						</Modal>

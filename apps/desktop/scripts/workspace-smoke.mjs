@@ -198,6 +198,19 @@ export async function checkAnonymousConfiguration(page, app, invoke, appRoot, te
 export async function checkLocalData(page, invoke) {
 	const nav = page.getByRole("navigation", { name: "On this device" });
 	await nav.getByRole("button", { name: "Connections", exact: true }).click();
+	const available = page.getByRole("list", { name: "Available connections" });
+	const local = page.getByRole("list", { name: "Local connections" });
+	const yc = available.getByText("Y Combinator", { exact: true });
+	await expect(yc).toBeVisible();
+	await invoke("catalog.install", { catalogId: "ycombinator-demo", configuration: {} });
+	const ycOptions = local.getByRole("button", { name: /^Options for Y Combinator / });
+	await expect(ycOptions).toBeVisible();
+	await expect(yc).toHaveCount(0);
+	await ycOptions.click();
+	await page.getByRole("menuitem", { name: "Delete connection" }).click();
+	await page.getByRole("dialog").getByRole("button", { name: "Confirm", exact: true }).click();
+	await expect(ycOptions).toHaveCount(0);
+	await expect(yc).toBeVisible();
 	await expect(
 		page.getByText("Synthetic smoke connector", { exact: true }).filter({ visible: true }),
 	).toBeVisible();

@@ -1194,18 +1194,20 @@ app.on("activate", () => {
 	window?.focus();
 });
 app.on("window-all-closed", () => {});
-app.on("before-quit", (event) => {
+function quitLaplace(exitCode = 0) {
 	if (quitting) return;
-	event.preventDefault();
 	quitting = true;
 	signIn?.cancel();
 	clearTimeout(saveTimer);
-	void Promise.all([updater?.stop(), helper?.stop(), point?.stop()]).finally(() => {
+	void Promise.allSettled([updater?.stop(), helper?.stop(), point?.stop()]).then(() => {
 		tray?.destroy();
-		web?.webContents.close();
-		localPanel?.webContents.close();
-		app.quit();
+		// Renderer unload handlers must not veto an explicit application quit.
+		app.exit(exitCode);
 	});
+}
+app.on("before-quit", (event) => {
+	event.preventDefault();
+	quitLaplace();
 });
 
 void app
@@ -1346,7 +1348,7 @@ void app
 					},
 				},
 				{ type: "separator" },
-				{ label: "Quit Laplace", click: () => app.quit() },
+				{ label: "Quit Laplace", click: () => setImmediate(quitLaplace) },
 			]),
 		);
 		tray.on("click", () => {
@@ -1428,6 +1430,5 @@ void app
 			return;
 		}
 		dialog.showErrorBox("Laplace could not start", error.message);
-		quitting = true;
-		app.quit();
+		quitLaplace(1);
 	});

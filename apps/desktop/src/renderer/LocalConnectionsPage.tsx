@@ -29,6 +29,7 @@ export function LocalConnectionsPage({
 	importFile,
 	details,
 	edit,
+	remove,
 	control,
 	install,
 	search,
@@ -44,6 +45,7 @@ export function LocalConnectionsPage({
 	importFile: () => void;
 	details: (server: ServerSnapshot) => void;
 	edit: (server: ServerSnapshot) => void;
+	remove: (server: ServerSnapshot) => void;
 	control: (server: ServerSnapshot, action: "start" | "stop" | "restart") => void;
 	install: (entry: CatalogEntry) => void;
 	search: string;
@@ -167,6 +169,14 @@ export function LocalConnectionsPage({
 															>
 																Restart
 															</DropdownMenuItem>
+													<DropdownMenuSeparator />
+													<DropdownMenuItem
+														className="text-destructive"
+														disabled={busy}
+														onClick={() => remove(server)}
+													>
+														Delete connection
+													</DropdownMenuItem>
 														</DropdownMenuContent>
 													</DropdownMenu>
 												</ConnectionTile>

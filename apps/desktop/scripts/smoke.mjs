@@ -304,9 +304,14 @@ try {
 	await page.screenshot({
 		path: join(appRoot, packaged ? ".cache/smoke-packaged.png" : ".cache/smoke.png"),
 	});
-	mark("quit and verify child cleanup");
+	mark("quit with the window hidden and verify child cleanup");
 	for (const client of clients) await client.close();
-	await app.close();
+	const desktopPid = app.process().pid;
+	await app.evaluate(({ app, BrowserWindow }) => {
+		BrowserWindow.getAllWindows()[0].hide();
+		setTimeout(() => app.quit(), 100);
+	});
+	await until(() => !alive(desktopPid), "Desktop did not exit while its window was hidden");
 	app = undefined;
 	await until(
 		() => !alive(helperPid) && !alive(upstreamPid),
