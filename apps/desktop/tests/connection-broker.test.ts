@@ -430,6 +430,12 @@ it.each(
 				{ html: brokerApprovalResource().text, initial },
 			);
 			const card = page.frameLocator("iframe");
+			if (!automatic)
+				expect(
+					await card
+						.getByRole("button", { name: "Choose or change credential", exact: true })
+						.count(),
+				).toBe(0);
 			if (automatic) {
 				await card.getByRole("button", { name: "Unlock Bitwarden", exact: true }).click();
 				await vi.waitFor(() => expect(f.adapter.unlock).toHaveBeenCalledWith(f.sessionId));

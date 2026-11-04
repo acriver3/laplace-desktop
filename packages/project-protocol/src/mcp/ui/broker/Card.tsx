@@ -112,6 +112,7 @@ export function BrokerReviewCard({
 						. Approval applies only to these mappings.
 					</p>
 					{!busy &&
+						view.workflowVersion === 2 &&
 						(["matching", "review_required"].includes(item.state) ||
 							(item.target.authType === "oauth2" &&
 								!item.matches.length &&
