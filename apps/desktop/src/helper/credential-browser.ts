@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, mkdir, readFile, rm } from "node:fs/promises";
@@ -12,6 +12,7 @@ import { spawnLocal, stopTree } from "@repo/local-mcp-core/process";
 import type { BrowserChoice, CredentialBrowserState } from "../shared/credential-setup";
 import { CredentialSetupError } from "./credential-errors";
 import { cdpOrigin } from "./credentials-cdp";
+import { browserExtensionId } from "../shared/browser-extension-id";
 const exec = promisify(execFile);
 const id = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 24);
 export function browserArgument(command: string, flag: string) {
@@ -52,6 +53,7 @@ export class CredentialBrowser {
 	private name?: string;
 	private available = false;
 	private checking?: Promise<void>;
+	private opening?: Promise<string>;
 	private checkedAt = 0;
 	private generation = 0;
 	constructor(
@@ -61,6 +63,31 @@ export class CredentialBrowser {
 	) {}
 	state(): CredentialBrowserState {
 		return { available: this.available, owned: !!this.owned, name: this.name };
+	}
+	async openExistingChrome(url: string) {
+		const target = new URL(url);
+		if (
+			target.protocol !== "chrome-extension:" ||
+			target.hostname !== browserExtensionId ||
+			target.pathname !== "/broker.html"
+		)
+			throw Error("Invalid Chrome handoff.");
+		await this.discover(true);
+		const chrome = [...this.choices.values()].find(
+			(choice) => choice.name === "Google Chrome" && choice.executable,
+		);
+		if (!chrome?.executable) throw Error("Google Chrome is unavailable.");
+		// Use Chrome's normal profile, without a user-data directory or debugging port.
+		const child = spawn(chrome.executable, [url], {
+			stdio: "ignore",
+			windowsHide: true,
+			detached: true,
+		});
+		await new Promise<void>((resolve, reject) => {
+			child.once("spawn", resolve);
+			child.once("error", reject);
+		});
+		child.unref();
 	}
 	async health(endpoint: string) {
 		if (endpoint !== this.selected) {
@@ -82,7 +109,7 @@ export class CredentialBrowser {
 		await this.checking;
 		return this.state();
 	}
-	async discover() {
+	async discover(installedOnly = false) {
 		this.choices.clear();
 		const installed =
 			process.platform === "darwin"
@@ -126,6 +153,8 @@ export class CredentialBrowser {
 					executable,
 				});
 			} catch {}
+		if (installedOnly)
+			return [...this.choices.values()].map(({ id, name, kind }) => ({ id, name, kind }));
 		let commands: string[] = [];
 		try {
 			if (process.platform === "darwin") {
@@ -202,7 +231,8 @@ export class CredentialBrowser {
 		this.changed();
 		return item.endpoint;
 	}
-	async launch(key: string) {
+	async launch(key: string, signal?: AbortSignal) {
+		signal?.throwIfAborted();
 		const item = this.choices.get(key);
 		if (!item?.executable || this.owned) throw new CredentialSetupError("browser");
 		const generation = ++this.generation;
@@ -241,6 +271,7 @@ export class CredentialBrowser {
 		});
 		try {
 			for (let attempt = 0; attempt < 60; attempt++) {
+				signal?.throwIfAborted();
 				if (generation !== this.generation || failed || child.exitCode !== null)
 					throw new CredentialSetupError("browser");
 				let port = 0;
@@ -266,6 +297,31 @@ export class CredentialBrowser {
 			throw error;
 		}
 	}
+	endpoint() {
+		return this.selected;
+	}
+	/** Starts only a dedicated profile; never auto-attaches to a discovered user browser. */
+	async ensureOwned(signal: AbortSignal) {
+		signal.throwIfAborted();
+		if (this.opening) return this.opening;
+		const generation = this.generation;
+		this.opening = (async () => {
+			if (this.owned && (await checkBrowser(this.selected, signal))) return this.selected;
+			signal.throwIfAborted();
+			if (generation !== this.generation) throw new CredentialSetupError("cancelled");
+			if (this.owned) await this.close();
+			const launchGeneration = this.generation;
+			const choices = (await this.discover(true)).filter((c) => c.kind === "installed");
+			signal.throwIfAborted();
+			if (launchGeneration !== this.generation) throw new CredentialSetupError("cancelled");
+			if (!choices.length) throw new CredentialSetupError("browser");
+			return this.launch(choices[0]!.id, signal);
+		})().finally(() => {
+			this.opening = undefined;
+		});
+		return this.opening;
+	}
+
 	async close() {
 		this.generation++;
 		const child = this.owned;

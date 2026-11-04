@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import { EncryptedStore } from "@repo/local-mcp-core/encrypted-store";
 import type { EntryFactory } from "@repo/local-mcp-core/store";
@@ -8,6 +8,7 @@ import {
 	MAX_CREDENTIAL_BINDINGS,
 	credentialSettings,
 	type CredentialInput,
+	type CredentialAction,
 	type CredentialSettings,
 } from "@repo/project-protocol/credentials";
 import { canonicalJson } from "@repo/project-protocol/local-mcp";
@@ -15,6 +16,7 @@ import { z } from "zod";
 
 import type { BitwardenConnection, CredentialBrowserState } from "../shared/credential-setup";
 import { BitwardenConnectionManager } from "./bitwarden-connection";
+import { BrokerChrome } from "./broker-chrome";
 import { CredentialBrowser } from "./credential-browser";
 import { CredentialSetupError } from "./credential-errors";
 import { browserTargets, cdpOrigin, fillBrowser } from "./credentials-cdp";
@@ -51,6 +53,7 @@ export type CredentialSnapshot = {
 	settings: CredentialSettings;
 	unlocked: boolean;
 	pending: Array<{
+		oneTimeOnly?: boolean;
 		id: string;
 		principalId: string;
 		client: string;
@@ -77,6 +80,8 @@ export class CredentialBroker {
 
 	readonly connection: BitwardenConnectionManager;
 	readonly browser: CredentialBrowser;
+	readonly brokerBrowser: CredentialBrowser;
+	readonly brokerChrome: BrokerChrome;
 	hostedState: CredentialSnapshot["hostedState"] = "disabled";
 	private settings = credentialSettings.parse({});
 	private store: EncryptedStore<CredentialSettings>;
@@ -98,6 +103,8 @@ export class CredentialBroker {
 	) {
 		this.connection = new BitwardenConnectionManager(root, resources, changed);
 		this.browser = new CredentialBrowser(root, resources, changed);
+		this.brokerBrowser = new CredentialBrowser(join(root, "broker-browser"), resources, changed);
+		this.brokerChrome = new BrokerChrome((url) => this.browser.openExistingChrome(url));
 		this.store = new EncryptedStore(
 			root,
 			"credentials",
@@ -151,6 +158,7 @@ export class CredentialBroker {
 					principalId: op.principal.id,
 					client: op.principal.name,
 					summary: op.summary,
+					oneTimeOnly: op.input.action === "run_command",
 					expiresAt: new Date(op.expires).toISOString(),
 				})),
 			grants: [...this.grants].map(([scope, at]) => ({
@@ -253,6 +261,7 @@ export class CredentialBroker {
 	async disconnectConnection() {
 		this.lock();
 		await this.browser.close();
+		await this.brokerBrowser.close();
 		if (this.settings.managedBitwarden) await this.connection.disconnect();
 		await this.configure({
 			...this.settings,
@@ -329,6 +338,7 @@ export class CredentialBroker {
 		this.cancelApprovals();
 	}
 	private cancelApprovals() {
+		this.brokerChrome.close();
 		this.brokerSyncAt = 0;
 		this.connectionBroker?.invalidate();
 		this.epoch++;
@@ -348,6 +358,8 @@ export class CredentialBroker {
 		clearInterval(this.timer);
 		this.lock();
 		void this.browser.close();
+		void this.brokerBrowser.close();
+		this.brokerChrome.shutdown();
 	}
 	revokePrincipal(id: string) {
 		let changed = false;
@@ -517,10 +529,49 @@ export class CredentialBroker {
 		if (!v) throw new Error("Unknown configured action");
 		return v;
 	}
+	private command(
+		input: Extract<CredentialInput, { action: "run_command" }>,
+	): Extract<CredentialAction, { kind: "command" }> {
+		if (!isAbsolute(input.command.executable) || !isAbsolute(input.command.cwd))
+			throw Error("Use absolute executable and working-directory paths.");
+		return {
+			id: input.requestId,
+			label: "One-time local command",
+			kind: "command",
+			credentialId: input.credentialId,
+			parameters: {},
+			resultFields: [],
+			executable: input.command.executable,
+			cwd: input.command.cwd,
+			args: input.command.args,
+			env: input.command.env,
+		};
+	}
 	private describe(input: Exclude<CredentialInput, { action: "broker" }>): {
 		scope: string;
 		summary: string;
 	} {
+		if (input.action === "run_command") {
+			const a = this.command(input),
+				b = this.binding(input.credentialId);
+			return {
+				scope: input.requestId,
+				summary:
+					"Run once with " +
+					b.label +
+					": " +
+					a.executable +
+					" " +
+					JSON.stringify(a.args) +
+					" in " +
+					a.cwd +
+					". Credential fields → environment: " +
+					JSON.stringify(a.env) +
+					". Maximum runtime: " +
+					input.command.runtimeSeconds +
+					" seconds. This process receives the selected secrets; output is withheld.",
+			};
+		}
 		if (input.action === "fill") {
 			const b = this.binding(input.credentialId);
 			return {
@@ -553,8 +604,29 @@ export class CredentialBroker {
 	}
 	async call(principal: CredentialPrincipal, raw: unknown): Promise<unknown> {
 		this.sweep();
-		await this.check(principal);
+		await principal.authorize();
 		const input = credentialInput.parse(raw);
+		if (!principal.hosted && input.action === "status" && !this.allowed(principal))
+			return {
+				requestId: input.requestId,
+				status: "complete",
+				result: {
+					ready: false,
+					setupRequired: true,
+					instructions:
+						"Open Laplace Desktop → Credentials. Connect and unlock Bitwarden, select permitted credentials, and enable this assistant. Then call status again. Never send credentials in chat.",
+				},
+			};
+		if (
+			input.action !== "broker" &&
+			!(
+				(input.action === "result" || input.action === "cancel") &&
+				this.isBrokerRequest(principal, input.requestId)
+			)
+		)
+			await this.check(principal);
+		if (principal.hosted && input.action === "run_command")
+			throw Error("Command proposals require a locally registered assistant.");
 		if (input.action === "devices") return { local: true };
 		const key = `${principal.id}:${input.requestId}`;
 		if (input.action === "broker") {
@@ -650,7 +722,7 @@ export class CredentialBroker {
 			(!principal.hosted && ["list", "targets"].includes(input.action))
 		)
 			await this.start(op);
-		else if ((this.grants.get(op.scope) ?? 0) > Date.now()) {
+		else if (input.action !== "run_command" && (this.grants.get(op.scope) ?? 0) > Date.now()) {
 			op.state = "running";
 			void this.start(op);
 		}
@@ -687,7 +759,13 @@ export class CredentialBroker {
 			throw new Error("Client access revoked");
 		}
 		if (op.epoch !== this.epoch || op.state !== "running") throw new Error("Authorization changed");
-		if (remember) this.grants.set(op.scope, Math.min(this.unlockedUntil, Date.now() + 15 * 60000));
+		if (remember && op.input.action !== "run_command")
+			this.grants.set(op.scope, Math.min(this.unlockedUntil, Date.now() + 15 * 60000));
+		if (op.input.action === "run_command")
+			op.expires = Math.min(
+				this.unlockedUntil,
+				Date.now() + op.input.command.runtimeSeconds * 1000,
+			);
 		// Mark running before yielding so repeated approvals cannot duplicate the operation.
 		op.state = "running";
 		this.changed();
@@ -699,7 +777,12 @@ export class CredentialBroker {
 		try {
 			await this.check(op.principal);
 			if (op.epoch !== this.epoch) throw new Error();
-			const signal = AbortSignal.any([op.controller.signal, AbortSignal.timeout(60000)]);
+			const signal = AbortSignal.any([
+				op.controller.signal,
+				AbortSignal.timeout(
+					op.input.action === "run_command" ? op.input.command.runtimeSeconds * 1000 : 60000,
+				),
+			]);
 			const result = await this.execute(op.input, signal, op);
 			if (Buffer.byteLength(JSON.stringify(result)) > 48000)
 				throw new Error("Result limit exceeded");
@@ -720,10 +803,11 @@ export class CredentialBroker {
 		if (input.action === "status")
 			return {
 				unlocked: !!this.session && Date.now() < this.unlockedUntil,
+				brokerBrowserAutomatic: true,
 				browserConfigured: !!this.settings.cdpEndpoint,
 				browserAvailable: (await this.browser.health(this.settings.cdpEndpoint)).available,
 				browserGuidance:
-					"Connect your browser tools to the selected Laplace browser session. Browser availability does not confirm your tools are attached. Cloud-only browsers cannot connect to a local endpoint.",
+					"Hosted OAuth through local_credential_broker opens a sign-in tab in your normal Chrome profile through the Laplace extension. Allow requested site access in Chrome when prompted. No separate browser or debugging setup is used.",
 				...(!op.principal.hosted && this.settings.cdpEndpoint
 					? { browserEndpoint: this.settings.cdpEndpoint }
 					: {}),
@@ -771,12 +855,19 @@ export class CredentialBroker {
 			return (await this.executors.browserTargets(this.settings.cdpEndpoint, signal))
 				.filter((t) => this.settings.bindings.some((b) => b.origins.includes(t.origin)))
 				.map((t) => ({ id: t.id, origin: t.origin }));
-		if (input.action !== "fill" && input.action !== "http" && input.action !== "run")
+		if (
+			input.action !== "fill" &&
+			input.action !== "http" &&
+			input.action !== "run" &&
+			input.action !== "run_command"
+		)
 			throw new Error("Unsupported operation");
 		const action =
-			input.action !== "fill"
-				? this.action(input.actionId, input.action === "http" ? "http" : "command")
-				: undefined;
+			input.action === "run_command"
+				? this.command(input)
+				: input.action !== "fill"
+					? this.action(input.actionId, input.action === "http" ? "http" : "command")
+					: undefined;
 		const binding = this.binding(
 			input.action === "fill" ? input.credentialId : action!.credentialId,
 		);
@@ -834,7 +925,12 @@ export class CredentialBroker {
 		if (action?.kind === "http") {
 			const value = await field(action.field);
 			await recheck();
-			return this.executors.executeHttp(action, input.parameters, value, signal);
+			return this.executors.executeHttp(
+				action,
+				"parameters" in input ? input.parameters : {},
+				value,
+				signal,
+			);
 		}
 		if (action?.kind === "command") {
 			const values = Object.fromEntries(
@@ -845,10 +941,11 @@ export class CredentialBroker {
 			await recheck();
 			return this.executors.executeCommand(
 				action,
-				input.parameters,
+				"parameters" in input ? input.parameters : {},
 				values,
 				this.resources,
 				signal,
+				input.action === "run_command",
 			);
 		}
 		throw new Error("Unsupported operation");

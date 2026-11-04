@@ -6,7 +6,45 @@ const id = z.string().uuid();
 const routing = { accountId: z.string().max(200).optional(), installationId: id.optional() };
 const request = { ...routing, requestId: id };
 export const MAX_CREDENTIAL_BINDINGS = 10000;
+export const localCommand = z
+	.object({
+		executable: z
+			.string()
+			.min(1)
+			.max(4096)
+			.refine((v) => !v.includes("\0")),
+		cwd: z
+			.string()
+			.min(1)
+			.max(4096)
+			.refine((v) => !v.includes("\0")),
+		args: z
+			.array(
+				z
+					.string()
+					.max(4096)
+					.refine((v) => !v.includes("\0")),
+			)
+			.max(100)
+			.default([]),
+		env: z
+			.record(
+				z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/),
+				z.string().regex(/^(username|password|custom:[^\r\n\0]{1,100})$/),
+			)
+			.refine((v) => Object.keys(v).length > 0 && Object.keys(v).length <= 10),
+		runtimeSeconds: z.number().int().min(1).max(3600).default(60),
+	})
+	.strict();
 export const credentialInput = z.discriminatedUnion("action", [
+	z
+		.object({
+			...request,
+			action: z.literal("run_command"),
+			credentialId: id,
+			command: localCommand,
+		})
+		.strict(),
 	z.object({ ...request, action: z.literal("broker"), command: brokerCommand }).strict(),
 	z.object({ ...routing, action: z.literal("devices") }).strict(),
 	z.object({ ...routing, action: z.enum(["status", "targets"]), requestId: id }).strict(),
@@ -76,7 +114,24 @@ export const credentialTool = {
 };
 
 // Keep the existing local name and principal separate from hosted relay requests.
-export const localCredentialTool = { ...credentialTool, name: "local_credentials" };
+export const localCredentialTool = {
+	...credentialTool,
+	name: "local_credentials",
+	description:
+		credentialTool.description +
+		" Available before setup: status returns onboarding guidance without credential metadata. For any local command or agent process, use run_command with an approved credential handle and command (absolute executable/cwd, literal args, env mapping to username/password/custom:field, runtimeSeconds up to 3600). Desktop displays the exact command and mapping for one-time approval. Secret values go only into the child environment; stdout/stderr are withheld. No shell is implicitly invoked. The process can access the granted secrets. Never put secrets in arguments.",
+	inputSchema: {
+		...credentialTool.inputSchema,
+		properties: {
+			...credentialTool.inputSchema.properties,
+			action: {
+				type: "string",
+				enum: [...credentialTool.inputSchema.properties.action.enum, "run_command"],
+			},
+			command: z.toJSONSchema(localCommand),
+		},
+	},
+};
 
 export const credentialField = z
 	.string()

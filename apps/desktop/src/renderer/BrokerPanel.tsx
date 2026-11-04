@@ -1,4 +1,4 @@
-import { brokerHandoff } from "@repo/project-protocol/credential-broker";
+import { type CredentialCandidate, brokerHandoff } from "@repo/project-protocol/credential-broker";
 import { BrokerReviewCard, type BrokerView } from "@repo/project-protocol/mcp/broker-approval-card";
 import { useEffect, useState } from "react";
 
@@ -7,6 +7,11 @@ import { invoke } from "./types";
 
 import "../../../../packages/project-protocol/src/mcp/ui/broker/style.css";
 export function BrokerPanel() {
+	const [candidates, setCandidates] = useState<{
+		items: CredentialCandidate[];
+		nextCursor?: number;
+	}>();
+	const [opened, setOpened] = useState(false);
 	const [view, setView] = useState<BrokerView & { principalId: string; principalName?: string }>(),
 		[busy, setBusy] = useState(false),
 		[error, setError] = useState(""),
@@ -14,7 +19,10 @@ export function BrokerPanel() {
 	useEffect(
 		() =>
 			window.laplaceDesktop.onEvent((e) => {
-				if (e.event === "broker-focus") setDismissed("");
+				if (e.event === "broker-focus") {
+					setDismissed("");
+					setOpened(true);
+				}
 			}),
 		[],
 	);
@@ -50,18 +58,28 @@ export function BrokerPanel() {
 			clearInterval(timer);
 		};
 	}, [busy]);
-	async function act(action: string, itemIds?: string[]) {
+	async function act(action: string, itemIds?: string[], extra: Record<string, unknown> = {}) {
 		if (!view || busy) return;
 		setBusy(true);
 		setError("");
 		try {
 			const call = (command: unknown) =>
-				invoke<{ view: BrokerView; capability?: string }>("broker.call", {
+				invoke<{
+					view: BrokerView;
+					capability?: string;
+					candidates?: CredentialCandidate[];
+					nextCursor?: number;
+				}>("broker.call", {
 					principalId: view.principalId,
 					requestId: crypto.randomUUID(),
 					command: { sessionId: view.id, ...(command as object) },
 				});
-			if (action === "authorize") {
+			if (action === "choose") {
+				const result = await call({ action: "match", ...extra });
+				setView({ ...result.view, principalId: view.principalId });
+				const data = await call({ action: "candidates", query: "" });
+				setCandidates({ items: data.candidates ?? [], nextCursor: data.nextCursor });
+			} else if (action === "authorize") {
 				await invoke("broker.authorizeAssistant", { principalId: view.principalId });
 				setError("Assistant authorized for matching. Ask it to list candidates again.");
 			} else if (action === "retry") {
@@ -73,18 +91,29 @@ export function BrokerPanel() {
 						"\nInspect prior uncertain outcomes first; these are the only selected retries. Require a fresh review.",
 				);
 				setError("Retry request copied. Paste it into your assistant to prepare a fresh review.");
-			} else if (action === "approve") {
+			} else if (action === "approve" || action === "connect") {
 				const fresh = await call({ action: "review" });
 				if (fresh.view.revision !== view.revision) throw Error("Review changed.");
-				await call({ action, capability: fresh.capability, itemIds });
-			} else await call({ action });
+				const result = await call({ action, capability: fresh.capability, itemIds });
+				setView({ ...result.view, principalId: view.principalId });
+			} else {
+				const result = await call({ action, ...extra });
+				if (result.view) setView({ ...result.view, principalId: view.principalId });
+				if (action === "candidates")
+					setCandidates((previous) => ({
+						items: extra.cursor
+							? [...(previous?.items ?? []), ...(result.candidates ?? [])]
+							: (result.candidates ?? []),
+						nextCursor: result.nextCursor,
+					}));
+			}
 		} catch {
 			setError("Review expired or access changed. Ask your assistant to refresh.");
 		} finally {
 			setBusy(false);
 		}
 	}
-	return view && dismissed !== view.id + ":" + view.revision ? (
+	return opened && view && dismissed !== view.id + ":" + view.revision ? (
 		<Modal title="Credential review" close={() => setDismissed(view.id + ":" + view.revision)}>
 			<p>{view.principalName ?? "Connected assistant"}</p>
 			{view.principalId.startsWith("hosted:") && view.items.some((i) => i.state === "matching") && (
@@ -92,7 +121,13 @@ export function BrokerPanel() {
 					Allow this assistant to match credential metadata
 				</button>
 			)}
-			<BrokerReviewCard view={view} busy={busy} error={error} act={(a, ids) => void act(a, ids)} />
+			<BrokerReviewCard
+				view={view}
+				busy={busy}
+				error={error}
+				candidates={candidates}
+				act={(a, ids, extra) => void act(a, ids, extra)}
+			/>
 		</Modal>
 	) : null;
 }

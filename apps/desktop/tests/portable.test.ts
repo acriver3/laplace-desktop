@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 async function desktop() {
 	const root = await mkdtemp(join(tmpdir(), "portable-test-"));
-	cleanup.push(() => rm(root, { recursive: true, force: true }));
+	cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
 	const secrets = new Map<string, string>();
 	const entries: EntryFactory = async (name) => ({
 		getPassword: () => secrets.get(name) ?? null,

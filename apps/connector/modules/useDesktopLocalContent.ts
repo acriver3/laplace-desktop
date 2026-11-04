@@ -88,7 +88,12 @@ export function useDesktopLocalContent(
 			)
 				return;
 			const url = new URL(link.href);
-			if (url.origin === location.origin && url.href !== `${location.origin}/desktop/local`)
+			if (
+				url.origin === location.origin &&
+				![`${location.origin}/desktop/local`, `${location.origin}/desktop/credentials`].includes(
+					url.href,
+				)
+			)
 				void shell.showWeb().catch(() => {});
 		};
 		document.addEventListener("click", navigate, true);

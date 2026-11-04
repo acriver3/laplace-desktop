@@ -207,10 +207,13 @@ export async function executeCommand(
 	values: Record<string, string>,
 	resources: string,
 	signal: AbortSignal,
+	literalArguments = false,
 ) {
 	if (!isAbsolute(action.executable) || !isAbsolute(action.cwd))
 		throw new Error("Configured commands require absolute executable and working-directory paths");
-	const args = action.args.map((arg) => substitute(arg, parameters));
+	const args = literalArguments
+		? action.args
+		: action.args.map((arg) => substitute(arg, parameters));
 	return new Promise<{ exitCode: number | null; fields: Record<string, unknown> }>(
 		(resolve, reject) => {
 			const child = spawnLocal(
@@ -232,6 +235,7 @@ export async function executeCommand(
 			child.stdin.end();
 			child.stderr.resume();
 			child.stdout.on("data", (chunk: Buffer) => {
+				if (literalArguments) return;
 				bytes += chunk.length;
 				if (bytes > MAX_OUTPUT) abort();
 				else chunks.push(chunk);

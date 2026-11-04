@@ -12,7 +12,6 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 		"AI clients",
 		"Device",
 		"Updates",
-		"Credentials",
 	]);
 	await expect(nav.getByRole("button", { name: "Connections", exact: true })).toHaveAttribute(
 		"aria-current",
@@ -21,7 +20,7 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 	const sidebar = page.getByRole("complementary", { name: "Main sidebar" });
 	await expect(
 		sidebar.getByRole("navigation", { name: "Connector navigation" }).getByRole("button"),
-	).toHaveText(["On this device"]);
+	).toHaveText(["On this device", "Credentials"]);
 	await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
 	await expect(page.getByRole("button", { name: "Back to Laplace" })).toHaveCount(0);
 	await mkdir(join(appRoot, ".cache"), { recursive: true });
@@ -51,7 +50,7 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 			.getByRole("listitem")
 			.filter({ has: page.getByText(entry.name, { exact: true }) });
 		const action = row.getByRole("button", {
-			name: entry.importOnly ? "Import" : "Install",
+			name: entry.importOnly ? "Import" : `More setup options for ${entry.name}`,
 			exact: true,
 		});
 		if (entry.available || entry.importOnly) await expect(action).toBeEnabled();
@@ -72,11 +71,10 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 			.getByRole("listitem")
 			.filter({ has: page.getByText(setupEntry.name, { exact: true }) });
 		await setupRow
-			.getByRole("button", { name: `Choose setup agent for ${setupEntry.name}` })
+			.getByRole("button", { name: `More setup options for ${setupEntry.name}` })
 			.click();
-		await page.getByRole("menuitemradio", { name: "Codex", exact: true }).click();
-		await setupRow.getByRole("button", { name: "Connect", exact: true }).click();
-		await expect(setupRow.getByRole("status")).toContainText("Continue in Codex");
+		await page.getByRole("menuitem", { name: "Set up with Codex", exact: true }).click();
+		await expect(setupRow.getByRole("status")).toContainText("Review and send the draft");
 		await expect(page.getByRole("dialog")).toHaveCount(0);
 		const destinations = await app.evaluate(() => globalThis.catalogDestinations);
 		assert.equal(destinations.length, 1);
@@ -105,6 +103,24 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 			delete globalThis.catalogDestinations;
 		});
 	}
+	for (const scale of [1, 1.25, 1.5, 2]) {
+		await page.evaluate((scale) => {
+			document.documentElement.style.zoom = String(scale);
+		}, scale);
+		const overflow = await page.locator(".desktop-connection").evaluateAll((cards) =>
+			cards.some((card) => {
+				const rect = card.getBoundingClientRect();
+				return [...card.querySelectorAll("button, .connector-row-title")].some((node) => {
+					const r = node.getBoundingClientRect();
+					return r.width > 0 && (r.right > rect.right + 1 || r.bottom > rect.bottom + 1);
+				});
+			}),
+		);
+		assert.equal(overflow, false, `Connection actions overflow at ${scale} scale`);
+	}
+	await page.evaluate(() => {
+		document.documentElement.style.zoom = "1";
+	});
 	await screenshot("connections");
 	await nav.getByRole("button", { name: "AI clients", exact: true }).click();
 	await expect(
@@ -125,8 +141,8 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 		page.getByRole("button", { name: "Sign in to link a workspace", exact: true }),
 	).toBeVisible();
 	await screenshot("device");
-	await nav.getByRole("button", { name: "Credentials", exact: true }).click();
-	await expect(nav.getByRole("button", { name: "Credentials", exact: true })).toHaveAttribute(
+	await sidebar.getByRole("button", { name: "Credentials", exact: true }).click();
+	await expect(sidebar.getByRole("button", { name: "Credentials", exact: true })).toHaveAttribute(
 		"aria-current",
 		"page",
 	);
@@ -139,10 +155,11 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 		if (items?.some((entry) => ["Connections", "Build apps"].includes(entry.label)))
 			throw new Error("Native menu still exposes removed Desktop pages");
 	});
-	await nav.getByRole("button", { name: "Connections", exact: true }).click();
+	await sidebar.getByRole("button", { name: "On this device", exact: true }).click();
 }
 
 export async function checkAnonymousConfiguration(page, app, invoke, appRoot, testRoot) {
+	const sidebar = page.getByRole("complementary", { name: "Main sidebar" });
 	await page
 		.getByRole("navigation", { name: "On this device" })
 		.getByRole("button", { name: "Connections", exact: true })
@@ -196,6 +213,7 @@ export async function checkAnonymousConfiguration(page, app, invoke, appRoot, te
 }
 
 export async function checkLocalData(page, invoke) {
+	const sidebar = page.getByRole("complementary", { name: "Main sidebar" });
 	const nav = page.getByRole("navigation", { name: "On this device" });
 	await nav.getByRole("button", { name: "Connections", exact: true }).click();
 	const available = page.getByRole("list", { name: "Available connections" });
@@ -262,5 +280,5 @@ export async function checkLocalData(page, invoke) {
 	await invoke("client.revoke", { clientId: client.id });
 	await expect(page.locator("summary").filter({ hasText: client.name })).toContainText("Revoked");
 	assert.equal((await invoke("shell.status")).account, undefined);
-	await nav.getByRole("button", { name: "Connections", exact: true }).click();
+	await sidebar.getByRole("button", { name: "On this device", exact: true }).click();
 }

@@ -24,6 +24,7 @@ import { ycUiTools, YC_UI_URI } from "@repo/project-protocol/mcp/yc-schema";
 import { z } from "zod";
 
 import { BROWSER_APPROVAL_URI } from "../shared/browser-approval";
+import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
 import { desktopVersion } from "../shared/version";
 import {
 	ConnectorManagement,
@@ -31,6 +32,7 @@ import {
 	isConnectorManagementTool,
 } from "./connector-tools";
 import type { CredentialBroker, CredentialPrincipal } from "./credentials";
+import { desktopManagementTool, manageDesktop, type DesktopSection } from "./desktop-tools";
 import type { HostedConnections } from "./hosted-oauth";
 import type { DesktopManager } from "./manager";
 import { desktopYcView, ycConnections, ycInvocationTools } from "./yc-ui";
@@ -53,9 +55,10 @@ type Call = {
 export async function startMcpServer(
 	manager: DesktopManager,
 	hosted: Pick<HostedConnections, "tools" | "call"> &
-		Partial<Pick<HostedConnections, "refreshTools">>,
+		Partial<Pick<HostedConnections, "refreshTools" | "status" | "connect" | "disconnect">>,
 	credentials?: CredentialBroker,
 	connectors?: ConnectorManagement,
+	openDesktop?: (section: DesktopSection) => void,
 ) {
 	const principal = (clientId: string): CredentialPrincipal => ({
 		id: `local:${clientId}`,
@@ -72,18 +75,32 @@ export async function startMcpServer(
 		const hostedTools = hosted.tools(clientId);
 		if (
 			hostedTools.some(
-				(tool) => isLocalConnectorToolName(tool.name) || isConnectorManagementTool(tool.name),
+				(tool) =>
+					tool.name === desktopManagementTool.name ||
+					isLocalConnectorToolName(tool.name) ||
+					isConnectorManagementTool(tool.name),
 			)
 		)
 			throw new Error("Conflicting tool catalog entries: reserved local connector namespace");
 		const entries: CatalogEntry<Tool>[] = [
+			{
+				id: "desktop:manage",
+				tool: desktopManagementTool,
+				route: { executor: "desktop", target: desktopManagementTool.name },
+				available:
+					!!hosted.status &&
+					!!hosted.connect &&
+					!!hosted.disconnect &&
+					!!openDesktop &&
+					manager.clientToolAllowed(clientId, desktopManagementTool.name),
+			},
 			...brokerTools(true).map((tool) => ({
 				id: "broker:" + tool.name,
 				tool: ToolSchema.parse(tool),
 				route: { executor: "broker", target: tool.name },
 				available:
-					process.env.ENABLE_CREDENTIAL_BROKERING === "true" &&
-					!!credentials?.allowed(principal(clientId)) &&
+					credentialBrokeringEnabled() &&
+					!!credentials &&
 					manager.clientToolAllowed(clientId, "local_credentials") &&
 					manager.clientToolAllowed(clientId, "local_connectors_manage"),
 			})),
@@ -101,12 +118,10 @@ export async function startMcpServer(
 			})),
 			{
 				id: "credentials:local",
-				tool: localCredentialTool,
+				tool: ToolSchema.parse(localCredentialTool),
 				route: { executor: "credentials", target: localCredentialTool.name },
 				requirements: { connections: ["desktop"] },
-				available:
-					!!credentials?.allowed(principal(clientId)) &&
-					manager.clientToolAllowed(clientId, localCredentialTool.name),
+				available: !!credentials && manager.clientToolAllowed(clientId, localCredentialTool.name),
 			},
 			...manager.tools().map((tool) => ({
 				id: `connector:${tool.name}`,
@@ -142,8 +157,7 @@ export async function startMcpServer(
 			);
 			server.setRequestHandler("resources/list", async () => ({
 				resources: [
-					...(process.env.ENABLE_CREDENTIAL_BROKERING === "true" &&
-					credentials?.allowed(principal(clientId))
+					...(credentialBrokeringEnabled() && credentials?.allowed(principal(clientId))
 						? [
 								{
 									uri: BROKER_UI_URI,
@@ -176,7 +190,7 @@ export async function startMcpServer(
 			server.setRequestHandler("resources/read", async (request) => {
 				if (
 					request.params.uri === BROKER_UI_URI &&
-					process.env.ENABLE_CREDENTIAL_BROKERING === "true" &&
+					credentialBrokeringEnabled() &&
 					credentials?.allowed(principal(clientId))
 				)
 					return { contents: [brokerApprovalResource()] };
@@ -235,39 +249,45 @@ export async function startMcpServer(
 						request.params.name,
 						input,
 						{
+							desktop: async (_route, args) => {
+								try {
+									const result = await manageDesktop(
+										manager,
+										hosted as HostedConnections,
+										clientId,
+										args,
+										openDesktop!,
+									);
+									return {
+										content: [{ type: "text" as const, text: JSON.stringify(result) }],
+										structuredContent: result,
+									};
+								} catch {
+									return {
+										isError: true,
+										content: [
+											{
+												type: "text" as const,
+												text: "Desktop operation failed. Inspect status and permissions before retrying. No operation was automatically replayed.",
+											},
+										],
+									};
+								}
+							},
 							broker: async (route, args) => {
 								const input = brokerToolInput.parse(args);
 								checkBrokerTool(route.target, input);
-								if (input.command?.action === "start" && manager.status().mode === "linked") {
-									const status = manager.status();
-									let preparedSession = false;
-									try {
-										const description = (await (
-											await manager.credentialRelayApi()
-										).post("broker", {
-											action: "describe",
-											sessionId: input.command.sessionId,
-										})) as { targets: unknown[] };
-										preparedSession =
-											JSON.stringify(description.targets) === JSON.stringify(input.command.targets);
-									} catch {}
-									if (!preparedSession) {
-										const prepared = (await hosted.call(
-											clientId,
-											"credential_broker_prepare",
-											{
-												...input,
-												accountId: status.accountId,
-												installationId: status.installationId,
-											},
-											controller.signal,
-										)) as { isError?: boolean };
-										if (prepared.isError)
-											throw Error(
-												"Connect this assistant to hosted Laplace with Desktop management access.",
-											);
-									}
+								if (!credentials!.connectionBroker && !credentials!.allowed(principal(clientId))) {
+									return brokerMcpResult(
+										await credentials!.call(principal(clientId), {
+											action: "status",
+											requestId: input.requestId,
+										}),
+										input,
+										route.target,
+									);
 								}
+
 								const result = await credentials!.call(
 									principal(clientId),
 									input.poll

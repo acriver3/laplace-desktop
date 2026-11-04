@@ -64,3 +64,48 @@ it("treats stale endpoints and oversized responses as unavailable", async () => 
 	await expect(browser.select("not-discovered")).rejects.toMatchObject({ code: "browser" });
 	await expect(browser.launch("not-discovered")).rejects.toMatchObject({ code: "browser" });
 });
+
+it("automatically launches an installed browser and never attaches to unrelated running sessions", async () => {
+	const browser = new CredentialBrowser("/unused", "/unused", () => {});
+	const discover = vi.spyOn(browser, "discover").mockResolvedValue([
+		{ id: "unrelated", name: "Existing Chrome", kind: "running" },
+		{ id: "installed", name: "Chrome", kind: "installed" },
+	]);
+	const select = vi.spyOn(browser, "select");
+	let release!: (endpoint: string) => void;
+	const launch = vi.spyOn(browser, "launch").mockImplementation(
+		() =>
+			new Promise((r) => {
+				release = r;
+			}),
+	);
+	const a = browser.ensureOwned(new AbortController().signal),
+		b = browser.ensureOwned(new AbortController().signal);
+	await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+	expect(discover).toHaveBeenCalledWith(true);
+	expect(launch).toHaveBeenCalledWith("installed", expect.any(AbortSignal));
+	expect(select).not.toHaveBeenCalled();
+	release("http://127.0.0.1:9223");
+	expect(await Promise.all([a, b])).toEqual(["http://127.0.0.1:9223", "http://127.0.0.1:9223"]);
+});
+it("does not launch after cancellation or shutdown during discovery", async () => {
+	const browser = new CredentialBrowser("/unused", "/unused", () => {});
+	const launch = vi.spyOn(browser, "launch");
+	const controller = new AbortController();
+	controller.abort();
+	await expect(browser.ensureOwned(controller.signal)).rejects.toThrow();
+	expect(launch).not.toHaveBeenCalled();
+	let release!: (choices: any[]) => void;
+	vi.spyOn(browser, "discover").mockImplementation(
+		() =>
+			new Promise((r) => {
+				release = r;
+			}),
+	);
+	const pending = browser.ensureOwned(new AbortController().signal);
+	await vi.waitFor(() => expect(release).toBeDefined());
+	await browser.close();
+	release([{ id: "installed", name: "Chrome", kind: "installed" }]);
+	await expect(pending).rejects.toMatchObject({ code: "cancelled" });
+	expect(launch).not.toHaveBeenCalled();
+});

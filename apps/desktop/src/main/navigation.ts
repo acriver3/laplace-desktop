@@ -45,7 +45,7 @@ export function desktopLocalNavigation(
 			from.origin === connectOrigin &&
 			!from.username &&
 			!from.password &&
-			to.href === `${connectOrigin}/desktop/local`
+			[`${connectOrigin}/desktop/local`, `${connectOrigin}/desktop/credentials`].includes(to.href)
 		);
 	} catch {
 		return false;
