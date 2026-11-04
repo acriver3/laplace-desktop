@@ -153,6 +153,8 @@ it("records interrupted execution and never replays it after helper restart", as
 	await f.propose();
 	const r = await f.review();
 	await f.call({ action: "approve", capability: r.capability, itemIds: [f.itemId] });
+	// Restart only after execution has begun, so this tests interruption rather than queued work.
+	await vi.waitFor(() => expect(f.adapter.execute).toHaveBeenCalledTimes(1));
 	const restarted = new ConnectionBroker(f.root, f.adapter, () => {}, f.entries);
 	await restarted.initialize();
 	const result = await restarted.call(
