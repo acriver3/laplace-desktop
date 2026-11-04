@@ -139,7 +139,7 @@ async function fixture(cacheTtlMs = 0) {
 			}),
 	);
 	const root = await mkdtemp(join(tmpdir(), "desktop-oauth-test-"));
-	cleanup.push(() => rm(root, { recursive: true, force: true }));
+	cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
 	const values = new Map<string, string>();
 	const entries: EntryFactory = async (name) => ({
 		getPassword: () => values.get(name) ?? null,

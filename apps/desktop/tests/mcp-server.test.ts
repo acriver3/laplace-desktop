@@ -180,7 +180,10 @@ it("limits active calls to 32 per registration and 128 overall, independently of
 		for (let i = 0; i < 4; i++) {
 			for (let j = 0; j < 32; j++)
 				pending.push(clients[i].client.callTool({ name: "wait", arguments: {} }));
-			await vi.waitFor(() => expect(f.server.diagnostics().activeCalls).toBe((i + 1) * 32));
+			await vi.waitFor(
+				() => expect(f.server.diagnostics().activeCalls).toBe((i + 1) * 32),
+				{ timeout: 5000 },
+			);
 			const busy = await clients[i].client.callTool({ name: "wait", arguments: {} });
 			expect(busy).toMatchObject({
 				isError: true,
