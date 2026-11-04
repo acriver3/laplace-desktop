@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 
 import { browserExtensionId } from "./browser-extension-id";
 import { browserHostName, listBrowserRequests } from "./browser-requests";
+import { installBrowserNativeHost } from "./native-installation";
 
 export const nativeBrowserOrigin = `chrome-extension://${browserExtensionId}/`;
 /** Native messaging is discovery only. It cannot approve access or execute tools. */
@@ -66,7 +67,7 @@ export async function runBrowserNativeHost(
 	}
 }
 
-export async function registerBrowserNativeHost(
+async function registerLegacyBrowserNativeHost(
 	resources: string,
 	options: {
 		home?: string;
@@ -150,4 +151,25 @@ export async function registerBrowserNativeHost(
 				}
 		}
 	}
+}
+
+/** Shared registration is opt-in until platform acceptance, then remains monotonic. */
+export async function registerBrowserNativeHost(
+	resources: string,
+	options: {
+		home?: string;
+		platform?: string;
+		registerWindows?: (path: string) => Promise<void>;
+	} = {},
+) {
+	const shared = await readFile(
+		join(options.home ?? homedir(), ".laplace", "browser", "installation.json"),
+		"utf8",
+	).catch((error: NodeJS.ErrnoException) => {
+		if (error.code === "ENOENT") return undefined;
+		throw error;
+	});
+	if (process.env.LAPLACE_TETHERED_BROWSER_V1 === "true" || shared) {
+		await installBrowserNativeHost(resources, { ...options, client: "desktop" });
+	} else await registerLegacyBrowserNativeHost(resources, options);
 }

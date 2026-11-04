@@ -1,28 +1,36 @@
 {
 	"repository": "https://github.com/acriver3/laplace-mcp-library",
-	"revision": "8a780c2bafaab8940af7d75e7a4df10e6812d23e",
-	"version": "0.1.0",
+	"revision": "934083581dc853dfdd282b163746b8fa64102d2e",
+	"version": "0.2.0",
 	"status": "source-candidate",
 	"files": {
 		"src/approval-page.ts": "bd805191180e5d7988e7b0540f5ae8821b8eccc5f1b7ba65c4d0793f8a65d570",
 		"src/browser-approval.ts": "e2f074a625b5699c79e8f1f1da84c26cf5004863dc7e97e39f61cc35691690af",
 		"src/browser-approvals.ts": "87d9a4f9ee255e16b8f4ca2a67c81318aea73dbb2ff7f7b2afba95213a3f5e4c",
-		"src/browser-connection-relay.ts": "5aeec94bc145900a64fe3455779c99ca8dc6a491ee46abc3952d4594ed5a6b46",
+		"src/browser-connection-relay.ts": "2d54f5897f4b949bc0eac35939e9994c2a31eb077a73500b2e517443b5ab6f3a",
 		"src/browser-extension-id.ts": "da1dfa6f9b15fa6fb29e90b00ca151173a6afcfdb1fd40e72bd5551a3446962a",
-		"src/browser-native-host.ts": "8e33673443a71f4608a14aa42d0b62787b63e84aa4272590e650cb1549d242fa",
+		"src/browser-native-host.ts": "4f089be49a3cd95402f06f0d75006f2fc27ee326752e24db2535cc7310c088d0",
 		"src/browser-requests.ts": "00396a91b73a8f65af0076b3564ef8020f04e77cd7697bc9ebe745781a92174b",
+		"src/browser-transfer.ts": "9c01ac7eb0870831076218b6a58b8ee0b87f7c5784f293e7d108bdd7c26ea6ff",
+		"src/native-installation.ts": "06959e31907b6259da1adcb3f668346c4457aaea073544b6ee8666873fcadf7d",
 		"src/slack-browser-relay.ts": "5f5c2a0bcc67f4b0b6260e9052d743c32495fd774a54fe77f533f3bf0f6765fc",
 		"src/slack-browser.ts": "5bd1b60a76d0cbca638ecdfd538f7a6e1d091e8f4b60eb8420def81b3f4eee3a",
 		"src/yc-browser-relay.ts": "e3d88253dd5994b2d77008e250dafc4f77782e4d93a3ea25d265480b300e52ec",
 		"src/yc-browser.ts": "5be4412a38fb7afc89b87e446a2a54fcf265a038d9fe1c02e235b3b2cfae0190",
 		"extension/README.md": "46a6a74741edc422cf251f1def688aa41c81d06c4e94d1f9d1664c7f6893a769",
-		"extension/manifest.json": "de85d5c640b82990ceaeb997f8147b27e7f36780edcfa293999c747eb1f35808",
+		"extension/manifest.json": "869f1ab4e492ac035f2dd8cc8a27d8f5e697bab7f0166650b2727dd75b254292",
 		"extension/panel.css": "73888c46fb5c29be2803b4f0d103e75b0358bde7e2586515881a1f0e1a8d568d",
 		"extension/panel.html": "b5b99554791e75b87cac19454536922c2d571c172678f857da11633e6a4147bb",
 		"extension/panel.js": "3117a5491940934340e21cd19e887afe392fcdef4badf2f6ca65c24c9d684020",
 		"extension/providers.js": "f094274c072b70d6e8f96cd1fb6a2207efa02e890505027396674c7ef8aa4c53",
 		"extension/slack.js": "e5b32fe8b8d52857e6ae43d019c68e165b1b1c0319000a55cc30fec6e302aee5",
-		"extension/worker.js": "6840428870686351a37b9c3f92c7fabb0572821415569544d7c92be6b55b2099",
+		"extension/worker.js": "25215c30c2e39e4a664d19669a2674f32ac07e16f33f6959e3e337332b6687b5",
 		"extension/ycombinator.js": "f0801ac71c90d7e210ffcf8b0bedc83b31627c4eb5658e26afaa1c12478e3d28"
+	},
+	"compatibility": {
+		"nativeProtocol": 1,
+		"relayProtocol": 1,
+		"extensionMinimum": "0.4.1",
+		"chunkedTransferMinimum": "0.4.2"
 	}
 }

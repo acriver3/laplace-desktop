@@ -35,6 +35,84 @@ async function request(base, path, body, token) {
 		);
 	return response.json();
 }
+const chunkSize = 192 * 1024;
+const maxTransferBytes = 32 * 1024 * 1024;
+const encodeChunk = (bytes) => {
+	let text = "";
+	for (let i = 0; i < bytes.length; i += 8192)
+		text += String.fromCharCode(...bytes.subarray(i, i + 8192));
+	return btoa(text);
+};
+const transferDigest = async (bytes) =>
+	[...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
+async function requestArguments(stored, next) {
+	const transfer = next.argumentsTransfer;
+	if (!transfer) return next.args;
+	if (
+		!Number.isSafeInteger(transfer.bytes) ||
+		transfer.bytes < 1 ||
+		transfer.bytes > maxTransferBytes ||
+		transfer.chunks !== Math.ceil(transfer.bytes / chunkSize) ||
+		!/^[a-f0-9]{64}$/.test(transfer.sha256)
+	)
+		throw Error("Invalid arguments transfer.");
+	const bytes = new Uint8Array(transfer.bytes);
+	for (let index = 0; index < transfer.chunks; index++) {
+		const { data } = await request(
+			stored.base,
+			"/arguments-chunk",
+			{ id: next.id, index },
+			stored.token,
+		);
+		if (typeof data !== "string" || data.length > chunkSize * 2)
+			throw Error("Invalid arguments chunk.");
+		const decoded = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+		if (decoded.length !== Math.min(chunkSize, transfer.bytes - index * chunkSize))
+			throw Error("Invalid arguments chunk size.");
+		bytes.set(decoded, index * chunkSize);
+	}
+	if ((await transferDigest(bytes)) !== transfer.sha256)
+		throw Error("Arguments checksum mismatch.");
+	return JSON.parse(new TextDecoder().decode(bytes));
+}
+async function sendResult(stored, next, value) {
+	// Older relays have no chunk protocol. Preserve their existing JSON path.
+	if (next.resultLimit === undefined)
+		return request(stored.base, "/result", { id: next.id, ...value }, stored.token);
+	if (!value.ok) return request(stored.base, "/result", { id: next.id, ok: false }, stored.token);
+	const bytes = new TextEncoder().encode(JSON.stringify(value.result) ?? "null");
+	const limit = next.resultLimit ?? 1024 * 1024;
+	if (!Number.isSafeInteger(limit) || limit < 1 || limit > maxTransferBytes || bytes.length > limit)
+		throw Error("Response exceeds operation limit.");
+	if (bytes.length <= 512 * 1024)
+		return request(
+			stored.base,
+			"/result",
+			{ id: next.id, ok: true, result: value.result },
+			stored.token,
+		);
+	const description = {
+		bytes: bytes.length,
+		sha256: await transferDigest(bytes),
+		chunks: Math.ceil(bytes.length / chunkSize),
+	};
+	for (let index = 0; index < description.chunks; index++) {
+		await request(
+			stored.base,
+			"/result-chunk",
+			{
+				id: next.id,
+				index,
+				data: encodeChunk(bytes.subarray(index * chunkSize, (index + 1) * chunkSize)),
+				...(index === 0 ? { description } : {}),
+			},
+			stored.token,
+		);
+	}
+	return request(stored.base, "/result", { id: next.id, ok: true, transfer: true }, stored.token);
+}
 async function inTab(tabId, adapter, method, args, expected, workspace = expected?.workspace) {
 	if (method !== adapter.identify && !adapter.methods.includes(method)) return { ok: false };
 	const results = await chrome.scripting.executeScript({
@@ -88,10 +166,10 @@ async function pump(id) {
 						stored.tabId,
 						adapter,
 						next.method,
-						next.args,
+						await requestArguments(stored, next),
 						stored.identity,
 					).catch(() => ({ ok: false }));
-					await request(stored.base, "/result", { id: next.id, ...value }, stored.token);
+					await sendResult(stored, next, value);
 					if (!value.ok) {
 						await disconnect(id, stored.token);
 						return;

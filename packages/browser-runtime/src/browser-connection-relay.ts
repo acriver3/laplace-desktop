@@ -5,6 +5,14 @@ import { z } from "zod";
 
 import { identityKey, browserCandidate, type BrowserCandidate } from "./browser-approval";
 import { browserExtensionId } from "./browser-extension-id";
+import {
+	BrowserResultTransfer,
+	browserChunkSize,
+	browserJsonLimit,
+	browserTransferLimit,
+	describeTransfer,
+	transferLimit,
+} from "./browser-transfer";
 
 const secret = () => randomBytes(32).toString("base64url");
 const equal = (a: string, b: string) =>
@@ -14,12 +22,24 @@ export interface BrowserProvider {
 	label: string;
 	workspace: string;
 	identitySchema: z.ZodType<{ workspace: string; userId: string }>;
-	reads: Record<string, { method: string; schema: z.ZodType; write?: boolean }>;
+	reads: Record<
+		string,
+		{
+			method: string;
+			schema: z.ZodType;
+			write?: boolean;
+			maxInputBytes?: number;
+			maxResultBytes?: number;
+		}
+	>;
 }
 type Pending = {
 	id: string;
 	method: string;
 	args: unknown;
+	inputBytes: Buffer;
+	resultLimit: number;
+	transfer?: BrowserResultTransfer;
 	delivered: boolean;
 	write: boolean;
 	resolve: (value: unknown) => void;
@@ -31,7 +51,7 @@ async function json(request: IncomingMessage) {
 	let size = 0;
 	for await (const part of request) {
 		const buffer = Buffer.from(part);
-		if ((size += buffer.length) > 1024 * 1024) throw new Error("Response too large.");
+		if ((size += buffer.length) > browserJsonLimit) throw new Error("Response too large.");
 		parts.push(buffer);
 	}
 	return JSON.parse(Buffer.concat(parts).toString("utf8"));
@@ -216,17 +236,93 @@ export class BrowserConnectionRelay {
 				if (request.url === "/next") {
 					const next = [...this.pending.values()].find((item) => !item.delivered);
 					if (next) next.delivered = true;
-					result = { request: next ? { id: next.id, method: next.method, args: next.args } : null };
+					result = {
+						request: next
+							? {
+									id: next.id,
+									method: next.method,
+									...(next.inputBytes.length > browserJsonLimit / 2
+										? { argumentsTransfer: describeTransfer(next.inputBytes) }
+										: { args: next.args }),
+									resultLimit: next.resultLimit,
+								}
+							: null,
+					};
+				} else if (request.url === "/arguments-chunk") {
+					const { id, index } = z
+						.object({ id: z.string().uuid(), index: z.number().int().nonnegative() })
+						.strict()
+						.parse(body);
+					const pending = this.pending.get(id);
+					if (
+						!pending?.delivered ||
+						index >= Math.ceil(pending.inputBytes.length / browserChunkSize)
+					)
+						throw Error("Unknown browser transfer.");
+					result = {
+						data: pending.inputBytes
+							.subarray(index * browserChunkSize, (index + 1) * browserChunkSize)
+							.toString("base64"),
+					};
+				} else if (request.url === "/result-chunk") {
+					const parsed = z
+						.object({
+							id: z.string().uuid(),
+							index: z.number().int().nonnegative(),
+							data: z.string().max(browserChunkSize * 2),
+							description: z
+								.object({
+									bytes: z.number().int().positive(),
+									sha256: z.string().regex(/^[a-f0-9]{64}$/),
+									chunks: z.number().int().positive(),
+								})
+								.strict()
+								.optional(),
+						})
+						.strict()
+						.parse(body);
+					const pending = this.pending.get(parsed.id);
+					if (!pending?.delivered) throw Error("Unknown browser request.");
+					if (!pending.transfer) {
+						if (parsed.index !== 0 || !parsed.description)
+							throw Error("Missing browser transfer description.");
+						const allocated = [...this.pending.values()].reduce(
+							(sum, p) => sum + (p.transfer?.description.bytes ?? 0),
+							0,
+						);
+						if (allocated + parsed.description.bytes > browserTransferLimit * 2)
+							throw Error("Browser transfers busy.");
+						pending.transfer = new BrowserResultTransfer(parsed.description, pending.resultLimit);
+					} else if (parsed.description) throw Error("Transfer already started.");
+					pending.transfer.append(parsed.index, parsed.data);
+					result = { received: true };
 				} else if (request.url === "/result") {
 					const parsed = z
-						.object({ id: z.string().uuid(), ok: z.boolean(), result: z.unknown().optional() })
+						.object({
+							id: z.string().uuid(),
+							ok: z.boolean(),
+							result: z.unknown().optional(),
+							transfer: z.literal(true).optional(),
+						})
 						.strict()
 						.parse(body);
 					const pending = this.pending.get(parsed.id);
 					if (!pending?.delivered) throw new Error("Unknown request.");
+					let value = parsed.result;
+					if (parsed.ok) {
+						if (parsed.transfer) {
+							if (!pending.transfer || parsed.result !== undefined)
+								throw Error("Invalid transfer completion.");
+							value = pending.transfer.finish();
+						} else if (
+							pending.transfer ||
+							Buffer.byteLength(JSON.stringify(value) ?? "null") > pending.resultLimit
+						)
+							throw Error("Response too large.");
+					}
 					clearTimeout(pending.timer);
 					this.pending.delete(parsed.id);
-					if (parsed.ok) pending.resolve(redactBrowserResult(parsed.result));
+					if (parsed.ok) pending.resolve(redactBrowserResult(value));
 					else
 						pending.reject(
 							new Error(
@@ -350,6 +446,13 @@ export class BrowserConnectionRelay {
 			);
 		const definition = this.provider.reads[name]!;
 		const args = definition.schema.parse(input);
+		const inputBytes = Buffer.from(JSON.stringify(args));
+		if (inputBytes.length > transferLimit(definition.maxInputBytes))
+			throw Error("Browser arguments exceed this operation's transfer limit.");
+		const resultLimit = transferLimit(definition.maxResultBytes);
+		const allocated = [...this.pending.values()].reduce((sum, p) => sum + p.inputBytes.length, 0);
+		if (allocated + inputBytes.length > browserTransferLimit * 2)
+			throw Error("Browser transfers busy.");
 		if (!this.status().connected)
 			throw new Error(
 				"Approve the Laplace extension in your existing provider tab using Authenticate. No dedicated browser is started.",
@@ -380,6 +483,8 @@ export class BrowserConnectionRelay {
 				id,
 				method: definition.method,
 				args,
+				inputBytes,
+				resultLimit,
 				delivered: false,
 				write: definition.write === true,
 				resolve: finish(resolve),
