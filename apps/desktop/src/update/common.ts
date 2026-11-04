@@ -19,6 +19,7 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { z } from "zod";
 
 export const repository = "https://github.com/acriver3/laplace-desktop.git";
+const legacyRepository = "https://github.com/acriver3/Laplace.git";
 export const protocolVersion = 1;
 export const versionSchema = z.string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
 export const revisionSchema = z.string().regex(/^[a-f0-9]{40}$/);
@@ -28,7 +29,9 @@ export const installationSchema = z
 		protocol: z.literal(protocolVersion),
 		id: z.string().uuid(),
 		owner: z.string().min(1),
-		repository: z.literal(repository),
+		// The previous installer preserves its metadata when it accepts an update.
+		// Network requests always use the compiled-in public repository.
+		repository: z.enum([repository, legacyRepository]),
 		target: targetSchema,
 		path: z.string().refine(isAbsolute),
 		version: versionSchema,
