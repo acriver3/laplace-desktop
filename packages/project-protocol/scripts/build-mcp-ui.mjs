@@ -7,6 +7,13 @@ import { build } from "esbuild";
 {
 	const root = fileURLToPath(new URL("..", import.meta.url));
 	for (const widget of [
+        {
+            entry: "src/mcp/ui/broker/main.tsx",
+            styles: ["../src/mcp/ui/broker/style.css"],
+            output: "broker-approval-widget",
+            directory: "broker-approval-ui",
+            title: "Review credential matches",
+        },
 		{
 			entry: "src/mcp/ui/browser/main.tsx",
 			styles: ["../src/mcp/ui/browser/style.css"],

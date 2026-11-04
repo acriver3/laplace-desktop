@@ -1,3 +1,4 @@
+import { brokerCommand } from "@repo/project-protocol/credential-broker";
 import {
 	connectorAccess,
 	installRequest,
@@ -26,6 +27,12 @@ const origin = z
 		);
 	});
 export const helperInputs = {
+	"broker.authorizeAssistant": z.object({ principalId: z.string() }).strict(),
+	"broker.enabled": empty,
+	"broker.list": empty,
+	"broker.call": z
+		.object({ principalId: z.string(), requestId: z.string().uuid(), command: brokerCommand })
+		.strict(),
 	"browser.list": empty,
 	"browser.review": z.object({ requestId: z.string().uuid() }).strict(),
 	"browser.approve": z
@@ -227,6 +234,7 @@ export type DesktopSnapshot = {
 	stayLocalOnly: boolean;
 };
 export type HelperEvent =
+	| { event: "broker-focus" }
 	| { event: "browser-approval"; requestId: string }
 	| { event: "ready" }
 	| { event: "snapshot"; data: DesktopSnapshot }

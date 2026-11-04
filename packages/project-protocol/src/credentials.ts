@@ -1,10 +1,13 @@
 import { z } from "zod";
 
+import { brokerCommand } from "./credential-broker";
+
 const id = z.string().uuid();
 const routing = { accountId: z.string().max(200).optional(), installationId: id.optional() };
 const request = { ...routing, requestId: id };
 export const MAX_CREDENTIAL_BINDINGS = 10000;
 export const credentialInput = z.discriminatedUnion("action", [
+	z.object({ ...request, action: z.literal("broker"), command: brokerCommand }).strict(),
 	z.object({ ...routing, action: z.literal("devices") }).strict(),
 	z.object({ ...routing, action: z.enum(["status", "targets"]), requestId: id }).strict(),
 	z
@@ -155,7 +158,16 @@ export type CredentialAction = z.infer<typeof credentialAction>;
 export const credentialSettings = z
 	.object({
 		enabled: z.boolean().default(false),
+		wholeVaultMatching: z.boolean().default(false),
 		hosted: z.boolean().default(false),
+		brokerAssistants: z
+			.array(
+				z
+					.object({ id: z.string().startsWith("hosted:").max(200), name: z.string().max(200) })
+					.strict(),
+			)
+			.max(50)
+			.default([]),
 		bwPath: text.default("bw"),
 		managedBitwarden: z.boolean().default(false),
 		bitwardenServer: z

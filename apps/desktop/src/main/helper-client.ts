@@ -44,6 +44,7 @@ export class HelperClient {
 			"LANG",
 			"LC_ALL",
 			"LAPLACE_BROWSER_CONNECTION_ENABLED",
+			"ENABLE_CREDENTIAL_BROKERING",
 		])
 			if (process.env[key]) env[key] = process.env[key];
 		Object.assign(env, {

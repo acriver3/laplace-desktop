@@ -12,6 +12,7 @@ import { ChevronDown, FolderInput, Plus, RefreshCw, SearchIcon } from "lucide-re
 import { useState } from "react";
 
 import type { ServerSnapshot } from "../shared/helper-contracts";
+import { BrokerStart } from "./BrokerStart";
 import { CatalogConnectButton } from "./CatalogConnectButton";
 import { ConnectionIcon } from "./ConnectionIcon";
 import { Modal } from "./Dialogs";
@@ -105,10 +106,19 @@ export function LocalConnectionsPage({
 			notices={
 				<>
 					<PortableSetup />
+					<BrokerStart entries={available} label="Connect selected with assistant" batch />
 					{catalogDetails && (
 						<Modal title={catalogDetails.name} close={() => setCatalogDetails(undefined)}>
 							<div className="dialog-body stack">
 								<p>{catalogDetails.description}</p>
+								<BrokerStart
+									entries={[catalogDetails]}
+									label={
+										catalogDetails.installed
+											? "Reauthenticate with assistant"
+											: "Connect with assistant"
+									}
+								/>
 								{catalogDetails.demoOnly && <p>Demo Only</p>}
 								{!catalogDetails.available && <p>Unavailable on this platform</p>}
 							</div>
@@ -140,6 +150,12 @@ export function LocalConnectionsPage({
 													connected={server.status === "online"}
 													icon={<ConnectionIcon />}
 												>
+													{installedCatalog.get(server.id) && (
+														<BrokerStart
+															entries={[installedCatalog.get(server.id)!]}
+															label="Reauthenticate with assistant"
+														/>
+													)}
 													<DropdownMenu>
 														<DropdownMenuTrigger
 															render={<Button variant="outline" size="icon" />}

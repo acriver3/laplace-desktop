@@ -431,3 +431,59 @@ it("keeps large selections unlocked and exposes all metadata through bounded pag
 		credentialInput.safeParse({ action: "list", requestId: randomUUID(), cursor: "-1" }).success,
 	).toBe(false);
 });
+
+it("requires explicit whole-vault matching and strips values, notes and TOTP from discovery", async () => {
+	const f = await fixture();
+	expect(f.settings.wholeVaultMatching).toBe(false);
+	expect(await f.broker.brokerCandidates(f.principal)).toEqual([
+		{ id: f.id, label: "Example", origins: f.settings.bindings[0]!.origins },
+	]);
+	const item = {
+		id: f.itemId,
+		type: 1,
+		name: "Example account",
+		notes: "private-note-canary",
+		login: {
+			username: "synthetic-user",
+			password: f.secret,
+			totp: "private-totp-canary",
+			uris: [{ uri: "https://example.com/login" }],
+		},
+	};
+	const second = { ...item, id: randomUUID(), name: "Example other account" };
+	f.bw.mockImplementation(async (_path, args) =>
+		args[0] === "unlock"
+			? "test-session"
+			: JSON.stringify(args[0] === "list" ? [item, second] : item),
+	);
+	await f.broker.configure({ ...f.settings, wholeVaultMatching: true }, true);
+	const candidates = await f.broker.brokerCandidates(f.principal);
+	expect(candidates).toHaveLength(2);
+	expect(candidates[0]?.origins).toEqual(["https://example.com"]);
+	expect(JSON.stringify(candidates)).not.toMatch(
+		/synthetic-user|private-note|private-totp|test-only-secret/,
+	);
+	const use = vi.fn(async (values: Record<string, string>) => {
+		expect(values).toEqual({ username: "synthetic-user", password: f.secret });
+		return "filled";
+	});
+	expect(await f.broker.withBrokerLogin(f.principal, f.itemId, "https://example.com", use)).toBe(
+		"filled",
+	);
+	await expect(
+		f.broker.withBrokerLogin(f.principal, f.itemId, "https://evil.example", use),
+	).rejects.toThrow();
+	await f.broker.configure(f.settings, true);
+	await expect(
+		f.broker.withBrokerLogin(f.principal, second.id, "https://example.com", use),
+	).rejects.toThrow();
+});
+it("requires per-assistant hosted matching authorization and revokes it immediately", async () => {
+	const f = await fixture(),
+		principal = { ...f.principal, id: "hosted:fixture", hosted: true };
+	await expect(f.broker.brokerCandidates(principal)).rejects.toThrow("Authorize");
+	await f.broker.authorizeBrokerAssistant(principal);
+	expect(await f.broker.brokerCandidates(principal)).toHaveLength(1);
+	await f.broker.configure({ ...f.settings, brokerAssistants: [] }, true);
+	await expect(f.broker.brokerCandidates(principal)).rejects.toThrow();
+});

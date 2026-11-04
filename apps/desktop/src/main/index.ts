@@ -745,6 +745,11 @@ async function startHelper() {
 			else if (event.event === "snapshot") {
 				send("snapshot", event.data);
 				void syncDesktopNotifications();
+			} else if (event.event === "broker-focus") {
+				showLocal("servers");
+				window?.show();
+				window?.focus();
+				send("broker-focus", {});
 			} else if (event.event === "browser-approval") {
 				showLocal("servers");
 				window?.show();

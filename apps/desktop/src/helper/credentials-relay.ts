@@ -29,9 +29,12 @@ export function startCredentialRelay(manager: DesktopManager, broker: Credential
 				return;
 			}
 			const api = await manager.credentialRelayApi();
-			const result = z
-				.object({ jobs: z.array(jobSchema).max(10) })
-				.parse(await api.post("credentials/poll", { runId: manager.runId }));
+			const result = z.object({ jobs: z.array(jobSchema).max(10) }).parse(
+				await api.post("credentials/poll", {
+					runId: manager.runId,
+					...(process.env.ENABLE_CREDENTIAL_BROKERING === "true" ? { brokerVersion: 1 } : {}),
+				}),
+			);
 			broker.hostedState = "ready";
 			for (const job of result.jobs) {
 				if (stopped) return;
@@ -41,6 +44,15 @@ export function startCredentialRelay(manager: DesktopManager, broker: Credential
 					hosted: true,
 					authorize: async () => {
 						const api = await manager.credentialRelayApi();
+						if (job.input.action === "broker") {
+							z.object({ authorized: z.literal(true) }).parse(
+								await api.post("broker", {
+									action: "authorize",
+									sessionId: job.input.command.sessionId,
+								}),
+							);
+							return;
+						}
 						z.object({ authorized: z.literal(true) }).parse(
 							await api.post("credentials/authorize", { id: job.id, runId: manager.runId }),
 						);

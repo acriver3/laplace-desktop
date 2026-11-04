@@ -264,6 +264,36 @@ export function CredentialsPanel({
 				</div>
 				<div>
 					<h2>Bitwarden</h2>
+					{settings.brokerAssistants.map((a) => (
+						<p key={a.id}>
+							{a.name}{" "}
+							<button
+								type="button"
+								onClick={() =>
+									void perform(() =>
+										save({
+											brokerAssistants: settings.brokerAssistants.filter((p) => p.id !== a.id),
+										}),
+									)
+								}
+							>
+								Revoke matching access
+							</button>
+						</p>
+					))}
+					<label>
+						<input
+							type="checkbox"
+							checked={settings.wholeVaultMatching}
+							disabled={busy}
+							onChange={(e) => void perform(() => save({ wholeVaultMatching: e.target.checked }))}
+						/>
+						Allow assistants to match logins across my vault
+					</label>
+					<p className="small muted">
+						Shares login names and websites, including newly added logins. Each credential use still
+						needs approval.
+					</p>
 					<p className="muted">Let your assistants use the logins you choose.</p>
 				</div>
 			</div>
