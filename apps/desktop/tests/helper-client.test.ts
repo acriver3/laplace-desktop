@@ -95,3 +95,22 @@ it("waits for actual helper exit after shutdown acknowledgement", async () => {
 	expect(f.failed).not.toHaveBeenCalled();
 	expect(f.child.kill).not.toHaveBeenCalled();
 });
+
+
+it("withholds startup snapshots until catalog reads can succeed", async () => {
+	const f = fixture();
+	const snapshot = { endpoint: "http://127.0.0.1:1234", mode: "local-only" };
+	f.child.emit("message", { event: "snapshot", data: snapshot });
+	expect(f.changed).not.toHaveBeenCalled();
+	let request: Promise<unknown> | undefined;
+	f.changed.mockImplementation((event) => {
+		if (event.event === "snapshot") request = f.helper.request("catalog.list");
+	});
+	f.child.emit("message", { event: "ready" });
+	await f.started;
+	expect(f.changed).toHaveBeenCalledWith({ event: "snapshot", data: snapshot });
+	const message = f.child.send.mock.calls[0]![0] as { id: string; method: string };
+	expect(message.method).toBe("catalog.list");
+	f.child.emit("message", { id: message.id, result: [{ id: "fixture" }] });
+	await expect(request).resolves.toEqual([{ id: "fixture" }]);
+});

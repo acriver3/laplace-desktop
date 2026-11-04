@@ -83,8 +83,14 @@ export class HelperClient {
 						this.ready = true;
 						clearTimeout(timer);
 						resolve();
+						// Startup snapshots can arrive before the IPC listener is ready.
+						// Publish them only once renderer reads can actually succeed.
+						if (this.snapshot) this.event({ event: "snapshot", data: this.snapshot });
 					}
-					if (event.event === "snapshot") this.snapshot = event.data;
+					if (event.event === "snapshot") {
+						this.snapshot = event.data;
+						if (!this.ready) return;
+					}
 					this.event(event);
 				}
 			});
