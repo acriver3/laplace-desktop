@@ -17,7 +17,7 @@ function App() {
 		const route = result._meta?.brokerRouting as typeof routing.current | undefined;
 		if (route)
 			routing.current = {
-				tool: route.tool.replace(/_(review|approve)$/, ""),
+				tool: route.tool.replace(/_(show|review|approve|prepare)$/, ""),
 				accountId: route.accountId,
 				installationId: route.installationId,
 			};
@@ -87,7 +87,7 @@ function App() {
 				if (next.revision !== currentRevision)
 					throw Error("The review changed. Check the updated matches.");
 				const capability = fresh._meta?.brokerCapability;
-				if (typeof capability !== "string") throw Error("Approval unavailable. Open Desktop.");
+				if (typeof capability !== "string") throw Error("Approval unavailable. Refresh this card.");
 				const approved = await request("approve", { itemIds: ids, capability });
 				await askWithContext(
 					"I approved the selected credential mappings. Continue this broker session, inspect status, and pause for any MFA or provider consent. Do not replay completed submissions or business actions.",
@@ -95,7 +95,9 @@ function App() {
 				).catch(() => {});
 			} else await request(action);
 		} catch {
-			setError("Could not complete this request. Refresh and check Desktop before retrying.");
+			setError(
+				"Could not complete this request. Refresh this card to check its status before retrying.",
+			);
 		} finally {
 			locked.current = false;
 			setBusy(false);

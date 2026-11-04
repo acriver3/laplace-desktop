@@ -139,23 +139,39 @@ export const brokerToolInput = z
 	.strict();
 export function brokerTools(local = false) {
 	const prefix = local ? "local_credential_broker" : "credential_broker";
-	return ["", "_review", "_approve", "_prepare"].map((suffix) => ({
+	return ["", ...(local ? ["_show"] : []), "_review", "_approve", "_prepare"].map((suffix) => ({
 		name: prefix + suffix,
 		description:
-			suffix === "_approve"
-				? "Approve only the reviewed mappings selected by the user in the approval card."
-				: suffix === "_review"
-					? "Refresh the credential approval card."
-					: "Connect or reauthenticate selected services using approved Bitwarden logins or Doppler references. Before setup, call local_credentials status for Desktop opt-in guidance. Start, discover candidates, propose mappings, show review, poll status, or advance an approved login. Never request secret values. Authorize a new hosted assistant for metadata matching in Desktop first; vault unlock stays local. Hosted OAuth opens in the user’s regular Chrome profile through the Laplace extension after approval. Chrome may ask the user for site-specific extension access; no debugging connection is needed. Inspect and advance eligible login steps using the reviewed credential reference. MFA and OAuth consent require the user. Use a new requestId per operation; poll that same ID with poll=true while queued. Do not replay business actions after reauthentication.",
-		inputSchema: z.toJSONSchema(brokerToolInput) as { type: "object"; [key: string]: unknown },
+			suffix === "_show"
+				? "Show the credential review MCP App directly in chat after proposing matches. Pass command action review and the sessionId. The user approves in this card; never approve on their behalf. Use Desktop review only when the host cannot render MCP Apps."
+				: suffix === "_approve"
+					? "Approve only the reviewed mappings selected by the user in the approval card."
+					: suffix === "_review"
+						? "Refresh the credential approval card."
+						: `Connect or reauthenticate selected services using approved Bitwarden logins or Doppler references. Before setup, call local_credentials status for Desktop opt-in guidance. Start, discover candidates, propose mappings, then call ${local ? "local_credential_broker_show" : "credential_broker"} with command action review to display the approval MCP App in chat. Do not open Desktop for approval when MCP Apps are supported. Poll status or advance an approved login. Never request secret values. Authorize a new hosted assistant for metadata matching in Desktop first; vault unlock stays local. Hosted OAuth opens in the user’s regular Chrome profile through the Laplace extension after approval. Chrome may ask the user for site-specific extension access; no debugging connection is needed. Inspect and advance eligible login steps using the reviewed credential reference. MFA and OAuth consent require the user. Use a new requestId per operation; poll that same ID with poll=true while queued. Do not replay business actions after reauthentication.`,
+		inputSchema: z.toJSONSchema(
+			suffix === "_show"
+				? brokerToolInput.extend({
+						command: z
+							.object({ action: z.literal("review"), sessionId: id })
+							.strict()
+							.optional(),
+					})
+				: brokerToolInput,
+		) as { type: "object"; [key: string]: unknown },
 		_meta: {
 			ui: {
 				resourceUri: BROKER_UI_URI,
-				visibility: suffix === "_prepare" ? ["model"] : suffix ? ["app"] : ["app", "model"],
+				visibility:
+					suffix === "_prepare"
+						? ["model"]
+						: suffix && suffix !== "_show"
+							? ["app"]
+							: ["app", "model"],
 			},
 		},
 		annotations: {
-			readOnlyHint: suffix === "_review",
+			readOnlyHint: suffix === "_review" || suffix === "_show",
 			destructiveHint: false,
 			openWorldHint: true,
 			idempotentHint: false,
@@ -174,7 +190,7 @@ export function checkBrokerTool(name: string, input: z.infer<typeof brokerToolIn
 	if (
 		name.endsWith("_approve")
 			? action !== "approve"
-			: name.endsWith("_review")
+			: name.endsWith("_review") || name.endsWith("_show")
 				? action !== "review"
 				: action === "approve"
 	)

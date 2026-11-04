@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { EntryFactory } from "@repo/local-mcp-core/store";
 import {
 	brokerMcpResult,
+	brokerTools,
 	checkBrokerTool,
 	brokerToolInput,
 } from "@repo/project-protocol/credential-broker";
@@ -331,7 +332,7 @@ it("cancellation prevents the next batch item, even if an in-flight operation co
 	).toBe(true);
 });
 
-it.each(["local_credential_broker", "credential_broker"])(
+it.each(["local_credential_broker", "credential_broker", "local_credential_broker_show"])(
 	"renders and approves the actual MCP card over %s routing",
 	async (tool) => {
 		const { chromium } = await import("@playwright/test");
@@ -414,7 +415,10 @@ it.each(["local_credential_broker", "credential_broker"])(
 			await card.getByRole("button", { name: "Approve selected", exact: true }).click();
 			await vi.waitFor(() => expect(f.adapter.execute).toHaveBeenCalledTimes(1));
 			expect(calls.map((c) => c.name)).toEqual(
-				expect.arrayContaining([tool + "_review", tool + "_approve"]),
+				expect.arrayContaining([
+					tool.replace(/_show$/, "") + "_review",
+					tool.replace(/_show$/, "") + "_approve",
+				]),
 			);
 			await vi.waitFor(() => expect(modelContexts.length).toBe(1));
 			const approval = calls.find((c) => c.name.endsWith("_approve"))!.arguments as {
@@ -484,4 +488,29 @@ it("never resubmits the same browser page through a different request ID", async
 	).rejects.toThrow("already submitted");
 	expect(f.adapter.browser).toHaveBeenCalledTimes(1);
 	await f.call({ action: "cancel" });
+});
+
+it("exposes chat review to the model while keeping approval app-only", () => {
+	const list = brokerTools(true);
+	const show = list.find((t) => t.name === "local_credential_broker_show")!;
+	expect(show._meta.ui.visibility).toContain("model");
+	expect(show._meta.ui.resourceUri).toBe("ui://laplace/credential-broker.html");
+	expect(
+		list.find((t) => t.name === "local_credential_broker_approve")!._meta.ui.visibility,
+	).toEqual(["app"]);
+	const sessionId = randomUUID();
+	expect(() =>
+		checkBrokerTool(show.name, {
+			requestId: randomUUID(),
+			command: { action: "review", sessionId },
+		}),
+	).not.toThrow();
+	for (const action of ["approve", "desktop", "cancel", "status"]) {
+		expect(() =>
+			checkBrokerTool(show.name, {
+				requestId: randomUUID(),
+				command: { action, sessionId } as any,
+			}),
+		).toThrow();
+	}
 });
