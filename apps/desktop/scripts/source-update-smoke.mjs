@@ -117,7 +117,7 @@ try {
 	};
 	await api.writeJson(join(root, "installation.json"), installation);
 	if (process.platform !== "win32") process.env.PATH = "/usr/bin:/bin";
-	await api.probePackage(destination, target, baselineVersion, root);
+	await api.probePackage(destination, target, baselineVersion, root, undefined, process.stderr);
 	console.log("Version N starts. Downloading and building N+1 through the source updater…");
 	const tags = await api.run(
 		git,

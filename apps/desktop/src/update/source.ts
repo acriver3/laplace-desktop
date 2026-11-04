@@ -39,13 +39,14 @@ export async function probePackage(
 	version: string,
 	root: string,
 	signal?: AbortSignal,
+	probeStderr?: NodeJS.WriteStream,
 ) {
 	const nonce = randomUUID(),
 		profile = join(root, "probe", nonce);
 	await mkdir(profile, { recursive: true, mode: 0o700 });
 	const child = spawn(executable(path, target), [`--laplace-update-probe=${nonce}`], {
 		env: { ...toolEnvironment(), LAPLACE_DESKTOP_TEST_ROOT: profile },
-		stdio: "ignore",
+		stdio: probeStderr ? ["ignore", "ignore", probeStderr] : "ignore",
 		windowsHide: true,
 	});
 	let failed = false,

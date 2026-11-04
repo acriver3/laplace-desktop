@@ -4,6 +4,9 @@ packages:
   - packages/*
   - tooling/*
 
+onlyBuiltDependencies:
+  - electron-winstaller
+
 # The resolver imports Zod without declaring it; bind it to the SaaS catalog
 # instead of whichever Zod version another application happens to hoist.
 packageExtensions:
