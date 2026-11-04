@@ -36,10 +36,6 @@ jobs:
         run: node -e "if (process.platform + '-' + process.arch !== process.argv[1]) process.exit(1)" ${{ matrix.target }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @repo/desktop make
-      - run: pnpm --filter @repo/desktop type-check
-      - run: pnpm --filter @repo/desktop test
-      - run: pnpm --filter @repo/desktop test:electron --packaged
-      - run: pnpm --filter @repo/desktop test:native --packaged
       - name: Create portable Windows ZIP with standard entry paths
         if: runner.os == 'Windows'
         working-directory: apps/desktop
@@ -56,4 +52,8 @@ jobs:
             apps/desktop/out/make/squirrel.windows/**/*-full.nupkg
             apps/desktop/out/make/squirrel.windows/**/LaplaceSetup.exe
           if-no-files-found: error
+      - run: pnpm --filter @repo/desktop type-check
+      - run: pnpm --filter @repo/desktop test
+      - run: pnpm --filter @repo/desktop test:electron --packaged
+      - run: pnpm --filter @repo/desktop test:native --packaged
       - run: pnpm --filter @repo/desktop test:source-update
