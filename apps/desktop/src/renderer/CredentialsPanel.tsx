@@ -815,7 +815,12 @@ export function CredentialsPanel({
 			)}
 			{step === "browser" && (
 				<div className="stack">
-					<h3>Connect a browser</h3>
+					<h3>Connect a browser (optional)</h3>
+					<p>
+						Hosted connections using Connect with assistant open a separate Laplace browser
+						automatically after you approve the credential match. The options below are for direct
+						browser-fill tools.
+					</p>
 					<p>
 						Use a compatible browser your assistant already controls, or open a separate browser for
 						your assistant. Your usual browser stays unchanged.

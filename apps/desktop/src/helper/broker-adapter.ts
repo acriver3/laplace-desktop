@@ -20,7 +20,8 @@ export function desktopBrokerAdapter(
 	portable: PortableConnectors,
 	focus: () => void,
 ): ConnectionBrokerAdapter {
-	const browser = new BrokerBrowser(() => credentials.snapshot().settings.cdpEndpoint);
+	const localBrowser = new BrokerBrowser(() => credentials.snapshot().settings.cdpEndpoint);
+	const managedBrowser = new BrokerBrowser(() => credentials.brokerBrowser.endpoint());
 	async function authorize(principal: CredentialPrincipal) {
 		if (!credentialBrokeringEnabled()) throw Error("Credential brokering is disabled.");
 		await principal.authorize();
@@ -152,14 +153,22 @@ export function desktopBrokerAdapter(
 		async execute(principal, session, item, signal) {
 			await authorize(principal);
 			if (item.target.location === "cloud") {
+				const needsBrowser = item.target.authType === "oauth2";
+				if (needsBrowser) {
+					await credentials.brokerBrowser.ensureOwned(signal);
+					signal.throwIfAborted();
+					await validate(principal, session, item);
+				}
 				const result = (await gateway(session, "execute", item)) as { authorizationUrl?: string };
 				const out = receipt(result);
 				if (result.authorizationUrl) {
 					try {
-						out.browserTargetId = await browser.open(result.authorizationUrl, signal);
+						out.browserTargetId = await managedBrowser.open(result.authorizationUrl, signal);
+						out.message =
+							"Sign-in opened in the Laplace browser. Inspect and advance the approved login; pause for MFA and OAuth consent.";
 					} catch {
 						out.message =
-							"Setup is staged. Configure the Desktop browser or continue through the setup request manually.";
+							"Setup is staged, but the sign-in tab could not open. Continue through the setup request manually; do not repeat the connection request.";
 						focus();
 					}
 				}
@@ -236,6 +245,7 @@ export function desktopBrokerAdapter(
 			return out;
 		},
 		async browser(principal, session, item, command, signal) {
+			const browser = item.target.location === "cloud" ? managedBrowser : localBrowser;
 			await authorize(principal);
 			if (command.operation === "verify") {
 				if (item.target.location === "cloud")

@@ -146,7 +146,7 @@ export function brokerTools(local = false) {
 				? "Approve only the reviewed mappings selected by the user in the approval card."
 				: suffix === "_review"
 					? "Refresh the credential approval card."
-					: "Connect or reauthenticate selected services using approved Bitwarden logins or Doppler references. Before setup, call local_credentials status for Desktop opt-in guidance. Start, discover candidates, propose mappings, show review, poll status, or advance an approved login. Never request secret values. Authorize a new hosted assistant for metadata matching in Desktop first; vault unlock stays local. MFA and OAuth consent require the user. Use a new requestId per operation; poll that same ID with poll=true while queued. Do not replay business actions after reauthentication.",
+					: "Connect or reauthenticate selected services using approved Bitwarden logins or Doppler references. Before setup, call local_credentials status for Desktop opt-in guidance. Start, discover candidates, propose mappings, show review, poll status, or advance an approved login. Never request secret values. Authorize a new hosted assistant for metadata matching in Desktop first; vault unlock stays local. Hosted OAuth opens a separate Laplace browser automatically after approval; no browser connection setup is needed. Inspect and advance eligible login steps using the reviewed credential reference. MFA and OAuth consent require the user. Use a new requestId per operation; poll that same ID with poll=true while queued. Do not replay business actions after reauthentication.",
 		inputSchema: z.toJSONSchema(brokerToolInput) as { type: "object"; [key: string]: unknown },
 		_meta: {
 			ui: {

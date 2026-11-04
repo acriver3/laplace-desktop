@@ -52,6 +52,7 @@ export class CredentialBrowser {
 	private name?: string;
 	private available = false;
 	private checking?: Promise<void>;
+	private opening?: Promise<string>;
 	private checkedAt = 0;
 	private generation = 0;
 	constructor(
@@ -82,7 +83,7 @@ export class CredentialBrowser {
 		await this.checking;
 		return this.state();
 	}
-	async discover() {
+	async discover(installedOnly = false) {
 		this.choices.clear();
 		const installed =
 			process.platform === "darwin"
@@ -126,6 +127,8 @@ export class CredentialBrowser {
 					executable,
 				});
 			} catch {}
+		if (installedOnly)
+			return [...this.choices.values()].map(({ id, name, kind }) => ({ id, name, kind }));
 		let commands: string[] = [];
 		try {
 			if (process.platform === "darwin") {
@@ -202,7 +205,8 @@ export class CredentialBrowser {
 		this.changed();
 		return item.endpoint;
 	}
-	async launch(key: string) {
+	async launch(key: string, signal?: AbortSignal) {
+		signal?.throwIfAborted();
 		const item = this.choices.get(key);
 		if (!item?.executable || this.owned) throw new CredentialSetupError("browser");
 		const generation = ++this.generation;
@@ -241,6 +245,7 @@ export class CredentialBrowser {
 		});
 		try {
 			for (let attempt = 0; attempt < 60; attempt++) {
+				signal?.throwIfAborted();
 				if (generation !== this.generation || failed || child.exitCode !== null)
 					throw new CredentialSetupError("browser");
 				let port = 0;
@@ -266,6 +271,31 @@ export class CredentialBrowser {
 			throw error;
 		}
 	}
+	endpoint() {
+		return this.selected;
+	}
+	/** Starts only a dedicated profile; never auto-attaches to a discovered user browser. */
+	async ensureOwned(signal: AbortSignal) {
+		signal.throwIfAborted();
+		if (this.opening) return this.opening;
+		const generation = this.generation;
+		this.opening = (async () => {
+			if (this.owned && (await checkBrowser(this.selected, signal))) return this.selected;
+			signal.throwIfAborted();
+			if (generation !== this.generation) throw new CredentialSetupError("cancelled");
+			if (this.owned) await this.close();
+			const launchGeneration = this.generation;
+			const choices = (await this.discover(true)).filter((c) => c.kind === "installed");
+			signal.throwIfAborted();
+			if (launchGeneration !== this.generation) throw new CredentialSetupError("cancelled");
+			if (!choices.length) throw new CredentialSetupError("browser");
+			return this.launch(choices[0]!.id, signal);
+		})().finally(() => {
+			this.opening = undefined;
+		});
+		return this.opening;
+	}
+
 	async close() {
 		this.generation++;
 		const child = this.owned;

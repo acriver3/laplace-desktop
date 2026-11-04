@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import { EncryptedStore } from "@repo/local-mcp-core/encrypted-store";
 import type { EntryFactory } from "@repo/local-mcp-core/store";
@@ -79,6 +79,7 @@ export class CredentialBroker {
 
 	readonly connection: BitwardenConnectionManager;
 	readonly browser: CredentialBrowser;
+	readonly brokerBrowser: CredentialBrowser;
 	hostedState: CredentialSnapshot["hostedState"] = "disabled";
 	private settings = credentialSettings.parse({});
 	private store: EncryptedStore<CredentialSettings>;
@@ -100,6 +101,7 @@ export class CredentialBroker {
 	) {
 		this.connection = new BitwardenConnectionManager(root, resources, changed);
 		this.browser = new CredentialBrowser(root, resources, changed);
+		this.brokerBrowser = new CredentialBrowser(join(root, "broker-browser"), resources, changed);
 		this.store = new EncryptedStore(
 			root,
 			"credentials",
@@ -256,6 +258,7 @@ export class CredentialBroker {
 	async disconnectConnection() {
 		this.lock();
 		await this.browser.close();
+		await this.brokerBrowser.close();
 		if (this.settings.managedBitwarden) await this.connection.disconnect();
 		await this.configure({
 			...this.settings,
@@ -351,6 +354,7 @@ export class CredentialBroker {
 		clearInterval(this.timer);
 		this.lock();
 		void this.browser.close();
+		void this.brokerBrowser.close();
 	}
 	revokePrincipal(id: string) {
 		let changed = false;
@@ -787,10 +791,11 @@ export class CredentialBroker {
 		if (input.action === "status")
 			return {
 				unlocked: !!this.session && Date.now() < this.unlockedUntil,
+				brokerBrowserAutomatic: true,
 				browserConfigured: !!this.settings.cdpEndpoint,
 				browserAvailable: (await this.browser.health(this.settings.cdpEndpoint)).available,
 				browserGuidance:
-					"Connect your browser tools to the selected Laplace browser session. Browser availability does not confirm your tools are attached. Cloud-only browsers cannot connect to a local endpoint.",
+					"Hosted OAuth through local_credential_broker opens a separate Desktop browser automatically after approval. Manual browser configuration is only needed for legacy fill/targets operations. Browser availability does not confirm external browser tools are attached.",
 				...(!op.principal.hosted && this.settings.cdpEndpoint
 					? { browserEndpoint: this.settings.cdpEndpoint }
 					: {}),

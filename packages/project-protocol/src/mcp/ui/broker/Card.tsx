@@ -54,7 +54,7 @@ export function BrokerReviewCard({
 					<p>
 						Access:{" "}
 						{item.target.authType === "oauth2"
-							? "provider OAuth permissions, shown separately on its consent page"
+							? "open a separate Laplace browser and fill the approved login; provider OAuth permissions are shown separately on its consent page"
 							: item.target.authType === "browser"
 								? "sign in to the selected browser account"
 								: "configure and verify the listed credential fields"}
