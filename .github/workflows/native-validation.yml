@@ -35,8 +35,25 @@ jobs:
       - name: Verify native target
         run: node -e "if (process.platform + '-' + process.arch !== process.argv[1]) process.exit(1)" ${{ matrix.target }}
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @repo/desktop package
+      - run: pnpm --filter @repo/desktop make
       - run: pnpm --filter @repo/desktop type-check
       - run: pnpm --filter @repo/desktop test
       - run: pnpm --filter @repo/desktop test:electron --packaged
       - run: pnpm --filter @repo/desktop test:native --packaged
+      - run: pnpm --filter @repo/desktop test:source-update
+      - name: Create portable Windows ZIP with standard entry paths
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $destination = "out/make/zip/win32/x64/Laplace-win32-x64-$version.zip"
+          python -c "import pathlib,sys,zipfile; root=pathlib.Path('out/Laplace-win32-x64'); files=sorted(p for p in root.rglob('*') if p.is_file()); assert files; z=zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED); [z.write(p,p.relative_to(root).as_posix()) for p in files]; z.close()" $destination
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-${{ matrix.target }}
+          path: |
+            apps/desktop/out/make/zip/**/*.zip
+            apps/desktop/out/make/squirrel.windows/**/*-full.nupkg
+            apps/desktop/out/make/squirrel.windows/**/LaplaceSetup.exe
+          if-no-files-found: error
