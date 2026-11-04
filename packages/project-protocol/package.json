@@ -45,7 +45,8 @@
 		"./setup-notifications": "./src/setup-notifications.ts",
 		"./credential-broker": "./src/credential-broker.ts",
 		"./mcp/broker-approval-resource": "./src/mcp/broker-approval-resource.ts",
-		"./mcp/broker-approval-card": "./src/mcp/ui/broker/Card.tsx"
+		"./mcp/broker-approval-card": "./src/mcp/ui/broker/Card.tsx",
+		"./local-mcp-setup": "./src/local-mcp-setup.ts"
 	},
 	"scripts": {
 		"test": "node scripts/build-mcp-ui.mjs && vitest run",

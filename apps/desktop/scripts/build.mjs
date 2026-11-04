@@ -1,3 +1,4 @@
+import { verifyBrowserRuntime } from "../../../packages/browser-runtime/scripts/verify-source.mjs";
 import { execFileSync } from "node:child_process";
 import { mkdir, copyFile, cp } from "node:fs/promises";
 import { join } from "node:path";
@@ -14,6 +15,7 @@ execFileSync(
 	[resolve(root, "../../packages/project-protocol/scripts/build-mcp-ui.mjs")],
 	{ stdio: "inherit" },
 );
+await verifyBrowserRuntime();
 await mkdir("dist/main", { recursive: true });
 await build({
 	entryPoints: [
@@ -63,7 +65,9 @@ await mkdir("resources", { recursive: true });
 await copyFile("../../packages/ui/brand/app-icon.svg", "resources/icon.svg");
 await import("./icons.mjs");
 
-await cp("browser-extension", "resources/browser-extension", { recursive: true });
+await cp("../../packages/browser-runtime/extension", "resources/browser-extension", {
+	recursive: true,
+});
 // Development uses resources directly; packaged builds copy dist/helper here too.
 await mkdir("resources/helper", { recursive: true });
 await copyFile("dist/helper/slack-browser.cjs", "resources/helper/slack-browser.cjs");

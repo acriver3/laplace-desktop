@@ -1,2 +1,1 @@
-// Derived from the public key in browser-extension/manifest.json.
-export const browserExtensionId = "gfiilmbgjaoebjpjifdhbedmapcbeokl";
+export * from "@repo/browser-runtime/browser-extension-id";

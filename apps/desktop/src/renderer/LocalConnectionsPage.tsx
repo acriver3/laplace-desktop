@@ -113,6 +113,11 @@ export function LocalConnectionsPage({
 						<Modal title={catalogDetails.name} close={() => setCatalogDetails(undefined)}>
 							<div className="dialog-body stack">
 								<p>{catalogDetails.description}</p>
+								{catalogDetails.setupUrl && (
+									<a href={catalogDetails.setupUrl} target="_blank" rel="noreferrer">
+										Setup instructions
+									</a>
+								)}
 								<BrokerStart
 									entries={[catalogDetails]}
 									label={

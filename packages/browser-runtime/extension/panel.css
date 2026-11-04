@@ -1,0 +1,30 @@
+body {
+	width: 340px;
+	padding: 16px;
+	font:
+		14px/1.5 system-ui,
+		sans-serif;
+	color: #192c34;
+	background: #f7faf9;
+}
+h1 {
+	font-size: 20px;
+}
+input {
+	box-sizing: border-box;
+	width: 100%;
+	padding: 8px;
+	margin: 6px 0 10px;
+}
+button {
+	padding: 8px 12px;
+	margin: 6px 0;
+	cursor: pointer;
+}
+#identity {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+#status {
+	overflow-wrap: anywhere;
+}

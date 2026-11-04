@@ -1,0 +1,13 @@
+{
+	"name": "@repo/browser-runtime",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./*": "./src/*.ts"
+	},
+	"dependencies": {
+		"zod": "catalog:"
+	},
+	"license": "Apache-2.0"
+}

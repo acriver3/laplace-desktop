@@ -1,4 +1,6 @@
 export interface CatalogEntry {
+	setupUrl?: string;
+	browserMode?: "tethered" | "background-browser";
 	id: string;
 	name: string;
 	description: string;

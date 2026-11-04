@@ -25,27 +25,13 @@ it("prepares connector-specific guidance without saved settings or credentials",
 		credentials: { token: "secret-canary" },
 	};
 	const prompt = catalogSetupPrompt(entry, "Local development");
-	for (const text of [
-		"Slack",
-		"1.2.3",
-		"Local development",
-		"Slack workspace URL (required)",
-		"registered local MCP connection",
-		"local_connectors_list",
-		"local_connectors_status",
-		"local_connectors_install",
-		"idempotencyKey",
-		"local_connectors_authenticate",
-		"local_connectors_verify",
-		"ask before removing",
-		"MFA",
-	])
-		expect(prompt).toContain(text);
+	expect(prompt).toBe(
+		"Please set up Slack with Laplace using these instructions: https://connect.laplaceop.com/local-mcp/setup/slack-mcp-server?environment=Local+development&version=1.2.3",
+	);
 	expect(prompt).not.toContain("secret-canary");
 	expect(prompt).not.toContain("private-workspace");
 	expect(prompt).not.toContain("Set up manually");
 	expect(prompt).not.toContain("click Connect");
-	expect(prompt).toContain("do not silently switch to UI automation");
 });
 
 it("uses the web handoff destinations and retains copy-only and oversized prompts", () => {

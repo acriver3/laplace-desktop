@@ -604,6 +604,8 @@ export class CatalogInstaller {
 			...bundleCatalog.map((entry) => ({
 				id: entry.id,
 				name: entry.name,
+				setupUrl: entry.setupUrl,
+				browserMode: entry.browserMode,
 				description: entry.description,
 				version: entry.version,
 				demoOnly: entry.demoOnly === true,

@@ -1,3 +1,4 @@
+import { localConnectorMetadata } from "@repo/project-protocol/local-mcp-setup";
 import {
 	bundleEntrySchema,
 	bundleArtifactSchema,
@@ -38,6 +39,8 @@ const entrySchema = bundleEntrySchema
 	.extend({
 		recipe: z.enum(["canvas", "linkedin", "yale-som-ems", "outlook", "slack-ready", "yc-demo"]),
 		demoOnly: z.boolean().optional(),
+		setupUrl: z.string().url(),
+		browserMode: z.enum(["tethered", "background-browser"]),
 		artifacts: z.array(artifactSchema),
 	})
 	.strip();
@@ -46,6 +49,7 @@ export type BundleArtifact = z.infer<typeof artifactSchema>;
 export const bundleCatalog = snapshot.map((item) =>
 	entrySchema.parse({
 		...item,
+		...localConnectorMetadata(item.id),
 		...(item.recipe === "slack-ready"
 			? {
 					description:
@@ -61,6 +65,7 @@ export const bundleCatalog = snapshot.map((item) =>
 			: {}),
 		...(browserConnectionsEnabled() && item.recipe === "slack-ready"
 			? {
+					...localConnectorMetadata(item.id, true),
 					description:
 						"Read Slack through a user-approved Laplace extension in your existing browser. No separate browser or session import.",
 					version: slackBrowserVersion,
@@ -96,7 +101,7 @@ export function bundleAvailable(artifact: BundleArtifact) {
 bundleCatalog.push(
 	entrySchema.parse({
 		id: "ycombinator-demo",
-		name: "Y Combinator",
+		...localConnectorMetadata("ycombinator-demo"),
 		demoOnly: true,
 		description:
 			"Demo Only: read YC applications and save draft answers through your approved browser tab.",
