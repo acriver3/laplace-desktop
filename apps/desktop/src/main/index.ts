@@ -1142,7 +1142,7 @@ async function createWindow() {
 	if (!updateProbe) window.show();
 	await startHelper();
 	if (updateProbe) {
-		if (state.helperError) throw new Error("Update probe helper failed.");
+		if (state.helperError) throw new Error(`Update probe helper failed: ${state.helperError}`);
 		await writeFile(
 			join(app.getPath("userData"), "update-probe.json"),
 			JSON.stringify({ nonce: updateProbe, version: app.getVersion() }),
@@ -1416,6 +1416,11 @@ void app
 		);
 	})
 	.catch((error: Error) => {
+		if (updateProbe) {
+			console.error(error.message);
+			app.exit(1);
+			return;
+		}
 		dialog.showErrorBox("Laplace could not start", error.message);
 		quitting = true;
 		app.quit();
