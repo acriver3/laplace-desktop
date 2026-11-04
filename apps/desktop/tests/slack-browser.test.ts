@@ -147,7 +147,7 @@ it("expires pairing and approval and rejects late/replayed results", async () =>
 });
 it("keeps extension identity stable and never requests cookie or debugger access", async () => {
 	const manifest = JSON.parse(
-		await readFile(new URL("../browser-extension/manifest.json", import.meta.url), "utf8"),
+		await readFile(new URL("../../../packages/browser-runtime/extension/manifest.json", import.meta.url), "utf8"),
 	);
 	const id = createHash("sha256")
 		.update(Buffer.from(manifest.key, "base64"))
