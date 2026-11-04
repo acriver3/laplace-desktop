@@ -169,6 +169,7 @@ export async function run(
 		timeout?: number;
 		message?: string;
 		toolPath?: string;
+		home?: string;
 	} = {},
 ): Promise<string> {
 	if (options.signal?.aborted) throw new UpdateError("cancelled", "Update cancelled.");
@@ -178,6 +179,7 @@ export async function run(
 			env: {
 				...toolEnvironment(options.authentication),
 				...(options.toolPath ? { PATH: options.toolPath } : {}),
+				...(options.home ? { HOME: options.home } : {}),
 			},
 			shell: false,
 			windowsHide: true,

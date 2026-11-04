@@ -33,20 +33,26 @@ const { releaseSigningPublicKey } = packageJson as typeof packageJson & {
 	releaseSigningPublicKey?: string;
 };
 
+type ProbeOptions = { stderr?: NodeJS.WriteStream; home?: string };
+
 export async function probePackage(
 	path: string,
 	target: string,
 	version: string,
 	root: string,
 	signal?: AbortSignal,
-	probeStderr?: NodeJS.WriteStream,
+	options?: ProbeOptions,
 ) {
 	const nonce = randomUUID(),
 		profile = join(root, "probe", nonce);
 	await mkdir(profile, { recursive: true, mode: 0o700 });
 	const child = spawn(executable(path, target), [`--laplace-update-probe=${nonce}`], {
-		env: { ...toolEnvironment(), LAPLACE_DESKTOP_TEST_ROOT: profile },
-		stdio: probeStderr ? ["ignore", "ignore", probeStderr] : "ignore",
+		env: {
+			...toolEnvironment(),
+			...(options?.home ? { HOME: options.home } : {}),
+			LAPLACE_DESKTOP_TEST_ROOT: profile,
+		},
+		stdio: options?.stderr ? ["ignore", "ignore", options.stderr] : "ignore",
 		windowsHide: true,
 	});
 	let failed = false,
@@ -96,13 +102,13 @@ export async function probePackage(
 		)
 			await delay(100);
 		if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-		await cleanupProbeCredentials(path, target, profile);
+		await cleanupProbeCredentials(path, target, profile, options?.home);
 		await rm(profile, { recursive: true, force: true });
 	}
 }
 
 /** Only keys in this updater-created isolated profile are removed. */
-export async function cleanupProbeCredentials(path: string, target: string, profile: string) {
+export async function cleanupProbeCredentials(path: string, target: string, profile: string, home?: string) {
 	const ownedProfile = join(profile, "profiles", "hosted");
 	// A read-only startup normally creates no credentials. In particular, do not
 	// require an unlocked keychain merely to discard an empty verification profile.
@@ -124,6 +130,7 @@ export async function cleanupProbeCredentials(path: string, target: string, prof
 			namespace,
 		],
 		{
+			home,
 			message:
 				"Could not clean up the isolated verification keychain entries. Retry after unlocking your keychain.",
 		},
@@ -136,6 +143,7 @@ export async function prepareSource(
 	root: string,
 	phase: (phase: DesktopUpdateState["phase"]) => void,
 	signal?: AbortSignal,
+	probeOptions?: ProbeOptions,
 ) {
 	await validateTools(installation);
 	await requireSpace(root);
@@ -205,7 +213,7 @@ export async function prepareSource(
 		);
 		const candidate = stagedPackage(root, id);
 		await cp(output, candidate, { recursive: true, verbatimSymlinks: true });
-		await probePackage(candidate, installation.target, release.version, root, signal);
+		await probePackage(candidate, installation.target, release.version, root, signal, probeOptions);
 		const pending: PendingUpdate = {
 			id,
 			installationId: installation.id,

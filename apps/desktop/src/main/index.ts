@@ -1300,7 +1300,13 @@ void app
 		});
 		await point.initialize().catch((error) => point?.initializationFailed(error));
 		if (updateAcceptance && !state.helperError)
-			await acknowledgeUpdate(updateAcceptance, app.getVersion());
+			await acknowledgeUpdate(
+				updateAcceptance,
+				app.getVersion(),
+				process.env.LAPLACE_DESKTOP_TEST_ROOT
+					? process.env.LAPLACE_DESKTOP_TEST_UPDATE_ROOT
+					: undefined,
+			);
 		if (app.isPackaged && !updateProbe && !process.env.LAPLACE_DESKTOP_TEST_ROOT) {
 			updater = new SourceUpdater(app.getVersion(), process.execPath, (updates) => {
 				state.updates = updates;

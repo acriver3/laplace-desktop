@@ -117,7 +117,11 @@ try {
 	};
 	await api.writeJson(join(root, "installation.json"), installation);
 	if (process.platform !== "win32") process.env.PATH = "/usr/bin:/bin";
-	await api.probePackage(destination, target, baselineVersion, root, undefined, process.stderr);
+	// Keep the native login keychain available to the app while Git and installer
+	// metadata remain in the fixture home. Profile keys stay fixture-scoped.
+	const keychainHome = process.platform === "darwin" ? originalHome : undefined;
+	const probeOptions = { stderr: process.stderr, home: keychainHome };
+	await api.probePackage(destination, target, baselineVersion, root, undefined, probeOptions);
 	console.log("Version N starts. Downloading and building N+1 through the source updater…");
 	const tags = await api.run(
 		git,
@@ -126,9 +130,16 @@ try {
 	);
 	const release = api.selectRelease(tags, baselineVersion);
 	assert.equal(release.commit, after);
-	await api.prepareSource(installation, release, root, (phase) => console.log(`Update: ${phase}`));
+	await api.prepareSource(
+		installation,
+		release,
+		root,
+		(phase) => console.log(`Update: ${phase}`),
+		undefined,
+		probeOptions,
+	);
 	const isolatedProfile = join(scratch, "user-profile");
-	cleanupProfile = () => api.cleanupProbeCredentials(originalPackage, target, isolatedProfile);
+	cleanupProfile = () => api.cleanupProbeCredentials(originalPackage, target, isolatedProfile, keychainHome);
 	await mkdir(isolatedProfile);
 	await writeFile(join(isolatedProfile, "preserved.txt"), "User settings remain unchanged");
 	const host = {
@@ -138,7 +149,12 @@ try {
 				api.executable(path, platform),
 				nonce ? [`--laplace-update-accept=${nonce}`] : [],
 				{
-					env: { ...api.toolEnvironment(), LAPLACE_DESKTOP_TEST_ROOT: isolatedProfile },
+				env: {
+					...api.toolEnvironment(),
+					...(keychainHome ? { HOME: keychainHome } : {}),
+					LAPLACE_DESKTOP_TEST_ROOT: isolatedProfile,
+					LAPLACE_DESKTOP_TEST_UPDATE_ROOT: root,
+				},
 					stdio: "ignore",
 				},
 			);
