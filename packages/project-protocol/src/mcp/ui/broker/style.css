@@ -1,0 +1,46 @@
+.broker-review {
+	font-family: system-ui, sans-serif;
+	max-width: 700px;
+	margin: auto;
+	padding: 16px;
+}
+.broker-review h2 {
+	font-size: 20px;
+}
+.broker-review p {
+	font-size: 14px;
+	line-height: 1.5;
+}
+.broker-review article {
+	border: 1px solid #8886;
+	border-radius: 10px;
+	padding: 14px;
+	margin: 12px 0;
+}
+.broker-review label {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+.broker-review li {
+	font-size: 13px;
+	overflow-wrap: anywhere;
+}
+.broker-review .actions {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+.broker-review button {
+	padding: 8px 12px;
+	border: 1px solid #888;
+	border-radius: 7px;
+	cursor: pointer;
+}
+.broker-review button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+.broker-review [role="alert"] {
+	color: #c33;
+}

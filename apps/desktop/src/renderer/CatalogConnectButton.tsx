@@ -11,6 +11,7 @@ import {
 	type CatalogSetupTarget,
 	type CatalogSetupResult,
 } from "../shared/catalog-setup";
+import { BrokerStart } from "./BrokerStart";
 import { invoke, type CatalogEntry } from "./types";
 
 type SetupChoice = CatalogSetupTarget | "manual" | "install";
@@ -112,6 +113,7 @@ export function CatalogConnectButton({
 	}
 	return (
 		<div className="max-w-sm gap-2 flex flex-col items-end">
+			<BrokerStart entries={[entry]} />
 			<SplitButton
 				disabled={busy || pending || !entry.available}
 				variant="outline"

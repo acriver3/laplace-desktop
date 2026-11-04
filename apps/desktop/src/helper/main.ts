@@ -13,6 +13,7 @@ import {
 	type HelperEvent,
 	type HelperReply,
 } from "../shared/helper-contracts";
+import { desktopBrokerAdapter } from "./broker-adapter";
 import { BrowserApprovals } from "./browser-approvals";
 import { CatalogInstaller } from "./catalog";
 import {
@@ -20,6 +21,7 @@ import {
 	registerClient,
 	configurePluginBridge,
 } from "./client-registration";
+import { ConnectionBroker } from "./connection-broker";
 import { ConnectorManagement } from "./connector-tools";
 import { CredentialSetupError } from "./credential-errors";
 import { CredentialBroker } from "./credentials";
@@ -107,6 +109,15 @@ export async function startHelper() {
 	});
 	manager.jobs = () => catalog.jobs();
 	const portable = new PortableConnectors(manager, catalog, process.execPath);
+	const connectionBroker = new ConnectionBroker(
+		root,
+		desktopBrokerAdapter(manager, credentials, catalog, portable, () =>
+			send({ event: "broker-focus" }),
+		),
+		() => manager.changed(),
+		manager.entries,
+	);
+	credentials.connectionBroker = connectionBroker;
 	let snapshotTimer: ReturnType<typeof setTimeout> | undefined;
 	manager.onChanged(() => {
 		if (snapshotTimer) return;
@@ -120,6 +131,7 @@ export async function startHelper() {
 		await manager.initialize(false);
 		await portable.initialize();
 		await credentials.initialize();
+		await connectionBroker.initialize();
 		await browserApprovals.initialize();
 		server = await startMcpServer(
 			manager,
@@ -184,6 +196,26 @@ export async function startHelper() {
 					throw new Error("Laplace Desktop is stopping");
 				let result: unknown;
 				switch (request.method) {
+					case "broker.authorizeAssistant":
+						result = await connectionBroker.authorizeAssistant(input.principalId, (p) =>
+							credentials.authorizeBrokerAssistant(p),
+						);
+						break;
+					case "broker.enabled":
+						result = {
+							enabled: process.env.ENABLE_CREDENTIAL_BROKERING === "true",
+							accountId: manager.status().accountId,
+							installationId: manager.status().installationId,
+						};
+						break;
+					case "broker.list":
+						result = connectionBroker.list();
+						break;
+					case "broker.call": {
+						const id = input.principalId as string;
+						result = await connectionBroker.callFromDesktop(id, input.command, input.requestId);
+						break;
+					}
 					case "credentials.status":
 						result = await credentials.connectionStatus();
 						break;

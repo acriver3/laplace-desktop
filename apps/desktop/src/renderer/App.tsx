@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 
 import type { DesktopSnapshot, ServerSnapshot } from "../shared/helper-contracts";
 import type { LocalSection, ShellState } from "../shared/shell-contracts";
+import { BrokerPanel } from "./BrokerPanel";
 import { BrowserApprovalPanel } from "./BrowserApprovalPanel";
 import { CredentialsPanel } from "./CredentialsPanel";
 import {
@@ -420,6 +421,7 @@ export function App() {
 					aria-busy={busy}
 				>
 					<BrowserApprovalPanel requestId={approvalRequest} />
+					<BrokerPanel />
 					{message && (
 						<div
 							className={`banner ${message.kind}`}

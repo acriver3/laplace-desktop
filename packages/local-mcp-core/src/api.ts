@@ -36,6 +36,7 @@ export class LocalApi {
 			| "snapshot"
 			| "keepalive"
 			| "remove"
+			| "broker"
 			| "credentials/poll"
 			| "credentials/authorize"
 			| "credentials/result"

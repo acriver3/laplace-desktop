@@ -1032,6 +1032,11 @@ export class CatalogInstaller {
 		return this.verify(id, authorize);
 	}
 
+	/** Only adapters with an existing exact-account consent record can broker reauthentication. */
+	async brokerReauthenticationSupported(id: string): Promise<boolean> {
+		const { entry } = await this.installed(id);
+		return browserEntry(entry);
+	}
 	async authenticate(id: string, authorize?: () => void) {
 		const { installation, entry } = await this.installed(id);
 		authorize?.();

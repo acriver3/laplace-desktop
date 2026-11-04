@@ -152,3 +152,5 @@ packages/database/prisma/schema.cloudflare.prisma
 packages/project-protocol/src/mcp/widget.ts
 packages/project-protocol/src/mcp/yc-widget.ts
 packages/project-protocol/src/mcp/browser-approval-widget.ts
+
+packages/project-protocol/src/mcp/broker-approval-widget.ts

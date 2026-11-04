@@ -66,6 +66,15 @@ const errorResult = {
 };
 
 export class CredentialBroker {
+	connectionBroker?: import("./connection-broker").ConnectionBroker;
+	private brokerResults = new Map<
+		string,
+		{ fingerprint: string; result: unknown; createdAt: number }
+	>();
+	isBrokerRequest(principal: CredentialPrincipal, id: string) {
+		return this.brokerResults.has(principal.id + ":" + id);
+	}
+
 	readonly connection: BitwardenConnectionManager;
 	readonly browser: CredentialBrowser;
 	hostedState: CredentialSnapshot["hostedState"] = "disabled";
@@ -320,6 +329,8 @@ export class CredentialBroker {
 		this.cancelApprovals();
 	}
 	private cancelApprovals() {
+		this.brokerSyncAt = 0;
+		this.connectionBroker?.invalidate();
 		this.epoch++;
 		this.grants.clear();
 		for (const op of this.operations.values())
@@ -366,12 +377,104 @@ export class CredentialBroker {
 		if (!this.allowed(principal))
 			throw new Error("Enable credential access for this client in Laplace Desktop settings");
 	}
+	brokerAllowed(principal: CredentialPrincipal) {
+		return (
+			this.allowed(principal) &&
+			(!principal.hosted || this.settings.brokerAssistants.some((p) => p.id === principal.id))
+		);
+	}
+	async authorizeBrokerAssistant(principal: CredentialPrincipal) {
+		await this.check(principal);
+		if (!principal.hosted) return;
+		if (!this.settings.brokerAssistants.some((p) => p.id === principal.id))
+			await this.configure(
+				{
+					...this.settings,
+					brokerAssistants: [
+						...this.settings.brokerAssistants,
+						{ id: principal.id, name: principal.name },
+					],
+				},
+				true,
+			);
+	}
+	get brokerEpoch() {
+		this.sweep();
+		return String(this.epoch);
+	}
+	private brokerSyncAt = 0;
+	private brokerSync: Promise<void> | undefined;
+	async brokerCandidates(principal: CredentialPrincipal) {
+		await this.check(principal);
+		if (!this.brokerAllowed(principal))
+			throw Error("Authorize this assistant for matching in Desktop.");
+		this.requireUnlocked();
+		if (!this.settings.wholeVaultMatching)
+			return this.settings.bindings.map((b) => ({ id: b.id, label: b.label, origins: b.origins }));
+		// Bitwarden CLI vault reads use its local cache. Refresh bounded metadata discovery.
+		if (Date.now() - this.brokerSyncAt > 30000) {
+			if (!this.brokerSync) {
+				const epoch = this.epoch;
+				this.brokerSync = this.runBw(
+					this.settings.bwPath,
+					["sync"],
+					this.requireUnlocked(),
+					AbortSignal.timeout(30000),
+				)
+					.then(() => {
+						if (epoch !== this.epoch) throw Error("Vault locked.");
+						this.brokerSyncAt = Date.now();
+					})
+					.finally(() => {
+						this.brokerSync = undefined;
+					});
+			}
+			await this.brokerSync;
+			await this.check(principal);
+			this.requireUnlocked();
+		}
+		return this.items(10000);
+	}
+	async withBrokerLogin<T>(
+		principal: CredentialPrincipal,
+		id: string,
+		origin: string,
+		use: (values: Record<string, string>) => Promise<T>,
+	): Promise<T> {
+		await this.check(principal);
+		if (!this.brokerAllowed(principal)) throw Error("Assistant matching access revoked.");
+		const epoch = this.epoch;
+		const binding = this.settings.bindings.find((b) => b.id === id);
+		if (!binding && !this.settings.wholeVaultMatching) throw Error("Credential not selected.");
+		const item = JSON.parse(
+			await this.runBw(
+				this.settings.bwPath,
+				["get", "item", binding?.itemId ?? id],
+				this.requireUnlocked(),
+				AbortSignal.timeout(30000),
+			),
+		);
+		await this.check(principal);
+		this.requireUnlocked();
+		if (
+			epoch !== this.epoch ||
+			item.type !== 1 ||
+			item.deletedDate ||
+			!this.origins(item).includes(origin) ||
+			(binding && !binding.origins.includes(origin))
+		)
+			throw Error("Credential destination changed.");
+		const values: Record<string, string> = {};
+		if (typeof item.login?.username === "string") values.username = item.login.username;
+		if (typeof item.login?.password === "string") values.password = item.login.password;
+		return use(values);
+	}
 	private requireUnlocked() {
 		if (!this.session || Date.now() >= this.unlockedUntil)
 			throw new CredentialSetupError("expired");
 		return this.session;
 	}
-	async items() {
+	async items(limit = MAX_CREDENTIAL_BINDINGS) {
 		const session = this.requireUnlocked();
 		const epoch = this.epoch;
 		const raw: unknown = JSON.parse(
@@ -385,7 +488,7 @@ export class CredentialBroker {
 		if (epoch !== this.epoch) throw new Error("Vault locked");
 		if (!Array.isArray(raw)) throw new Error("Invalid Bitwarden response");
 		const logins = raw.filter((v) => v?.type === 1 && typeof v.id === "string" && !v.deletedDate);
-		if (logins.length > MAX_CREDENTIAL_BINDINGS) throw new CredentialSetupError("vault_limit");
+		if (logins.length > limit) throw new CredentialSetupError("vault_limit");
 		return logins.map((v) => ({
 			id: String(v.id),
 			label: String(v.name ?? "Login").slice(0, 100),
@@ -414,7 +517,10 @@ export class CredentialBroker {
 		if (!v) throw new Error("Unknown configured action");
 		return v;
 	}
-	private describe(input: CredentialInput): { scope: string; summary: string } {
+	private describe(input: Exclude<CredentialInput, { action: "broker" }>): {
+		scope: string;
+		summary: string;
+	} {
 		if (input.action === "fill") {
 			const b = this.binding(input.credentialId);
 			return {
@@ -451,6 +557,40 @@ export class CredentialBroker {
 		const input = credentialInput.parse(raw);
 		if (input.action === "devices") return { local: true };
 		const key = `${principal.id}:${input.requestId}`;
+		if (input.action === "broker") {
+			if (!this.connectionBroker) throw Error("Update Desktop for credential brokering.");
+			const fingerprint = hash(canonicalJson(input));
+			for (const [id, value] of this.brokerResults)
+				if (value.createdAt < Date.now() - 900000) this.brokerResults.delete(id);
+			const old = this.brokerResults.get(key);
+			if (old) {
+				if (old.fingerprint !== fingerprint) throw Error("Request ID reused.");
+				return old.result;
+			}
+			if (this.brokerResults.size >= 1000) throw Error("Broker request limit reached.");
+			const record = {
+				fingerprint,
+				createdAt: Date.now(),
+				result: { requestId: input.requestId, status: "running" } as unknown,
+			};
+			this.brokerResults.set(key, record);
+			try {
+				record.result = {
+					requestId: input.requestId,
+					status: "complete",
+					result: await this.connectionBroker.call(principal, input.command, input.requestId),
+				};
+			} catch {
+				record.result = {
+					requestId: input.requestId,
+					status: "failed",
+					error: "Broker request failed. Check Desktop and review the current state.",
+				};
+			}
+			return record.result;
+		}
+		if ((input.action === "result" || input.action === "cancel") && this.brokerResults.has(key))
+			return this.brokerResults.get(key)!.result;
 		const existing = this.operations.get(key);
 		if (input.action === "result" || input.action === "cancel") {
 			if (!existing) return { status: "unavailable", requestId: input.requestId };

@@ -61,7 +61,7 @@ export async function browserTargets(endpoint: string, signal: AbortSignal) {
 	});
 }
 
-class Cdp {
+export class Cdp {
 	private sequence = 0;
 	private pending = new Map<number, { resolve: (v: any) => void; reject: () => void }>();
 	private socket: WebSocket;
