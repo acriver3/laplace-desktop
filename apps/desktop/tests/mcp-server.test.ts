@@ -180,10 +180,9 @@ it("limits active calls to 32 per registration and 128 overall, independently of
 		for (let i = 0; i < 4; i++) {
 			for (let j = 0; j < 32; j++)
 				pending.push(clients[i].client.callTool({ name: "wait", arguments: {} }));
-			await vi.waitFor(
-				() => expect(f.server.diagnostics().activeCalls).toBe((i + 1) * 32),
-				{ timeout: 5000 },
-			);
+			await vi.waitFor(() => expect(f.server.diagnostics().activeCalls).toBe((i + 1) * 32), {
+				timeout: 5000,
+			});
 			const busy = await clients[i].client.callTool({ name: "wait", arguments: {} });
 			expect(busy).toMatchObject({
 				isError: true,
@@ -442,9 +441,11 @@ it("exposes setup with no connectors, reserves names, and enforces per-client se
 		{},
 	);
 	const a = await f.connect("Setup agent");
-	expect((await a.client.listTools()).tools.map((t) => t.name)).toEqual(
-		connectorManagementTools.map((t) => t.name),
-	);
+	expect(
+		(await a.client.listTools()).tools
+			.filter((t) => !t.name.startsWith("local_credential"))
+			.map((t) => t.name),
+	).toEqual(connectorManagementTools.map((t) => t.name));
 	expect(
 		(await setupCall(a.client, "list")).catalog.find((c: any) => c.serverId === "slack").fields,
 	).toEqual(expect.arrayContaining([expect.objectContaining({ key: "workspace" })]));
@@ -888,12 +889,47 @@ it.each(["disabled", "permissions", "offline"])(
 		expect(call).not.toHaveBeenCalled();
 	},
 );
-it("exposes credential tools only after local opt-in and honors client tool restrictions", async () => {
+it("discovers credential setup before opt-in without exposing metadata and honors tool restrictions", async () => {
 	const f = await fixture(),
 		client = await f.connect("Credential test agent");
 	expect((await client.client.listTools()).tools.some((t) => t.name === "local_credentials")).toBe(
-		false,
+		true,
 	);
+	expect(
+		(await client.client.listTools()).tools.some((t) => t.name === "local_credential_broker"),
+	).toBe(true);
+	const setup = await client.client.callTool({
+		name: "local_credentials",
+		arguments: { action: "status", requestId: randomUUID() },
+	});
+	expect(JSON.stringify(setup)).toContain("setupRequired");
+	const brokerSetup = await client.client.callTool({
+		name: "local_credential_broker",
+		arguments: {
+			requestId: randomUUID(),
+			command: {
+				action: "start",
+				sessionId: randomUUID(),
+				targets: [
+					{
+						id: randomUUID(),
+						service: "fixture",
+						label: "Fixture",
+						location: "local",
+						authType: "api_key",
+						catalogId: "fixture",
+					},
+				],
+			},
+		},
+	});
+	expect(JSON.stringify(brokerSetup)).toContain("setupRequired");
+	expect(
+		await client.client.callTool({
+			name: "local_credentials",
+			arguments: { action: "list", requestId: randomUUID() },
+		}),
+	).toMatchObject({ isError: true });
 	await f.credentials.configure({ enabled: true, clients: [client.id] });
 	expect((await client.client.listTools()).tools.some((t) => t.name === "local_credentials")).toBe(
 		true,
@@ -946,9 +982,9 @@ it("shares one upstream across isolated downstream sessions and cannot expose pr
 		a = await f.connect("Codex"),
 		b = await f.connect("Claude");
 	const tools = (await a.client.listTools()).tools;
-	expect(tools).toHaveLength(4);
+	expect(tools.filter((t) => !t.name.startsWith("local_credential"))).toHaveLength(4);
 	expect(tools.every((tool) => tool.name.startsWith("local_"))).toBe(true);
-	const name = tools[0]!.name;
+	const name = tools.find((t) => t.title === "Fixture: read")!.name;
 	const first: any = await a.client.callTool({ name, arguments: {} });
 	const second: any = await b.client.callTool({ name, arguments: {} });
 	expect(JSON.parse(first.content[0].text).pid).toBe(JSON.parse(second.content[0].text).pid);
@@ -969,7 +1005,9 @@ it("revocation closes only that downstream client and blocks subsequent bearer u
 	expect(
 		(await fetch(f.server.endpoint, { headers: { Authorization: `Bearer ${a.token}` } })).status,
 	).toBe(401);
-	expect((await b.client.listTools()).tools).toHaveLength(4);
+	expect(
+		(await b.client.listTools()).tools.filter((t) => !t.name.startsWith("local_credential")),
+	).toHaveLength(4);
 });
 
 it("filters local tools per client and enforces permissions on calls by hidden name", async () => {
@@ -981,9 +1019,26 @@ it("filters local tools per client and enforces permissions on calls by hidden n
 	const write = tools.find((tool) => tool.title === "Fixture: write")!;
 	await f.manager.setClientTools(a.id, [read.name]);
 	expect((await a.client.listTools()).tools.map((tool) => tool.name)).toEqual([read.name]);
-	expect((await b.client.listTools()).tools).toHaveLength(4);
+	expect(
+		(await b.client.listTools()).tools.filter((t) => !t.name.startsWith("local_credential")),
+	).toHaveLength(4);
 	expect((await a.client.callTool({ name: write.name, arguments: {} })).isError).toBe(true);
 	expect((await b.client.callTool({ name: write.name, arguments: {} })).isError).not.toBe(true);
 	await f.manager.setClientTools(a.id, null);
-	expect((await a.client.listTools()).tools).toHaveLength(4);
+	expect(
+		(await a.client.listTools()).tools.filter((t) => !t.name.startsWith("local_credential")),
+	).toHaveLength(4);
+});
+
+it("keeps the local broker kill switch and model approval boundary", async () => {
+	vi.stubEnv("ENABLE_CREDENTIAL_BROKERING", "false");
+	try {
+		const f = await fixture(),
+			c = await f.connect("Disabled broker");
+		expect(
+			(await c.client.listTools()).tools.some((t) => t.name.startsWith("local_credential_broker")),
+		).toBe(false);
+	} finally {
+		vi.unstubAllEnvs();
+	}
 });

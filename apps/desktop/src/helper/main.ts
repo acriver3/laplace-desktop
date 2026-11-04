@@ -1,3 +1,4 @@
+import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -203,7 +204,7 @@ export async function startHelper() {
 						break;
 					case "broker.enabled":
 						result = {
-							enabled: process.env.ENABLE_CREDENTIAL_BROKERING === "true",
+							enabled: credentialBrokeringEnabled(),
 							accountId: manager.status().accountId,
 							installationId: manager.status().installationId,
 						};

@@ -1,3 +1,4 @@
+import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -82,8 +83,8 @@ export async function startMcpServer(
 				tool: ToolSchema.parse(tool),
 				route: { executor: "broker", target: tool.name },
 				available:
-					process.env.ENABLE_CREDENTIAL_BROKERING === "true" &&
-					!!credentials?.allowed(principal(clientId)) &&
+					credentialBrokeringEnabled() &&
+					!!credentials &&
 					manager.clientToolAllowed(clientId, "local_credentials") &&
 					manager.clientToolAllowed(clientId, "local_connectors_manage"),
 			})),
@@ -101,12 +102,10 @@ export async function startMcpServer(
 			})),
 			{
 				id: "credentials:local",
-				tool: localCredentialTool,
+				tool: ToolSchema.parse(localCredentialTool),
 				route: { executor: "credentials", target: localCredentialTool.name },
 				requirements: { connections: ["desktop"] },
-				available:
-					!!credentials?.allowed(principal(clientId)) &&
-					manager.clientToolAllowed(clientId, localCredentialTool.name),
+				available: !!credentials && manager.clientToolAllowed(clientId, localCredentialTool.name),
 			},
 			...manager.tools().map((tool) => ({
 				id: `connector:${tool.name}`,
@@ -142,8 +141,7 @@ export async function startMcpServer(
 			);
 			server.setRequestHandler("resources/list", async () => ({
 				resources: [
-					...(process.env.ENABLE_CREDENTIAL_BROKERING === "true" &&
-					credentials?.allowed(principal(clientId))
+					...(credentialBrokeringEnabled() && credentials?.allowed(principal(clientId))
 						? [
 								{
 									uri: BROKER_UI_URI,
@@ -176,7 +174,7 @@ export async function startMcpServer(
 			server.setRequestHandler("resources/read", async (request) => {
 				if (
 					request.params.uri === BROKER_UI_URI &&
-					process.env.ENABLE_CREDENTIAL_BROKERING === "true" &&
+					credentialBrokeringEnabled() &&
 					credentials?.allowed(principal(clientId))
 				)
 					return { contents: [brokerApprovalResource()] };
@@ -238,6 +236,13 @@ export async function startMcpServer(
 							broker: async (route, args) => {
 								const input = brokerToolInput.parse(args);
 								checkBrokerTool(route.target, input);
+								if (!credentials!.allowed(principal(clientId))) {
+									const setup = await credentials!.call(principal(clientId), {
+										action: "status",
+										requestId: input.requestId,
+									});
+									return brokerMcpResult(setup, input, route.target);
+								}
 								if (input.command?.action === "start" && manager.status().mode === "linked") {
 									const status = manager.status();
 									let preparedSession = false;

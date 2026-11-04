@@ -1,3 +1,4 @@
+import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
 import {
 	type BrokerItem,
 	type BrokerSession,
@@ -21,8 +22,7 @@ export function desktopBrokerAdapter(
 ): ConnectionBrokerAdapter {
 	const browser = new BrokerBrowser(() => credentials.snapshot().settings.cdpEndpoint);
 	async function authorize(principal: CredentialPrincipal) {
-		if (process.env.ENABLE_CREDENTIAL_BROKERING !== "true")
-			throw Error("Credential brokering is disabled.");
+		if (!credentialBrokeringEnabled()) throw Error("Credential brokering is disabled.");
 		await principal.authorize();
 		if (!credentials.allowed(principal)) throw Error("Enable this assistant in Credentials.");
 		if (!principal.hosted) {

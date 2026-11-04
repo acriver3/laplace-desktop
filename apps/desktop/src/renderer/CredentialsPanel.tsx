@@ -1031,24 +1031,26 @@ export function CredentialsPanel({
 									{ text: "Allow once", allow: true, remember: false },
 									{ text: "Allow for 15 minutes", allow: true, remember: true },
 									{ text: "Deny", allow: false, remember: false },
-								].map((choice) => (
-									<button
-										key={choice.text}
-										disabled={busy}
-										onClick={() =>
-											void perform(() =>
-												request("credentials.approve", {
-													principalId: p.principalId,
-													id: p.id,
-													allow: choice.allow,
-													remember: choice.remember,
-												}),
-											)
-										}
-									>
-										{choice.text}
-									</button>
-								))}
+								]
+									.filter((choice) => !p.oneTimeOnly || !choice.remember)
+									.map((choice) => (
+										<button
+											key={choice.text}
+											disabled={busy}
+											onClick={() =>
+												void perform(() =>
+													request("credentials.approve", {
+														principalId: p.principalId,
+														id: p.id,
+														allow: choice.allow,
+														remember: choice.remember,
+													}),
+												)
+											}
+										>
+											{choice.text}
+										</button>
+									))}
 							</div>
 							<p className="small muted">
 								Applies only to this assistant and this exact request scope.

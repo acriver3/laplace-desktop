@@ -1,3 +1,4 @@
+import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
 import { credentialInput } from "@repo/project-protocol/credentials";
 import { z } from "zod";
 
@@ -32,7 +33,7 @@ export function startCredentialRelay(manager: DesktopManager, broker: Credential
 			const result = z.object({ jobs: z.array(jobSchema).max(10) }).parse(
 				await api.post("credentials/poll", {
 					runId: manager.runId,
-					...(process.env.ENABLE_CREDENTIAL_BROKERING === "true" ? { brokerVersion: 1 } : {}),
+					...(credentialBrokeringEnabled() ? { brokerVersion: 1 } : {}),
 				}),
 			);
 			broker.hostedState = "ready";

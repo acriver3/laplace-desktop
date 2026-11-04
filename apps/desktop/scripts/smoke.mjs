@@ -271,7 +271,28 @@ try {
 	}
 	const discovered = (await clients[0].listTools()).tools;
 	assert.ok(discovered.some((tool) => tool.name === "local_connectors_install"));
-	const tools = discovered.filter((tool) => !tool.name.startsWith("local_connectors_"));
+	assert.ok(discovered.some((tool) => tool.name === "local_credential_broker"));
+	assert.ok(
+		discovered.some(
+			(tool) =>
+				tool.name === "local_credentials" &&
+				tool.inputSchema.properties.action.enum.includes("run_command"),
+		),
+	);
+	const credentialSetup = await clients[0].callTool({
+		name: "local_credentials",
+		arguments: { action: "status", requestId: crypto.randomUUID() },
+	});
+	assert.ok(JSON.stringify(credentialSetup).includes("setupRequired"));
+	const denied = await clients[0].callTool({
+		name: "local_credentials",
+		arguments: { action: "list", requestId: crypto.randomUUID() },
+	});
+	assert.equal(denied.isError, true);
+	const tools = discovered.filter(
+		(tool) =>
+			!tool.name.startsWith("local_connectors_") && !tool.name.startsWith("local_credential"),
+	);
 	assert.equal(tools.length, 4);
 	assert.ok(tools.every((tool) => tool.name.startsWith("local_")));
 	const pids = [];
