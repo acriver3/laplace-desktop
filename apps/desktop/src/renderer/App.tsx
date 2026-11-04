@@ -1,4 +1,3 @@
-import { useDismissedSetup } from "./useDismissedSetup";
 import { Button } from "@repo/ui/components/button";
 import { ConnectorPageHeader } from "@repo/ui/components/connector/page-header";
 import { SettingsPageView } from "@repo/ui/components/connector/page-views";
@@ -9,6 +8,7 @@ import type { DesktopSnapshot, ServerSnapshot } from "../shared/helper-contracts
 import type { LocalSection, ShellState } from "../shared/shell-contracts";
 import { BrokerPanel } from "./BrokerPanel";
 import { BrowserApprovalPanel } from "./BrowserApprovalPanel";
+import { CredentialActivity } from "./CredentialActivity";
 import { CredentialsPanel } from "./CredentialsPanel";
 import {
 	ClientInstallDialog,
@@ -29,7 +29,9 @@ import {
 	type ImportPreview,
 	type Perform,
 } from "./types";
+import { UnlockPrompt } from "./UnlockPrompt";
 import { UpdatesPanel } from "./UpdatesPanel";
+import { useDismissedSetup } from "./useDismissedSetup";
 
 const initialShell: ShellState = {
 	profile: "hosted",
@@ -393,7 +395,6 @@ export function App() {
 		{ id: "clients", label: "AI clients" },
 		{ id: "device", label: "Device" },
 		{ id: "updates", label: "Updates" },
-		{ id: "credentials", label: "Credentials" },
 	];
 	if (shell.mode === "web" && !shell.webError)
 		return (
@@ -414,6 +415,9 @@ export function App() {
 				{!contentOnly && (
 					<LocalSidebar
 						account={shell.account}
+						section={section}
+						pending={snapshot?.credentialRequests ?? 0}
+						onNavigate={(value) => void show(value)}
 						collapsed={collapsed}
 						onToggle={toggleSidebar}
 						onOpenLaplace={() => void openLaplace()}
@@ -439,6 +443,12 @@ export function App() {
 				>
 					<BrowserApprovalPanel requestId={approvalRequest} />
 					<BrokerPanel />
+					{shell.unlockSessionId && (
+						<UnlockPrompt
+							key={shell.unlockSessionId}
+							close={() => void invoke("shell.dismissUnlock")}
+						/>
+					)}
 					{message && (
 						<div
 							className={`banner ${message.kind}`}
@@ -500,93 +510,101 @@ export function App() {
 							Review {snapshot.credentialRequests} credential request(s)
 						</button>
 					)}
-					<ConnectorPageHeader title="On this device" />
-					<SettingsPageView
-						navigationLabel="On this device"
-						items={sections}
-						activeId={section}
-						onSelect={(value) => void show(value as LocalSection)}
-					>
-						<div hidden={section !== "servers"} className="connector-settings-content">
-							<CatalogJobs
-								jobs={jobs}
-								cancel={(jobId) => void perform(() => invoke("catalog.cancel", { jobId }))}
-							/>
-							<LocalConnectionsPage
-								key={shell.profile}
-								servers={servers}
-								catalog={catalog}
-								busy={busy}
-								search={connectionSearch}
-								onSearch={setConnectionSearch}
-								view={connectionView}
-								onView={setConnectionView}
-								refresh={() => void perform(refresh)}
-								add={() => setDialog({ type: "server" })}
-								importFile={() => void importFile()}
-								details={(server) => setDialog({ type: "server-details", id: server.id })}
-								edit={(server) => setDialog({ type: "server", server })}
-								remove={removeConnection}
-								control={(server, action) =>
-									void perform(() => invoke(`server.${action}`, { id: server.id }))
-								}
-								install={(entry) => setDialog({ type: "install", entry })}
-							/>
-						</div>
-						<div hidden={section !== "clients"} className="connector-settings-content">
-							<LocalClientsPage
-								key={shell.profile}
-								snapshot={snapshot}
-								signedIn={!!shell.account}
-								target={setupTarget}
-								selectTarget={setSetupTarget}
-								perform={perform}
-								configure={(id, target) => setDialog({ type: "client", id, target })}
-								permissions={(id) => setDialog({ type: "client-permissions", id })}
-								revoke={(id, name) =>
-									confirm(
-										`Revoke ${name}?`,
-										"Its local connection and hosted grant will stop working. Other AI clients remain connected.",
-										() => invoke("client.revoke", { clientId: id }),
-									)
-								}
-							/>
-						</div>
-						{section === "updates" && (
-							<div className="space-y-4">
-								<UpdatesPanel update={shell.updates} perform={perform} />
-								<Button
-									variant="outline"
-									onClick={() =>
-										void perform(() =>
-											shell.account
-												? invoke("shell.web")
-												: invoke("shell.local", { section: "servers" }),
+					<ConnectorPageHeader
+						title={section === "credentials" ? "Credentials" : "On this device"}
+					/>
+					{section !== "credentials" && (
+						<SettingsPageView
+							navigationLabel="On this device"
+							items={sections}
+							activeId={section}
+							onSelect={(value) => void show(value as LocalSection)}
+						>
+							<div hidden={section !== "servers"} className="connector-settings-content">
+								<CatalogJobs
+									jobs={jobs}
+									cancel={(jobId) => void perform(() => invoke("catalog.cancel", { jobId }))}
+								/>
+								<LocalConnectionsPage
+									key={shell.profile}
+									servers={servers}
+									catalog={catalog}
+									busy={busy}
+									search={connectionSearch}
+									onSearch={setConnectionSearch}
+									view={connectionView}
+									onView={setConnectionView}
+									refresh={() => void perform(refresh)}
+									add={() => setDialog({ type: "server" })}
+									importFile={() => void importFile()}
+									details={(server) => setDialog({ type: "server-details", id: server.id })}
+									edit={(server) => setDialog({ type: "server", server })}
+									remove={removeConnection}
+									control={(server, action) =>
+										void perform(() => invoke(`server.${action}`, { id: server.id }))
+									}
+									install={(entry) => setDialog({ type: "install", entry })}
+								/>
+							</div>
+							<div hidden={section !== "clients"} className="connector-settings-content">
+								<LocalClientsPage
+									key={shell.profile}
+									snapshot={snapshot}
+									signedIn={!!shell.account}
+									target={setupTarget}
+									selectTarget={setSetupTarget}
+									perform={perform}
+									configure={(id, target) => setDialog({ type: "client", id, target })}
+									permissions={(id) => setDialog({ type: "client-permissions", id })}
+									revoke={(id, name) =>
+										confirm(
+											`Revoke ${name}?`,
+											"Its local connection and hosted grant will stop working. Other AI clients remain connected.",
+											() => invoke("client.revoke", { clientId: id }),
 										)
 									}
-								>
-									Not now
-								</Button>
+								/>
 							</div>
-						)}
-						{section === "device" && (
-							<LocalSettings
-								shell={shell}
-								snapshot={snapshot}
-								perform={perform}
-								changeProfile={(profile) =>
-									void perform(() => invoke("shell.profile", { profile }))
-								}
-								unlink={() =>
-									confirm(
-										"Unlink this desktop installation?",
-										"Servers and provider sessions remain on this computer. Existing tool restrictions are retained.",
-										() => invoke("link.unlink"),
-									)
-								}
-							/>
-						)}
-						{section === "credentials" && (
+							{section === "updates" && (
+								<div className="space-y-4">
+									<UpdatesPanel update={shell.updates} perform={perform} />
+									<Button
+										variant="outline"
+										onClick={() =>
+											void perform(() =>
+												shell.account
+													? invoke("shell.web")
+													: invoke("shell.local", { section: "servers" }),
+											)
+										}
+									>
+										Not now
+									</Button>
+								</div>
+							)}
+							{section === "device" && (
+								<LocalSettings
+									shell={shell}
+									snapshot={snapshot}
+									perform={perform}
+									changeProfile={(profile) =>
+										void perform(() => invoke("shell.profile", { profile }))
+									}
+									unlink={() =>
+										confirm(
+											"Unlink this desktop installation?",
+											"Servers and provider sessions remain on this computer. Existing tool restrictions are retained.",
+											() => invoke("link.unlink"),
+										)
+									}
+								/>
+							)}
+						</SettingsPageView>
+					)}
+					{section === "credentials" && (
+						<div className="credentials-page">
+							<h2>Credential sources</h2>
+
 							<CredentialsPanel
 								key={shell.profile}
 								clients={snapshot?.clients ?? []}
@@ -594,8 +612,25 @@ export function App() {
 								addAssistant={() => void show("clients")}
 								linkAccount={() => void show("device")}
 							/>
-						)}
-					</SettingsPageView>
+							<section>
+								<h2>Doppler</h2>
+								<p>
+									API keys use your connected Doppler account and its permitted projects and
+									configs.
+								</p>
+								<button
+									onClick={() =>
+										void (snapshot?.mode === "linked" ? openLaplace() : show("device"))
+									}
+								>
+									{snapshot?.mode === "linked"
+										? "Open Laplace to manage Doppler scopes"
+										: "Link account for Doppler"}
+								</button>
+							</section>
+							<CredentialActivity />
+						</div>
+					)}
 				</main>
 			</div>
 			{dialog?.type === "server-details" &&

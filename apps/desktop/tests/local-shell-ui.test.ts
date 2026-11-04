@@ -192,7 +192,6 @@ it.skipIf(
 				"AI clients",
 				"Device",
 				"Updates",
-				"Credentials",
 			]);
 			await browserExpect(
 				navigation.getByRole("button", { name: "Connections", exact: true }),
@@ -250,77 +249,46 @@ it.skipIf(
 				.click();
 			await browserExpect(page.getByRole("dialog")).toContainText("Synthetic catalog entry");
 			await page.keyboard.press("Escape");
+
 			for (const width of [1280, 390]) {
 				await page.setViewportSize({ width, height: 900 });
 				const row = available.getByRole("listitem").last();
 				const name = await row.locator(".connector-row-content").boundingBox();
-				const action = await row
-					.getByRole("button", { name: "Install", exact: true })
-					.boundingBox();
-				const menu = await row.getByRole("button", { name: /Choose setup agent/ }).boundingBox();
+				const action = await row.getByRole("button", { name: /More setup options/ }).boundingBox();
 				const bounds = await row.boundingBox();
 				expect(action!.x).toBeGreaterThanOrEqual(bounds!.x);
 				expect(action!.y).toBeGreaterThanOrEqual(name!.y + name!.height);
-				expect(menu!.x + menu!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width);
+				expect(action!.x + action!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width);
 			}
 			await page.setViewportSize({ width: 1280, height: 900 });
-			await available.getByRole("button", { name: "Install", exact: true }).last().click();
+			const options = available.getByRole("button", { name: /More setup options/ }).last();
+			await options.click();
+			await page.getByRole("menuitem", { name: "Install on this device", exact: true }).click();
 			expect(
 				(await history()).some(
 					(item: any) =>
 						item.method === "portable.install" && item.input.catalogId === "fixture-catalog",
 				),
 			).toBe(true);
-			await available
-				.getByRole("button", { name: /Choose setup agent/ })
-				.last()
-				.click();
-			await page.getByRole("menuitemradio", { name: "Codex", exact: true }).click();
-			const connect = page
-				.getByRole("list", { name: "Available connections" })
-				.getByRole("button", { name: "Connect", exact: true })
-				.last();
-			await browserExpect(connect).toBeEnabled();
-			await browserExpect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-			await browserExpect(page.getByRole("button", { name: "Back to Laplace" })).toHaveCount(0);
 			const sidebar = page.getByRole("complementary", { name: "Main sidebar" });
 			await browserExpect(
 				sidebar.getByRole("navigation", { name: "Connector navigation" }).getByRole("button"),
-			).toHaveText(["On this device"]);
-			await connect.click();
-			await browserExpect(page.getByRole("dialog")).toHaveCount(0);
-			await browserExpect(page.getByRole("status")).toContainText("Continue in Codex");
-			expect(
-				(await history()).filter((item: any) => item.method === "shell.catalogSetup").at(-1),
-			).toEqual({
-				method: "shell.catalogSetup",
-				input: { catalogId: "fixture-catalog", target: "codex", action: "open" },
-			});
-			const agentMenu = page.getByRole("button", {
-				name: "Choose setup agent for Catalog connector",
-				exact: true,
-			});
-			await browserExpect(agentMenu).not.toContainText("Codex");
-			await browserExpect(agentMenu.locator("img")).toHaveCount(1);
-			await agentMenu.click();
-			await page.getByRole("menuitemradio", { name: "Claude Code", exact: true }).click();
-			await connect.click();
-			await browserExpect(page.getByRole("status")).toContainText("Continue in Claude Code");
-			expect(
-				(await history()).filter((item: any) => item.method === "shell.catalogSetup").at(-1).input
-					.target,
-			).toBe("claude-code");
-			await agentMenu.click();
-			await page.getByRole("menuitemradio", { name: "Other agent", exact: true }).click();
-			await page.evaluate(() => {
-				(window as any).localShellTest.copyFails = true;
-			});
-			await connect.click();
-			await browserExpect(page.getByLabel("Setup prompt for Catalog connector")).toBeVisible();
-			expect(
-				(await history()).filter((item: any) => item.method === "shell.catalogSetup").at(-1).input
-					.action,
-			).toBe("instructions");
+			).toHaveText(["On this device", "Credentials"]);
+			for (const [label, target] of [
+				["Codex", "codex"],
+				["Claude Code", "claude-code"],
+				["Other agent", "other"],
+			]) {
+				await options.click();
+				await page.getByRole("menuitem", { name: "Set up with " + label, exact: true }).click();
+				expect(
+					(await history()).filter((item: any) => item.method === "shell.catalogSetup").at(-1).input
+						.target,
+				).toBe(target);
+			}
+			await browserExpect(
+				page.getByRole("button", { name: "Copy request", exact: true }),
+			).toBeVisible();
 			for (const width of [1024, 1280]) {
 				await page.setViewportSize({ width, height: 1000 });
 				const withinCards = await page.locator(".desktop-catalog-connection").evaluateAll((rows) =>
@@ -334,11 +302,8 @@ it.skipIf(
 				);
 				expect(withinCards).toBe(true);
 			}
-			await agentMenu.click();
-			await page.getByRole("menuitemradio", { name: "Set up manually", exact: true }).click();
-			await browserExpect(agentMenu).not.toContainText("Manual");
-			await browserExpect(page.getByRole("dialog")).toHaveCount(0);
-			await connect.click();
+			await options.click();
+			await page.getByRole("menuitem", { name: "Set up manually", exact: true }).click();
 			await browserExpect(page.getByRole("dialog")).toBeVisible();
 			await page.keyboard.press("Escape");
 

@@ -1,4 +1,3 @@
-import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -7,6 +6,7 @@ import { join, resolve, dirname } from "node:path";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { z } from "zod";
 
+import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
 import { credentialMessages } from "../shared/credential-setup";
 import {
 	helperInputs,
@@ -112,13 +112,50 @@ export async function startHelper() {
 	const portable = new PortableConnectors(manager, catalog, process.execPath);
 	const connectionBroker = new ConnectionBroker(
 		root,
-		desktopBrokerAdapter(manager, credentials, catalog, portable, () =>
-			send({ event: "broker-focus" }),
+		desktopBrokerAdapter(
+			manager,
+			credentials,
+			catalog,
+			portable,
+			(section) => send(section ? { event: "desktop-open", section } : { event: "broker-focus" }),
+			(sessionId) => send({ event: "broker-unlock", sessionId }),
+			async (principal, session) => {
+				try {
+					const description = (await (
+						await manager.credentialRelayApi()
+					).post("broker", { action: "describe", sessionId: session.id })) as {
+						targets: unknown[];
+					};
+					if (
+						JSON.stringify(description.targets) ===
+						JSON.stringify(session.items.map((i) => i.target))
+					)
+						return;
+				} catch {}
+				const result = (await hosted.call(
+					principal.id.replace(/^local:/, ""),
+					"credential_broker_prepare",
+					{
+						requestId: session.id,
+						accountId: session.accountId,
+						installationId: session.installationId,
+						command: {
+							action: "start",
+							sessionId: session.id,
+							targets: session.items.map((i) => i.target),
+						},
+					},
+					AbortSignal.timeout(10000),
+				)) as { isError?: boolean };
+				if (result.isError) throw Error("Hosted management authorization required.");
+			},
 		),
 		() => manager.changed(),
 		manager.entries,
 	);
 	credentials.connectionBroker = connectionBroker;
+	manager.credentialRequests = () =>
+		credentials.snapshot().pending.length + connectionBroker.pendingCount();
 	let snapshotTimer: ReturnType<typeof setTimeout> | undefined;
 	manager.onChanged(() => {
 		if (snapshotTimer) return;
@@ -145,6 +182,7 @@ export async function startHelper() {
 		);
 	} catch (error) {
 		credentials.close();
+		await connectionBroker.shutdown();
 		await browserApprovals.close();
 		await hosted.shutdown();
 		await manager.shutdown();
@@ -161,6 +199,7 @@ export async function startHelper() {
 		stopCredentialRelay();
 		stopPortableRelay();
 		credentials.close();
+		await connectionBroker.shutdown();
 		clearInterval(parentWatch);
 		if (snapshotTimer) clearTimeout(snapshotTimer);
 		for (const job of catalog.jobs())
@@ -203,6 +242,36 @@ export async function startHelper() {
 							credentials.authorizeBrokerAssistant(p),
 						);
 						break;
+					case "credentials.chromeCheck":
+						await credentials.brokerChrome.open(
+							"https://connect.withlaplace.com",
+							[],
+							AbortSignal.timeout(15000),
+							true,
+						);
+						result = { opened: true };
+						break;
+					case "credentials.chromeStatus":
+						result = credentials.brokerChrome.readiness();
+						break;
+					case "broker.stage": {
+						const client = manager.client(input.clientId);
+						result = await connectionBroker.call(
+							{
+								id: "local:" + client.id,
+								name: client.name,
+								hosted: false,
+								authorize: () => {
+									manager.client(input.clientId);
+									if (!manager.clientToolAllowed(input.clientId, "local_credentials"))
+										throw Error("Enable credential requests for this assistant.");
+								},
+							},
+							{ action: "start", sessionId: input.sessionId, targets: input.targets },
+							input.sessionId,
+						);
+						break;
+					}
 					case "broker.enabled":
 						result = {
 							enabled: credentialBrokeringEnabled(),

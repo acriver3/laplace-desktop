@@ -16,8 +16,8 @@ import { z } from "zod";
 
 import type { BitwardenConnection, CredentialBrowserState } from "../shared/credential-setup";
 import { BitwardenConnectionManager } from "./bitwarden-connection";
-import { CredentialBrowser } from "./credential-browser";
 import { BrokerChrome } from "./broker-chrome";
+import { CredentialBrowser } from "./credential-browser";
 import { CredentialSetupError } from "./credential-errors";
 import { browserTargets, cdpOrigin, fillBrowser } from "./credentials-cdp";
 import {
@@ -614,10 +614,17 @@ export class CredentialBroker {
 					ready: false,
 					setupRequired: true,
 					instructions:
-						"Open Laplace Desktop → On this device → Credentials. Connect and unlock Bitwarden, select permitted credentials, and enable this assistant. Then call status again. Never send credentials in chat.",
+						"Open Laplace Desktop → Credentials. Connect and unlock Bitwarden, select permitted credentials, and enable this assistant. Then call status again. Never send credentials in chat.",
 				},
 			};
-		await this.check(principal);
+		if (
+			input.action !== "broker" &&
+			!(
+				(input.action === "result" || input.action === "cancel") &&
+				this.isBrokerRequest(principal, input.requestId)
+			)
+		)
+			await this.check(principal);
 		if (principal.hosted && input.action === "run_command")
 			throw Error("Command proposals require a locally registered assistant.");
 		if (input.action === "devices") return { local: true };

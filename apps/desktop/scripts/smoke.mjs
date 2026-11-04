@@ -166,7 +166,13 @@ try {
 	});
 	mark("launch isolated Electron shell");
 	app = await electron.launch({
-		...(packaged ? { executablePath: packaged, args: [] } : { args: [appRoot] }),
+		...(packaged ? { executablePath: packaged } : {}),
+		args: [
+			...(packaged ? [] : [appRoot]),
+			...(process.env.LAPLACE_SMOKE_SCALE
+				? [`--force-device-scale-factor=${Number(process.env.LAPLACE_SMOKE_SCALE)}`]
+				: []),
+		],
 		env: testEnvironment({
 			LAPLACE_DESKTOP_TEST_ROOT: testRoot,
 			LAPLACE_DESKTOP_TEST_ORIGIN: origin,

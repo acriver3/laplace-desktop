@@ -151,6 +151,7 @@ export async function connectBroker(ticket, tabId) {
 	)
 		throw Error();
 	let token;
+	const permissionPrompts = new Set();
 	const request = async (path, body = {}) => {
 		const r = await fetch(base.origin + path, {
 			method: "POST",
@@ -168,6 +169,7 @@ export async function connectBroker(ticket, tabId) {
 	};
 	const initial = await request("/connect", { code: ticket.code });
 	token = initial.token;
+	if (initial.checkOnly) return { connected: true };
 	const destination = new URL(initial.url);
 	if (destination.protocol !== "https:" || destination.username || destination.password)
 		throw Error();
@@ -191,18 +193,47 @@ export async function connectBroker(ticket, tabId) {
 							const tab = await chrome.tabs.get(tabId),
 								current = new URL(tab.url);
 							if (
-								current.protocol !== "https:" ||
-								!(await chrome.permissions.contains({ origins: [current.origin + "/*"] }))
-							)
-								throw Error();
-							const results = await chrome.scripting.executeScript({
-								target: { tabId },
-								world: "ISOLATED",
-								func: loginStep,
-								args: [next.method, next.input],
-							});
-							result = results.find((r) => r.frameId === 0)?.result;
-							ok = next.method === "inspect" ? !!result : result?.done === true;
+								next.method === "inspect" &&
+								(!next.input.origins?.includes(current.origin) ||
+									!(await chrome.permissions.contains({ origins: [current.origin + "/*"] })))
+							) {
+								if (
+									next.input.origins?.includes(current.origin) &&
+									!permissionPrompts.has(current.origin)
+								) {
+									permissionPrompts.add(current.origin);
+									await chrome.tabs.create({
+										url:
+											chrome.runtime.getURL("broker-permission.html") +
+											"#" +
+											encodeURIComponent(current.origin),
+										active: true,
+									});
+								}
+								result = {
+									origin: current.origin,
+									revision: "0".repeat(64),
+									fields: [],
+									handles: [],
+									handoff: true,
+									handoffReason: "permission_required",
+								};
+								ok = true;
+							} else {
+								if (
+									current.protocol !== "https:" ||
+									!(await chrome.permissions.contains({ origins: [current.origin + "/*"] }))
+								)
+									throw Error();
+								const results = await chrome.scripting.executeScript({
+									target: { tabId },
+									world: "ISOLATED",
+									func: loginStep,
+									args: [next.method, next.input],
+								});
+								result = results.find((r) => r.frameId === 0)?.result;
+								ok = next.method === "inspect" ? !!result : result?.done === true;
+							}
 						}
 					} catch {}
 					// Credentials exist only in this iteration's input and the destination fields.

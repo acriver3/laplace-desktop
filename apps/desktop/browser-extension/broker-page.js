@@ -33,13 +33,14 @@ try {
 	const { origins } = await response.json();
 	if (
 		!Array.isArray(origins) ||
-		!origins.length ||
 		origins.some((o) => new URL(o).origin !== o || !o.startsWith("https://"))
 	)
 		throw Error();
 	const permissions = { origins: origins.map((o) => o + "/*") };
-	if (await chrome.permissions.contains(permissions)) await connect();
-	else {
+	if (!origins.length || (await chrome.permissions.contains(permissions))) {
+		await connect();
+		status.textContent = "Chrome is ready. You can return to Laplace or your chat.";
+	} else {
 		status.textContent =
 			"Allow Laplace to fill the approved login on: " +
 			origins.join(", ") +

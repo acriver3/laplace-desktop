@@ -1,6 +1,6 @@
 import { Button } from "@repo/ui/components/button";
 import { LogoMark } from "@repo/ui/components/logo";
-import { ArrowLeft, LogIn, LogOut, Monitor, PanelLeft } from "lucide-react";
+import { ArrowLeft, LogIn, LogOut, Monitor, ShieldCheck, PanelLeft } from "lucide-react";
 
 const link =
 	"connector-sidebar-link min-h-11 md:min-h-9 gap-2 px-3 py-1.5 text-sm font-normal md:justify-start flex items-center justify-center rounded-lg w-full";
@@ -8,6 +8,9 @@ const link =
 /** Connect's sidebar, reduced to the pages Desktop draws itself. */
 export function LocalSidebar({
 	account,
+	section = "servers",
+	pending = 0,
+	onNavigate,
 	collapsed,
 	onToggle,
 	onOpenLaplace,
@@ -17,6 +20,9 @@ export function LocalSidebar({
 	onSignOut,
 }: {
 	account?: { id: string; name: string };
+	section?: string;
+	pending?: number;
+	onNavigate?: (section: "servers" | "credentials") => void;
 	collapsed: boolean;
 	onToggle: () => void;
 	onOpenLaplace: () => void;
@@ -64,9 +70,28 @@ export function LocalSidebar({
 							</li>
 						)}
 						<li>
-							<button type="button" title="On this device" aria-current="page" className={link}>
+							<button
+								type="button"
+								title="On this device"
+								aria-current={section !== "credentials" ? "page" : undefined}
+								className={link}
+								onClick={() => onNavigate?.("servers")}
+							>
 								<Monitor className="size-4 shrink-0" aria-hidden="true" />
 								<span className="connector-main-label">On this device</span>
+							</button>
+						</li>
+						<li>
+							<button
+								type="button"
+								title="Credentials"
+								aria-current={section === "credentials" ? "page" : undefined}
+								className={link}
+								onClick={() => onNavigate?.("credentials")}
+							>
+								<ShieldCheck className="size-4 shrink-0" aria-hidden="true" />
+								<span className="connector-main-label">Credentials</span>
+								{pending > 0 && <span aria-label={`${pending} pending requests`}>{pending}</span>}
 							</button>
 						</li>
 					</ul>

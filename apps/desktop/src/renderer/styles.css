@@ -88,3 +88,104 @@
 	width: 44px;
 	padding-inline: 6px;
 }
+
+/* One shared layout on Windows and macOS, including scaled and narrow windows. */
+.desktop-local-shell .connector-row-list {
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+}
+.desktop-connection {
+	padding: 16px;
+	gap: 12px;
+}
+.desktop-connection .connector-row-title {
+	word-break: normal;
+	overflow-wrap: break-word;
+	line-height: 1.4;
+}
+.desktop-connection .connector-row-subtitle {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+.catalog-connect-actions {
+	width: auto;
+}
+.connection-handoff {
+	flex-basis: 100%;
+	min-width: 0;
+}
+.connection-handoff pre {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.credentials-page {
+	display: grid;
+	gap: 24px;
+	max-width: 960px;
+}
+.credentials-page h2 {
+	font-size: 18px;
+	font-weight: 600;
+}
+.credentials-page .credential-setup {
+	max-width: 100%;
+}
+.credentials-page .credential-heading > div {
+	min-width: 0;
+}
+.credentials-page .credential-heading label {
+	display: flex;
+	flex-direction: row;
+	align-items: start;
+	gap: 10px;
+}
+.credentials-page .credential-heading input[type="checkbox"] {
+	flex: 0 0 auto;
+	margin-top: 4px;
+}
+.credential-history article {
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 16px;
+	margin-block: 8px;
+}
+@media (max-width: 700px) {
+	.desktop-local-shell .connector-toolbar {
+		flex-wrap: wrap;
+	}
+	.desktop-local-shell .manager {
+		padding-inline: 16px;
+	}
+	.credential-heading {
+		align-items: flex-start;
+	}
+}
+
+.desktop-connection:not(.desktop-catalog-connection) {
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	min-height: 72px;
+}
+.desktop-connection:not(.desktop-catalog-connection) > .connector-row-actions {
+	grid-column: auto;
+}
+
+.credential-group {
+	border-top: 1px solid var(--border);
+	padding-top: 16px;
+}
+.credential-group h3 {
+	margin: 0;
+}
+.credential-group p {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.credentials-page .credential-heading {
+	align-items: flex-start;
+}
+.credential-group p {
+	margin: 8px 0;
+}

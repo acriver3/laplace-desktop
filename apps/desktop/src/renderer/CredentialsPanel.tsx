@@ -43,6 +43,7 @@ export function CredentialsPanel({
 	linkAccount: () => void;
 	accountLinked?: boolean;
 }) {
+	const [chrome, setChrome] = useState<{ state: string; message: string }>();
 	const [state, setState] = useState<CredentialSnapshot>();
 	const [step, setStep] = useState<Step>();
 	const [password, setPassword] = useState("");
@@ -67,6 +68,10 @@ export function CredentialsPanel({
 	const mounted = useRef(true);
 	const refresh = async () => {
 		const next = await request<CredentialSnapshot>("credentials.status");
+		const chromeState = await request<{ state: string; message: string }>(
+			"credentials.chromeStatus",
+		).catch(() => undefined);
+		if (mounted.current) setChrome(chromeState);
 		if (mounted.current) setState(next);
 		return next;
 	};
@@ -325,8 +330,8 @@ export function CredentialsPanel({
 				<div className="stack">
 					<h3>Connect your Bitwarden account</h3>
 					<p>
-						Choose which logins an assistant can use. You'll approve requests here in Laplace, and
-						passwords stay out of its tool responses.
+						Choose which logins an assistant can use. You'll approve requests in chat or here in
+						Laplace, and passwords stay out of its tool responses.
 					</p>
 					{settings.enabled && !settings.managedBitwarden && (
 						<div className="credential-notice">
@@ -815,135 +820,28 @@ export function CredentialsPanel({
 			)}
 			{step === "browser" && (
 				<div className="stack">
-					<h3>Connect a browser (optional)</h3>
+					<h3>Use your existing Chrome profile</h3>
 					<p>
-						Hosted connections using Connect with assistant open in your regular Chrome profile
-						through the Laplace extension after approval. Allow site access in Chrome when prompted.
-						The options below are for direct browser-fill tools.
+						The Laplace extension opens sign-in tabs in Chrome. No separate browser or debugging
+						connection is needed.
 					</p>
-					<p>
-						Use a compatible browser your assistant already controls, or open a separate browser for
-						your assistant. Your usual browser stays unchanged.
-					</p>
-					{state.browser.available && (
-						<div className="credential-notice">
-							<strong>
-								<Check size={14} /> {state.browser.name ?? "Browser"} available
-							</strong>
-							<p>Your assistant still needs to attach its browser tools to this session.</p>
-							<button
-								onClick={() =>
-									void perform(async () => {
-										await navigator.clipboard.writeText(
-											"Use Laplace's local_credentials status tool to find the selected local browser endpoint, then attach your existing browser tools to that session if they support CDP. Use local_credentials for approved Bitwarden fills. If your browser tools cannot attach to a local browser, explain that limitation; do not ask me for passwords or claim you are connected.",
-										);
-										setMessage("Instructions copied. Paste them into your local assistant's chat.");
-									})
-								}
-							>
-								Copy instructions for my assistant
-							</button>
-							{state.browser.owned && (
-								<button
-									disabled={busy}
-									onClick={() => void perform(() => request("credentials.browserClose"))}
-								>
-									Close this browser
-								</button>
-							)}
-						</div>
-					)}
-					<div className="credential-browser-options">
-						<div className="stack">
-							<h4>Use an existing browser</h4>
-							<p className="small muted">
-								Compatible local sessions appear here. Most ordinary browser windows don't allow
-								this connection.
-							</p>
-							{browsers
-								.filter((b) => b.kind === "running")
-								.map((b, index) => (
-									<button
-										key={b.id}
-										disabled={busy}
-										onClick={() =>
-											void perform(() =>
-												request("credentials.browserSelect", { id: b.id, launch: false }),
-											)
-										}
-									>
-										<Globe size={15} />
-										{b.name} · Session {index + 1}
-									</button>
-								))}
-							{searchedBrowsers && !browsers.some((b) => b.kind === "running") && (
-								<p className="small">No compatible sessions found.</p>
-							)}
-							<button disabled={busy} onClick={() => void discover()}>
-								{busy ? "Checking…" : "Find browsers"}
-							</button>
-						</div>
-						<div className="stack">
-							<h4>Open a compatible browser</h4>
-							<p className="small muted">
-								Creates a separate Laplace profile. Your assistant needs browser tools that can
-								attach to it.
-							</p>
-							{browsers
-								.filter((b) => b.kind === "installed")
-								.map((b) => (
-									<button
-										key={b.id}
-										disabled={busy || state.browser.owned}
-										onClick={() =>
-											void perform(() =>
-												request("credentials.browserSelect", { id: b.id, launch: true }),
-											)
-										}
-									>
-										Open {b.name}
-									</button>
-								))}
-							{searchedBrowsers && !browsers.some((b) => b.kind === "installed") && (
-								<p className="small">
-									Install{" "}
-									<a href="https://www.google.com/chrome/" target="_blank" rel="noreferrer">
-										Google Chrome
-									</a>{" "}
-									or{" "}
-									<a
-										href="https://www.microsoft.com/edge/download"
-										target="_blank"
-										rel="noreferrer"
-									>
-										Microsoft Edge
-									</a>
-									, then choose Find browsers again.
-								</p>
-							)}
-						</div>
-					</div>
-					<p className="small muted">
-						Cloud-only browsers can't connect to this computer. Filled passwords can still be read
-						by the website and other browser tools.
-					</p>
-					<div className="row">
-						<button onClick={() => setStep("assistants")}>
-							<ArrowLeft size={14} /> Back
-						</button>
-						<button
-							className="primary"
-							disabled={busy}
-							onClick={() =>
-								void perform(async () => {
-									await save({ setupComplete: true });
-									setStep("overview");
-								})
-							}
-						>
-							{state.browser.available ? "Finish setup" : "Set up browser later"}
-						</button>
-					</div>
+					<button
+						disabled={busy}
+						onClick={() => void perform(() => request("credentials.chromeCheck"))}
+					>
+						Check Chrome extension
+					</button>
+					<p role="status">{chrome?.message ?? "Extension not checked yet"}</p>
+					<button
+						onClick={() =>
+							void perform(async () => {
+								await save({ setupComplete: true });
+								setStep("overview");
+							})
+						}
+					>
+						Finish setup
+					</button>
 				</div>
 			)}
 			{step === "overview" && (
@@ -961,15 +859,6 @@ export function CredentialsPanel({
 							{settings.bindings.length} {settings.bindings.length === 1 ? "login" : "logins"}{" "}
 							selected
 						</span>
-						<span>
-							{settings.clients.length} local{" "}
-							{settings.clients.length === 1 ? "assistant" : "assistants"}
-							{settings.hosted ? " + online access" : ""}
-						</span>
-						<span>
-							<Globe size={16} />
-							{state.browser.available ? "Browser available" : "Browser not connected"}
-						</span>
 					</div>
 					{!state.unlocked && unlock}
 					<div className="row">
@@ -981,19 +870,27 @@ export function CredentialsPanel({
 								Lock Bitwarden
 							</button>
 						)}
-						<button onClick={() => setStep("logins")}>Manage access</button>
-						<button
-							onClick={() => {
-								setStep("browser");
-								void discover();
-							}}
-						>
-							Set up browser
-						</button>
+						<button onClick={() => setStep("logins")}>Manage saved logins</button>
 						<button className="danger-quiet" onClick={() => setDisconnecting(true)}>
 							Disconnect
 						</button>
 					</div>
+					<section className="credential-group" aria-label="Assistant access">
+						<h3>Assistant access</h3>
+						<p>
+							{settings.clients.length} local{" "}
+							{settings.clients.length === 1 ? "assistant" : "assistants"}
+							{settings.hosted ? " · Online assistants enabled" : " · Online assistants disabled"}
+						</p>
+						<button onClick={() => setStep("assistants")}>Assistant access</button>
+					</section>
+					<section className="credential-group" aria-label="Chrome readiness">
+						<h3>Chrome readiness</h3>
+						<p>
+							<Globe size={16} /> {chrome?.message ?? "Chrome extension not checked yet"}
+						</p>
+						<button onClick={() => setStep("browser")}>Chrome setup</button>
+					</section>
 					{disconnecting && (
 						<div className="credential-notice">
 							<p>
@@ -1027,6 +924,10 @@ export function CredentialsPanel({
 			{!!state.pending.length && (
 				<div className="stack credential-approvals">
 					<h3>Requests awaiting approval</h3>
+					<p>
+						Connection approvals appear in chat. These local action requests are also available
+						here.
+					</p>
 					{state.pending.map((p) => (
 						<div className="stack" key={p.principalId + p.id}>
 							<strong>{p.client}</strong>

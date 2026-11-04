@@ -63,6 +63,7 @@ async function fixture() {
 	};
 	const broker = new ConnectionBroker(root, adapter, () => {}, entries);
 	await broker.initialize();
+	cleanup.unshift(() => broker.shutdown());
 	const sessionId = randomUUID(),
 		itemId = randomUUID();
 	const target = {
@@ -332,15 +333,32 @@ it("cancellation prevents the next batch item, even if an in-flight operation co
 	).toBe(true);
 });
 
-it.each(["local_credential_broker", "credential_broker", "local_credential_broker_show"])(
-	"renders and approves the actual MCP card over %s routing",
-	async (tool) => {
+it.each(
+	["local_credential_broker", "credential_broker", "local_credential_broker_show"].flatMap(
+		(tool) =>
+			[
+				[tool, false],
+				[tool, true],
+			] as const,
+	),
+)(
+	"renders and approves the actual MCP card over %s routing (automatic=%s)",
+	async (tool, automatic) => {
 		const { chromium } = await import("@playwright/test");
 		const { existsSync } = await import("node:fs");
 		if (!existsSync(chromium.executablePath())) return;
 		const { brokerApprovalResource } =
 			await import("@repo/project-protocol/mcp/broker-approval-resource");
 		const f = await fixture();
+		f.adapter.automatic = automatic;
+		let unlocked = !automatic;
+		f.adapter.readiness = () =>
+			unlocked
+				? { code: "ready", message: "Ready" }
+				: { code: "unlock_vault", message: "Unlock to continue", action: "unlock" };
+		f.adapter.unlock = vi.fn(() => {
+			unlocked = true;
+		});
 		await f.propose();
 		const browser = await chromium.launch({ headless: true });
 		try {
@@ -412,6 +430,10 @@ it.each(["local_credential_broker", "credential_broker", "local_credential_broke
 				{ html: brokerApprovalResource().text, initial },
 			);
 			const card = page.frameLocator("iframe");
+			if (automatic) {
+				await card.getByRole("button", { name: "Unlock Bitwarden", exact: true }).click();
+				await vi.waitFor(() => expect(f.adapter.unlock).toHaveBeenCalledWith(f.sessionId));
+			}
 			await card.getByRole("button", { name: "Approve selected", exact: true }).click();
 			await vi.waitFor(() => expect(f.adapter.execute).toHaveBeenCalledTimes(1));
 			expect(calls.map((c) => c.name)).toEqual(
@@ -420,15 +442,18 @@ it.each(["local_credential_broker", "credential_broker", "local_credential_broke
 					tool.replace(/_show$/, "") + "_approve",
 				]),
 			);
-			await vi.waitFor(() => expect(modelContexts.length).toBe(1));
+			if (!automatic) await vi.waitFor(() => expect(modelContexts.length).toBe(1));
 			const approval = calls.find((c) => c.name.endsWith("_approve"))!.arguments as {
 				command: { capability: string };
 			};
 			expect(JSON.stringify(modelContexts)).not.toContain(approval.command.capability);
-			await card.getByRole("button", { name: "Refresh", exact: true }).click();
-			await vi.waitFor(async () =>
-				expect(await card.locator("article").innerText()).toContain("connected"),
+			if (!automatic) await card.getByRole("button", { name: "Refresh", exact: true }).click();
+			await vi.waitFor(
+				async () =>
+					expect((await card.locator("article").innerText()).toLowerCase()).toContain("connected"),
+				{ timeout: 8000 },
 			);
+			if (automatic) expect(modelContexts).toHaveLength(0);
 			if (tool === "credential_broker")
 				await page.screenshot({ path: "/tmp/lap13-broker-card.png" });
 		} finally {
@@ -513,4 +538,129 @@ it("exposes chat review to the model while keeping approval app-only", () => {
 			}),
 		).toThrow();
 	}
+});
+
+it("continues approved browser steps without an assistant turn and verifies before connected", async () => {
+	const f = await fixture();
+	f.adapter.automatic = true;
+	f.adapter.execute.mockResolvedValue({ state: "user_action_required", browserTargetId: "tab" });
+	let submitted = false;
+	f.adapter.browser.mockImplementation(async (_p, _s, _i, command) => {
+		if (command.operation === "verify")
+			return { state: submitted ? "connected" : "user_action_required" };
+		if (command.operation === "inspect")
+			return { state: "user_action_required", observation: { handoff: false, revision: "page1" } };
+		submitted = true;
+		return { state: "user_action_required" };
+	});
+	await f.propose();
+	const review = await f.review();
+	await f.call({ action: "approve", itemIds: [f.itemId], capability: review.capability });
+	await vi.waitFor(
+		async () => expect((await f.call({ action: "status" })).view.items[0]?.state).toBe("connected"),
+		{ timeout: 10000 },
+	);
+	expect(
+		f.adapter.browser.mock.calls.filter((call) => call[3].operation === "advance"),
+	).toHaveLength(1);
+	expect((await f.call({ action: "status" })).view.items[0]?.submittedPages).toEqual(["page1"]);
+});
+
+it("never silently advances again after an uncertain submission", async () => {
+	const f = await fixture();
+	f.adapter.automatic = true;
+	f.adapter.execute.mockResolvedValue({ state: "user_action_required", browserTargetId: "tab" });
+	let attempts = 0;
+	f.adapter.browser.mockImplementation(async (_p, _s, _i, command) => {
+		if (command.operation === "advance") {
+			attempts++;
+			throw Error("uncertain synthetic-secret-canary");
+		}
+		return {
+			state: "user_action_required",
+			observation: { handoff: false, revision: "page" + attempts },
+		};
+	});
+	await f.propose();
+	const review = await f.review();
+	await f.call({ action: "approve", itemIds: [f.itemId], capability: review.capability });
+	await vi.waitFor(() => expect(attempts).toBe(1), { timeout: 6000 });
+	await new Promise((resolve) => setTimeout(resolve, 3000));
+	expect(attempts).toBe(1);
+	expect(JSON.stringify(await f.call({ action: "status" }))).not.toContain(
+		"synthetic-secret-canary",
+	);
+	await f.call({ action: "cancel" });
+});
+
+it("requires an app-only capability for OAuth navigation without credentials", async () => {
+	const f = await fixture();
+	const sessionId = randomUUID();
+	const call = (command: unknown) =>
+		f.broker.call(f.principal, { sessionId, ...(command as object) }, randomUUID());
+	await call({ action: "start", targets: [{ ...f.target, authType: "oauth2" }] });
+	const review = await call({ action: "review" });
+	expect(() =>
+		checkBrokerTool("local_credential_broker", {
+			requestId: randomUUID(),
+			command: {
+				action: "connect",
+				sessionId,
+				capability: review.capability!,
+				itemIds: [f.itemId],
+			},
+		}),
+	).toThrow();
+	await call({ action: "connect", capability: review.capability, itemIds: [f.itemId] });
+	await vi.waitFor(() => expect(f.adapter.execute).toHaveBeenCalledTimes(1));
+	expect(f.adapter.execute.mock.calls[0]?.[2].matches).toEqual([]);
+});
+
+it("opens only a local unlock prompt and retains the same request and mapping", async () => {
+	const f = await fixture();
+	await f.propose();
+	let unlocked = false;
+	f.adapter.readiness = () =>
+		unlocked
+			? { code: "ready", message: "Ready" }
+			: { code: "unlock_vault", message: "Unlock locally", action: "unlock" };
+	f.adapter.unlock = vi.fn();
+	const before = await f.call({ action: "status" });
+	await f.call({ action: "unlock" });
+	expect(f.adapter.unlock).toHaveBeenCalledWith(f.sessionId);
+	expect(f.adapter.execute).not.toHaveBeenCalled();
+	unlocked = true;
+	const after = await f.call({ action: "status" });
+	expect(after.view.id).toBe(before.view.id);
+	expect(after.view.items[0]?.matches).toEqual(before.view.items[0]?.matches);
+	expect(after.view.readiness?.code).toBe("ready");
+});
+
+it("retains an untouched draft through account linking without allowing account switching", async () => {
+	const f = await fixture();
+	f.adapter.scope = () => ({
+		accountId: "account-a",
+		installationId: "00000000-0000-4000-8000-000000000001",
+	});
+	const resumed = await f.call({ action: "status" });
+	expect(resumed.view).toMatchObject({
+		id: f.sessionId,
+		accountId: "account-a",
+		installationId: "00000000-0000-4000-8000-000000000001",
+		revision: 1,
+	});
+	f.adapter.scope = () => ({
+		accountId: "account-b",
+		installationId: "00000000-0000-4000-8000-000000000001",
+	});
+	await expect(f.call({ action: "status" })).rejects.toThrow("unavailable");
+});
+it("does not bind a draft with proposed credentials to a newly linked account", async () => {
+	const f = await fixture();
+	await f.propose();
+	f.adapter.scope = () => ({
+		accountId: "account-a",
+		installationId: "00000000-0000-4000-8000-000000000001",
+	});
+	await expect(f.call({ action: "status" })).rejects.toThrow("unavailable");
 });

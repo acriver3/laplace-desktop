@@ -39,6 +39,24 @@ export const credentialMatch = z
 	})
 	.strict();
 export type CredentialMatch = z.infer<typeof credentialMatch>;
+export const brokerReadiness = z
+	.object({
+		code: z.enum([
+			"ready",
+			"link_account",
+			"authorize_assistant",
+			"authorize_management",
+			"enable_chrome",
+			"connect_vault",
+			"unlock_vault",
+			"choose_credential",
+			"manual_setup",
+		]),
+		message: z.string().max(300),
+		action: z.enum(["desktop", "unlock", "choose"]).optional(),
+	})
+	.strict();
+export type BrokerReadiness = z.infer<typeof brokerReadiness>;
 export const brokerItem = z
 	.object({
 		target: brokerTarget,
@@ -56,6 +74,8 @@ export const brokerItem = z
 		]),
 		message: z.string().max(300).default(""),
 		attempted: z.boolean().optional(),
+		credentialRequested: z.boolean().optional(),
+		submissionUncertain: z.boolean().optional(),
 		submittedPages: z.array(z.string().max(200)).max(32).optional(),
 		connectorId: z.string().max(200).optional(),
 		operationId: z.string().max(200).optional(),
@@ -75,10 +95,13 @@ export const brokerSession = z
 		expiresAt: z.number(),
 		items: z.array(brokerItem).min(1).max(50),
 		receipts: z.record(z.string(), z.string()).default({}),
+		readiness: brokerReadiness.optional(),
+		workflowVersion: z.number().optional(),
 	})
 	.strict();
 export type BrokerSession = z.infer<typeof brokerSession>;
 export const brokerCommand = z.discriminatedUnion("action", [
+	z.object({ action: z.literal("match"), sessionId: id, itemId: id }).strict(),
 	z
 		.object({
 			action: z.literal("start"),
@@ -102,10 +125,12 @@ export const brokerCommand = z.discriminatedUnion("action", [
 			matches: z.array(credentialMatch).min(1).max(20),
 		})
 		.strict(),
-	z.object({ action: z.enum(["status", "review", "cancel", "desktop"]), sessionId: id }).strict(),
+	z
+		.object({ action: z.enum(["status", "review", "cancel", "desktop", "unlock"]), sessionId: id })
+		.strict(),
 	z
 		.object({
-			action: z.literal("approve"),
+			action: z.enum(["approve", "connect"]),
 			sessionId: id,
 			capability: z.string().min(40).max(100),
 			itemIds: z.array(id).min(1).max(50),
@@ -139,44 +164,46 @@ export const brokerToolInput = z
 	.strict();
 export function brokerTools(local = false) {
 	const prefix = local ? "local_credential_broker" : "credential_broker";
-	return ["", ...(local ? ["_show"] : []), "_review", "_approve", "_prepare"].map((suffix) => ({
-		name: prefix + suffix,
-		description:
-			suffix === "_show"
-				? "Show the credential review MCP App directly in chat after proposing matches. Pass command action review and the sessionId. The user approves in this card; never approve on their behalf. Use Desktop review only when the host cannot render MCP Apps."
-				: suffix === "_approve"
-					? "Approve only the reviewed mappings selected by the user in the approval card."
-					: suffix === "_review"
-						? "Refresh the credential approval card."
-						: `Connect or reauthenticate selected services using approved Bitwarden logins or Doppler references. Before setup, call local_credentials status for Desktop opt-in guidance. Start, discover candidates, propose mappings, then call ${local ? "local_credential_broker_show" : "credential_broker"} with command action review to display the approval MCP App in chat. Do not open Desktop for approval when MCP Apps are supported. Poll status or advance an approved login. Never request secret values. Authorize a new hosted assistant for metadata matching in Desktop first; vault unlock stays local. Hosted OAuth opens in the user’s regular Chrome profile through the Laplace extension after approval. Chrome may ask the user for site-specific extension access; no debugging connection is needed. Inspect and advance eligible login steps using the reviewed credential reference. MFA and OAuth consent require the user. Use a new requestId per operation; poll that same ID with poll=true while queued. Do not replay business actions after reauthentication.`,
-		inputSchema: z.toJSONSchema(
-			suffix === "_show"
-				? brokerToolInput.extend({
-						command: z
-							.object({ action: z.literal("review"), sessionId: id })
-							.strict()
-							.optional(),
-					})
-				: brokerToolInput,
-		) as { type: "object"; [key: string]: unknown },
-		_meta: {
-			ui: {
-				resourceUri: BROKER_UI_URI,
-				visibility:
-					suffix === "_prepare"
-						? ["model"]
-						: suffix && suffix !== "_show"
-							? ["app"]
-							: ["app", "model"],
+	return ["", ...(local ? ["_show"] : []), "_review", "_approve", "_connect", "_prepare"].map(
+		(suffix) => ({
+			name: prefix + suffix,
+			description:
+				suffix === "_show"
+					? "Show the credential review MCP App directly in chat after proposing matches. Pass command action review and the sessionId. The user approves in this card; never approve on their behalf. Use Desktop review only when the host cannot render MCP Apps."
+					: suffix === "_approve" || suffix === "_connect"
+						? "Approve only the reviewed mappings selected by the user in the approval card."
+						: suffix === "_review"
+							? "Refresh the credential approval card."
+							: `Connect or reauthenticate selected services using approved Bitwarden logins or Doppler references. Start a session and follow its readiness actions; do not require vault setup for existing-session OAuth. Discover candidates and propose mappings only when credentials are needed, then call ${local ? "local_credential_broker_show" : "credential_broker"} with command action review to display the approval MCP App in chat. Do not open Desktop for approval when MCP Apps are supported. Desktop continues approved login steps automatically. Poll status to report progress. For OAuth, show the card before requiring vault access; its Continue in Chrome action can reuse an existing session. Never request secret values. Authorize a new hosted assistant for metadata matching in Desktop first; vault unlock stays local. Hosted OAuth opens in the user’s regular Chrome profile through the Laplace extension after the user chooses Continue in Chrome or approves a credential mapping. Chrome may ask the user for site-specific extension access; no debugging connection is needed. Workflow version 2 continues eligible login steps automatically; do not require a follow-up assistant message or ask the user to reply approved. MFA and OAuth consent require the user. Use a new requestId per operation; poll that same ID with poll=true while queued. Do not replay business actions after reauthentication.`,
+			inputSchema: z.toJSONSchema(
+				suffix === "_show"
+					? brokerToolInput.extend({
+							command: z
+								.object({ action: z.literal("review"), sessionId: id })
+								.strict()
+								.optional(),
+						})
+					: brokerToolInput,
+			) as { type: "object"; [key: string]: unknown },
+			_meta: {
+				ui: {
+					resourceUri: BROKER_UI_URI,
+					visibility:
+						suffix === "_prepare"
+							? ["model"]
+							: suffix && suffix !== "_show"
+								? ["app"]
+								: ["app", "model"],
+				},
 			},
-		},
-		annotations: {
-			readOnlyHint: suffix === "_review" || suffix === "_show",
-			destructiveHint: false,
-			openWorldHint: true,
-			idempotentHint: false,
-		},
-	}));
+			annotations: {
+				readOnlyHint: suffix === "_review" || suffix === "_show",
+				destructiveHint: false,
+				openWorldHint: true,
+				idempotentHint: false,
+			},
+		}),
+	);
 }
 export function checkBrokerTool(name: string, input: z.infer<typeof brokerToolInput>) {
 	const action = input.command?.action;
@@ -188,11 +215,13 @@ export function checkBrokerTool(name: string, input: z.infer<typeof brokerToolIn
 	}
 	if (!action) throw Error("A command is required.");
 	if (
-		name.endsWith("_approve")
-			? action !== "approve"
-			: name.endsWith("_review") || name.endsWith("_show")
-				? action !== "review"
-				: action === "approve"
+		name.endsWith("_connect")
+			? action !== "connect"
+			: name.endsWith("_approve")
+				? action !== "approve"
+				: name.endsWith("_review") || name.endsWith("_show")
+					? action !== "review"
+					: action === "approve" || action === "connect"
 	)
 		throw Error("Use the approval card.");
 }
@@ -204,7 +233,7 @@ export function brokerHandoff(sessionId: string, accountId: string, targets: unk
 		accountId +
 		"\nTargets: " +
 		JSON.stringify(targets) +
-		"\nFind the user's Desktop, start this session, match permitted credential metadata, and show the review card. Never return secret values. The user approves; pause for MFA and provider consent."
+		"\nFind the user's Desktop, start this session, and show its MCP App card. Follow readiness actions. For OAuth, offer Continue in Chrome before requiring credentials. Match metadata only when a login is needed. Never return secret values. The user approves credential use and completes MFA or provider consent; Desktop tracks completion automatically."
 	);
 }
 

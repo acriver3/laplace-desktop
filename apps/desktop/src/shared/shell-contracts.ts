@@ -1,3 +1,4 @@
+import { brokerTarget } from "@repo/project-protocol/credential-broker";
 import { z } from "zod";
 
 import { assistantTarget } from "./assistant-setup";
@@ -17,6 +18,20 @@ export type LocalSection = z.infer<typeof localSection>;
 
 export const shellRequest = z.discriminatedUnion("method", [
 	...pointRequests,
+	z
+		.object({
+			method: z.literal("shell.brokerSetup"),
+			input: z
+				.object({
+					clientId: z.string().uuid(),
+					sessionId: z.string().uuid(),
+					targets: z.array(brokerTarget).min(1).max(50),
+					target: assistantTarget,
+					action: z.enum(["instructions", "open"]),
+				})
+				.strict(),
+		})
+		.strict(),
 	z
 		.object({
 			method: z.literal("shell.catalogSetup"),
@@ -47,6 +62,7 @@ export const shellRequest = z.discriminatedUnion("method", [
 		})
 		.strict(),
 	z.object({ method: z.literal("shell.status") }).strict(),
+	z.object({ method: z.literal("shell.dismissUnlock") }).strict(),
 	z
 		.object({
 			method: z.literal("shell.local"),
@@ -83,6 +99,7 @@ export const shellRequest = z.discriminatedUnion("method", [
 ]);
 
 export interface ShellState {
+	unlockSessionId?: string;
 	/** Native content is displayed inside the persistent Connect shell. */
 	localEmbedded?: boolean;
 	localContentVersion?: number;

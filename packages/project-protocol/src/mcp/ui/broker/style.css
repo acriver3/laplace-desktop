@@ -44,3 +44,27 @@
 .broker-review [role="alert"] {
 	color: #c33;
 }
+
+.broker-next {
+	padding: 12px;
+	border-radius: 8px;
+	background: #8881;
+}
+.broker-matches {
+	padding: 12px;
+	border: 1px solid #8885;
+	border-radius: 8px;
+}
+.broker-matches label {
+	display: grid;
+	margin-block: 8px;
+}
+.broker-matches input,
+.broker-matches select {
+	min-width: 0;
+	max-width: 100%;
+	padding: 8px;
+}
+.broker-review article {
+	overflow-wrap: anywhere;
+}

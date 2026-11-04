@@ -277,43 +277,17 @@ export async function startMcpServer(
 							broker: async (route, args) => {
 								const input = brokerToolInput.parse(args);
 								checkBrokerTool(route.target, input);
-								if (!credentials!.allowed(principal(clientId))) {
-									const setup = await credentials!.call(principal(clientId), {
-										action: "status",
-										requestId: input.requestId,
-									});
-									return brokerMcpResult(setup, input, route.target);
+								if (!credentials!.connectionBroker && !credentials!.allowed(principal(clientId))) {
+									return brokerMcpResult(
+										await credentials!.call(principal(clientId), {
+											action: "status",
+											requestId: input.requestId,
+										}),
+										input,
+										route.target,
+									);
 								}
-								if (input.command?.action === "start" && manager.status().mode === "linked") {
-									const status = manager.status();
-									let preparedSession = false;
-									try {
-										const description = (await (
-											await manager.credentialRelayApi()
-										).post("broker", {
-											action: "describe",
-											sessionId: input.command.sessionId,
-										})) as { targets: unknown[] };
-										preparedSession =
-											JSON.stringify(description.targets) === JSON.stringify(input.command.targets);
-									} catch {}
-									if (!preparedSession) {
-										const prepared = (await hosted.call(
-											clientId,
-											"credential_broker_prepare",
-											{
-												...input,
-												accountId: status.accountId,
-												installationId: status.installationId,
-											},
-											controller.signal,
-										)) as { isError?: boolean };
-										if (prepared.isError)
-											throw Error(
-												"Connect this assistant to hosted Laplace with Desktop management access.",
-											);
-									}
-								}
+
 								const result = await credentials!.call(
 									principal(clientId),
 									input.poll

@@ -1,8 +1,13 @@
-import { brokerHandoff } from "@repo/project-protocol/credential-broker";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import {
+	assistantTarget,
+	assistantNames,
+	type AssistantTarget,
+	type AssistantSetup,
+} from "../shared/assistant-setup";
+import type { ClientSnapshot, DesktopSnapshot } from "../shared/helper-contracts";
 import { Modal } from "./Dialogs";
-
 import { invoke, type CatalogEntry } from "./types";
 /** Copy fallback is supported by every locally connected assistant; no silent dispatch. */
 export function BrokerStart({
@@ -14,6 +19,13 @@ export function BrokerStart({
 	label?: string;
 	batch?: boolean;
 }) {
+	const [clients, setClients] = useState<ClientSnapshot[]>([]);
+	const [clientId, setClientId] = useState("");
+	const [target, setTarget] = useState<AssistantTarget>("codex");
+	const [targetIds] = useState<Record<string, string>>({});
+	const [draft, setDraft] = useState("");
+	const [busy, setBusy] = useState(false);
+	const request = useRef({ fingerprint: "", id: crypto.randomUUID() });
 	const [settings, setSettings] = useState<{
 			enabled: boolean;
 			accountId?: string;
@@ -23,6 +35,13 @@ export function BrokerStart({
 		[selected, setSelected] = useState<Record<string, string>>({}),
 		[message, setMessage] = useState("");
 	useEffect(() => {
+		void invoke<DesktopSnapshot>("status")
+			.then((s) => {
+				const enabled = s.clients.filter((c) => c.enabled);
+				setClients(enabled);
+				setClientId(enabled[0]?.id ?? "");
+			})
+			.catch(() => {});
 		void invoke<{ enabled: boolean; accountId?: string; installationId?: string }>("broker.enabled")
 			.then(setSettings)
 			.catch(() => {});
@@ -33,7 +52,7 @@ export function BrokerStart({
 		const chosen = eligible.filter((e) => (batch ? selected[e.id] : true));
 		if (!chosen.length || chosen.length > 50) return;
 		const targets = chosen.map((e) => ({
-			id: crypto.randomUUID(),
+			id: targetIds[e.id] ?? (targetIds[e.id] = crypto.randomUUID()),
 			service: e.id,
 			label: e.name,
 			location: "local",
@@ -41,22 +60,30 @@ export function BrokerStart({
 			connectionId: e.installed ? e.serverId : undefined,
 			authType: selected[e.id] || "browser",
 		}));
-		const prompt =
-			brokerHandoff(crypto.randomUUID(), settings!.accountId ?? "local", targets).replace(
-				"Use Laplace credential_broker",
-				"Use Laplace local_credential_broker",
-			) +
-			(settings!.installationId ? "\nDesktop installation ID: " + settings!.installationId : "") +
-			"\nUse the invoking local assistant and this Desktop. If a flow is unsupported, show its manual setup instructions.";
+		const fingerprint = JSON.stringify({ clientId, targets });
+		if (request.current.fingerprint !== fingerprint)
+			request.current = { fingerprint, id: crypto.randomUUID() };
+		setBusy(true);
 		try {
-			await navigator.clipboard.writeText(prompt);
+			const result = await invoke<AssistantSetup>("shell.brokerSetup", {
+				clientId,
+				target,
+				sessionId: request.current.id,
+				targets,
+				action: "open",
+			});
+			setDraft(result.prompt);
 			setMessage(
-				"Request copied. Paste it into your connected assistant. Unlock Bitwarden in Credentials; configure Doppler sources in Laplace Connections.",
+				result.opened
+					? "Review and send the prepared draft in your assistant. Your connection request is saved."
+					: "Open your assistant and copy the request below to continue.",
 			);
 		} catch {
 			setMessage(
-				"Clipboard unavailable. Use the assistant's local_credential_broker tool or continue with manual setup.",
+				"Could not prepare this request. Check that the selected assistant has credential and connector-management access in AI clients.",
 			);
+		} finally {
+			setBusy(false);
 		}
 	}
 	return (
@@ -67,6 +94,34 @@ export function BrokerStart({
 			{open && (
 				<Modal title="Prepare credential matching" close={() => setOpen(false)}>
 					<section className="dialog-body stack" aria-label="Prepare credential matching">
+						<label>
+							Connected assistant
+							<select value={clientId} onChange={(e) => setClientId(e.target.value)}>
+								{clients.map((c) => (
+									<option value={c.id} key={c.id}>
+										{c.name}
+									</option>
+								))}
+							</select>
+						</label>
+						{!clients.length && (
+							<button onClick={() => void invoke("shell.local", { section: "clients" })}>
+								Connect an assistant
+							</button>
+						)}
+						<label>
+							Open with
+							<select
+								value={target}
+								onChange={(e) => setTarget(assistantTarget.parse(e.target.value))}
+							>
+								{assistantTarget.options.map((t) => (
+									<option key={t} value={t}>
+										{assistantNames[t]}
+									</option>
+								))}
+							</select>
+						</label>
 						<p>
 							Choose a credential source for each connection. Your assistant will propose matches
 							for your review.
@@ -94,10 +149,26 @@ export function BrokerStart({
 								</select>
 							</label>
 						))}
-						<button type="button" onClick={() => void prepare()}>
-							Copy assistant request
+						<button type="button" disabled={busy || !clientId} onClick={() => void prepare()}>
+							{busy ? "Preparing…" : "Continue with assistant"}
 						</button>
 						{message && <p role="status">{message}</p>}
+						{draft && (
+							<>
+								<textarea aria-label="Assistant request" readOnly value={draft} rows={4} />
+								<button
+									onClick={() =>
+										void navigator.clipboard
+											.writeText(draft)
+											.then(() =>
+												setMessage("Request copied. Paste and send it in your assistant."),
+											)
+									}
+								>
+									Copy request
+								</button>
+							</>
+						)}
 					</section>
 				</Modal>
 			)}

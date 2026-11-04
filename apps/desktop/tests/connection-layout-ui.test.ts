@@ -124,9 +124,9 @@ it.skipIf(
 				};
 			});
 			await page.goto(`http://127.0.0.1:${port}`);
-			await browserExpect(
-				page.getByRole("button", { name: "Connect with assistant", exact: true }),
-			).toHaveCount(3);
+			await browserExpect(page.getByRole("button", { name: "Connect", exact: true })).toHaveCount(
+				3,
+			);
 			await browserExpect(page.getByText("Old successful setup")).toHaveCount(0);
 			await browserExpect(page.getByText("Already connected")).toHaveCount(0);
 			await browserExpect(page.getByText("Old failed setup")).not.toBeVisible();
@@ -136,9 +136,9 @@ it.skipIf(
 			await page.getByText("Connection setup (1)", { exact: true }).click();
 			await page.getByRole("button", { name: "Dismiss Outlook setup" }).click();
 			await page.reload();
-			await browserExpect(
-				page.getByRole("button", { name: "Connect with assistant", exact: true }),
-			).toHaveCount(3);
+			await browserExpect(page.getByRole("button", { name: "Connect", exact: true })).toHaveCount(
+				3,
+			);
 			await browserExpect(page.getByText("Old failed setup")).toHaveCount(0);
 			await browserExpect(page.getByText("Old cancellation")).toHaveCount(0);
 			for (const width of [1440, 900, 600, 390]) {
@@ -161,10 +161,7 @@ it.skipIf(
 				);
 				expect(overflow).toEqual([]);
 			}
-			await page
-				.getByRole("button", { name: "Connect with assistant", exact: true })
-				.first()
-				.click();
+			await page.getByRole("button", { name: "Connect", exact: true }).first().click();
 			await browserExpect(page.getByRole("dialog")).toBeVisible();
 			await page.getByRole("button", { name: "Close dialog" }).click();
 			await page.setViewportSize({ width: 1440, height: 1000 });

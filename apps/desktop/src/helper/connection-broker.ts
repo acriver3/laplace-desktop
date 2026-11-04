@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { EncryptedStore } from "@repo/local-mcp-core/encrypted-store";
 import type { EntryFactory } from "@repo/local-mcp-core/store";
@@ -6,6 +6,7 @@ import {
 	brokerCommand,
 	brokerSession,
 	type BrokerSession,
+	type BrokerReadiness,
 	type BrokerItem,
 	type CredentialCandidate,
 	type BrokerCommand,
@@ -46,7 +47,11 @@ export interface ConnectionBrokerAdapter {
 		signal: AbortSignal,
 	): Promise<BrokerExecution & { observation?: unknown }>;
 	cancel?(session: BrokerSession): Promise<void>;
-	focus(): void;
+	focus(section?: "servers" | "device" | "clients" | "credentials"): void;
+	unlock?(sessionId: string): void;
+	readiness?(principal: CredentialPrincipal, session: BrokerSession): BrokerReadiness;
+	prepare?(principal: CredentialPrincipal, session: BrokerSession): Promise<void>;
+	automatic?: boolean;
 }
 const digest = (value: unknown) => createHash("sha256").update(canonicalJson(value)).digest("hex");
 const active = (item: BrokerItem) =>
@@ -129,9 +134,26 @@ export class ConnectionBroker {
 		this.queue = task;
 		return task;
 	}
-	private get(principal: CredentialPrincipal, id: string) {
+	private async get(principal: CredentialPrincipal, id: string) {
 		const session = this.sessions[id];
 		const scope = this.adapter.scope?.() ?? {};
+		// An unlinked, untouched draft has no destination account yet. Bind it once
+		// after the user's native account-link action; never move a reviewed request.
+		if (
+			session &&
+			session.principalId === principal.id &&
+			!session.accountId &&
+			scope.accountId &&
+			(!session.installationId || session.installationId === scope.installationId) &&
+			Object.keys(session.receipts).length === 0 &&
+			session.items.every((i) => i.state === "matching" && !i.attempted && i.matches.length === 0)
+		) {
+			this.revoke(id);
+			session.accountId = scope.accountId;
+			session.installationId = scope.installationId;
+			session.revision++;
+			await this.save();
+		}
 		if (
 			!session ||
 			session.principalId !== principal.id ||
@@ -176,7 +198,26 @@ export class ConnectionBroker {
 	}
 	private view(session: BrokerSession) {
 		const { receipts: _, principalId: __, ...view } = structuredClone(session);
-		return view;
+		return {
+			...view,
+			workflowVersion: this.adapter.automatic ? 2 : undefined,
+			readiness: this.principals.has(session.principalId)
+				? this.adapter.readiness?.(this.principals.get(session.principalId)!, session)
+				: undefined,
+		};
+	}
+	pendingCount() {
+		return Object.values(this.sessions).filter(
+			(s) =>
+				s.expiresAt > Date.now() &&
+				s.items.some((i) =>
+					["matching", "review_required", "user_action_required"].includes(i.state),
+				),
+		).length;
+	}
+	async shutdown() {
+		for (const id of this.controllers.keys()) this.revoke(id);
+		await this.queue.catch(() => {});
 	}
 	list() {
 		const scope = this.adapter.scope?.() ?? {};
@@ -196,7 +237,8 @@ export class ConnectionBroker {
 			if (command.action === "start") {
 				const existing = this.sessions[command.sessionId];
 				if (existing) {
-					const session = this.get(principal, command.sessionId);
+					const session = await this.get(principal, command.sessionId);
+					await this.adapter.prepare?.(principal, session);
 					if (digest(session.items.map((i) => i.target)) !== digest(command.targets))
 						throw Error("Session ID already used.");
 					return { view: this.view(session) };
@@ -249,11 +291,27 @@ export class ConnectionBroker {
 						}
 					}
 				this.sessions[session.id] = session;
+				await this.adapter.prepare?.(principal, session);
 				await this.save();
 				this.changed();
 				return { view: this.view(session) };
 			}
-			const session = this.get(principal, command.sessionId);
+			const session = await this.get(principal, command.sessionId);
+			if (command.action === "match") {
+				const item = session.items.find((i) => i.target.id === command.itemId);
+				if (!item || terminal(item) || (item.matches.length && item.attempted))
+					throw Error("Use a new reviewed attempt.");
+				if (session.items.some((i) => i !== item && active(i)))
+					throw Error("Finish the active login first.");
+				this.revoke(session.id);
+				item.credentialRequested = true;
+				item.state = "matching";
+				item.message = "Choose a saved credential, then approve this connection.";
+				session.revision++;
+				await this.save();
+				this.changed();
+				return { view: this.view(session) };
+			}
 			if (command.action === "cancel") {
 				this.revoke(session.id);
 				await this.adapter.cancel?.(session).catch(() => {});
@@ -268,9 +326,43 @@ export class ConnectionBroker {
 				this.changed();
 				return { view: this.view(session) };
 			}
-			if (command.action === "status") return { view: this.view(session) };
+			if (command.action === "unlock") {
+				this.adapter.unlock?.(session.id);
+				return { view: this.view(session) };
+			}
+			if (command.action === "status" || command.action === "review") {
+				await this.adapter.prepare?.(principal, session);
+				for (const item of session.items.filter(
+					(i) => i.state === "matching" && i.matches.length,
+				)) {
+					try {
+						await this.validateReviewed(principal, session, item);
+						item.state = "review_required";
+						item.message = "Review the saved match for this connection.";
+						session.revision++;
+						await this.save();
+					} catch {
+						/* Readiness explains the required local step. */
+					}
+				}
+				if (command.action === "status") return { view: this.view(session) };
+			}
 			if (command.action === "desktop") {
-				this.adapter.focus();
+				const readiness = this.adapter.readiness?.(principal, session);
+				this.adapter.focus(
+					readiness?.code === "manual_setup"
+						? "servers"
+						: readiness?.code === "authorize_management"
+							? "clients"
+							: readiness?.code === "link_account"
+								? "device"
+								: readiness &&
+									  ["connect_vault", "authorize_assistant", "enable_chrome"].includes(
+											readiness.code,
+									  )
+									? "credentials"
+									: undefined,
+				);
 				return { view: this.view(session) };
 			}
 			if (session.expiresAt <= Date.now()) throw Error("Broker session expired.");
@@ -310,7 +402,7 @@ export class ConnectionBroker {
 			if (command.action === "propose") {
 				if (session.items.some(active)) throw Error("Finish or cancel the active attempt first.");
 				const item = session.items.find((i) => i.target.id === command.itemId);
-				if (!item || terminal(item) || item.attempted)
+				if (!item || terminal(item) || (item.attempted && item.matches.length > 0))
 					throw Error(
 						"Item unavailable. Use a new session to change a previously executed mapping.",
 					);
@@ -333,7 +425,7 @@ export class ConnectionBroker {
 				this.changed();
 				return { view: this.view(session) };
 			}
-			if (command.action === "approve") {
+			if (command.action === "approve" || command.action === "connect") {
 				const cap = this.capabilities.get(command.capability);
 				this.capabilities.delete(command.capability);
 				if (
@@ -350,7 +442,18 @@ export class ConnectionBroker {
 				const ids = new Set(command.itemIds);
 				if (ids.size !== command.itemIds.length) throw Error("Duplicate selection.");
 				const selected = session.items.filter((i) => ids.has(i.target.id));
-				if (selected.length !== ids.size || selected.some((i) => i.state !== "review_required"))
+				if (
+					selected.length !== ids.size ||
+					selected.some((i) =>
+						command.action === "connect"
+							? i.state !== "matching" ||
+								i.target.authType !== "oauth2" ||
+								i.target.location !== "cloud" ||
+								i.matches.length > 0 ||
+								i.attempted
+							: i.state !== "review_required",
+					)
+				)
 					throw Error("Review the selected items again.");
 				for (const item of selected) await this.validateReviewed(principal, session, item);
 				if (cap.epoch !== this.adapter.epoch()) throw Error("Credential access changed.");
@@ -358,7 +461,8 @@ export class ConnectionBroker {
 				session.receipts[requestId] = fingerprint;
 				selected.forEach((i) => {
 					i.state = "running";
-					i.message = "Approved. Connecting…";
+					i.message =
+						i.target.authType === "oauth2" ? "Approved. Opening Chrome…" : "Approved. Connecting…";
 				});
 				await this.save();
 				const controller = new AbortController();
@@ -379,6 +483,7 @@ export class ConnectionBroker {
 				// Receipts and page revisions precede execution; a new request ID cannot replay a submission.
 				if (command.operation === "advance") {
 					if (
+						item.submissionUncertain ||
 						!command.pageRevision ||
 						(item.submittedPages ?? []).includes(command.pageRevision) ||
 						(item.submittedPages?.length ?? 0) >= 32
@@ -388,13 +493,19 @@ export class ConnectionBroker {
 				}
 				session.receipts[requestId] = fingerprint;
 				await this.save();
-				const result = await this.adapter.browser(
-					principal,
-					session,
-					item,
-					command,
-					controller.signal,
-				);
+				let result: Awaited<ReturnType<ConnectionBrokerAdapter["browser"]>>;
+				try {
+					result = await this.adapter.browser(principal, session, item, command, controller.signal);
+				} catch {
+					if (command.operation === "advance") {
+						item.submissionUncertain = true;
+						item.message =
+							"Sign-in outcome is uncertain. Complete it in Chrome; only verification will continue.";
+						await this.save();
+						this.changed();
+					}
+					throw Error("Browser step unavailable. Check Chrome before a new attempt.");
+				}
 				this.checkGrant(session, item);
 				const { observation, ...execution } = result;
 				Object.assign(item, execution);
@@ -418,6 +529,7 @@ export class ConnectionBroker {
 		item: BrokerItem,
 	) {
 		await this.adapter.validate(principal, session, item);
+		if (!item.matches.length && item.target.authType === "oauth2") return;
 		const candidates = await this.adapter.candidates(principal, session);
 		for (const match of item.matches) {
 			const current = candidates.find((c) => digest(c.source) === digest(match.source));
@@ -490,14 +602,93 @@ export class ConnectionBroker {
 				await this.save();
 				this.changed();
 			});
-			// Browser sessions are advanced explicitly by the assistant; never overlap accounts.
+			// The approved executor owns continuation. Browser items remain serial.
 			if (item.state === "user_action_required") {
 				for (const pending of items.slice(items.indexOf(item) + 1)) {
 					pending.message = "Approved. Waiting for the current login.";
 				}
 				await this.serial(() => this.save());
+				if (this.adapter.automatic) void this.follow(principal, session, item, controller);
 				break;
 			}
+		}
+	}
+	private async follow(
+		principal: CredentialPrincipal,
+		session: BrokerSession,
+		item: BrokerItem,
+		controller: AbortController,
+	) {
+		// All side effects pass through call(): authorization, revision checks and durable receipts.
+		let uncertain = !!item.submissionUncertain;
+		while (!controller.signal.aborted && active(item) && Date.now() < session.expiresAt) {
+			await new Promise((resolve) => setTimeout(resolve, 2500));
+			if (controller.signal.aborted || !active(item)) break;
+			try {
+				await this.call(
+					principal,
+					{ action: "browser", sessionId: session.id, itemId: item.target.id, operation: "verify" },
+					randomUUID(),
+				);
+				if (!active(item) || !item.browserTargetId || uncertain) continue;
+				const result = await this.call(
+					principal,
+					{
+						action: "browser",
+						sessionId: session.id,
+						itemId: item.target.id,
+						operation: "inspect",
+					},
+					randomUUID(),
+				);
+				const observation = (result as { observation?: { handoff: boolean; revision: string } })
+					.observation;
+				if (!observation || observation.handoff) continue;
+				if (!item.matches.length) {
+					await this.serial(async () => {
+						item.state = "matching";
+						item.message = "Chrome needs a login. Choose a saved credential and approve it here.";
+						await this.save();
+						this.changed();
+					});
+					break;
+				}
+				if (item.submittedPages?.includes(observation.revision)) continue;
+				try {
+					await this.call(
+						principal,
+						{
+							action: "browser",
+							sessionId: session.id,
+							itemId: item.target.id,
+							operation: "advance",
+							pageRevision: observation.revision,
+						},
+						randomUUID(),
+					);
+				} catch {
+					uncertain = true;
+					throw Error("Submission uncertain.");
+				}
+			} catch {
+				// Never repeat a failed/uncertain submission. Verification may still complete.
+				if (!controller.signal.aborted && active(item)) {
+					item.message =
+						"Continue in Chrome. Laplace will check the connection; no uncertain sign-in step is repeated.";
+					await this.serial(async () => {
+						await this.save();
+						this.changed();
+					});
+				}
+			}
+		}
+		if (Date.now() >= session.expiresAt) {
+			this.revoke(session.id);
+			if (active(item)) item.state = "expired";
+			await this.serial(async () => {
+				await this.save();
+				this.changed();
+			});
 		}
 	}
 }

@@ -198,3 +198,59 @@ it("opens hosted OAuth through the existing Chrome extension only after approval
 	expect(post).not.toHaveBeenCalled();
 	expect(open).not.toHaveBeenCalled();
 });
+
+it("keeps preparation metadata available while assistant authorization is missing", async () => {
+	let permission = false,
+		hosted = false;
+	const manager = {
+		status: () => ({ mode: "linked" }),
+		clientToolAllowed: () => permission,
+	} as unknown as DesktopManager;
+	const credentials = {} as CredentialBroker;
+	const prepare = vi.fn(async () => {
+		if (!hosted) throw Error("Denied");
+	});
+	const adapter = desktopBrokerAdapter(
+		manager,
+		credentials,
+		{} as CatalogInstaller,
+		{} as PortableConnectors,
+		() => {},
+		undefined,
+		prepare,
+	);
+	const principal = { id: "local:client", name: "Agent", hosted: false, authorize: () => {} };
+	const item: BrokerItem = {
+		target: {
+			id: randomUUID(),
+			service: "sheets",
+			label: "Sheets",
+			location: "cloud",
+			authType: "oauth2",
+		},
+		matches: [],
+		state: "matching",
+		message: "",
+	};
+	const session: BrokerSession = {
+		id: randomUUID(),
+		principalId: principal.id,
+		revision: 0,
+		createdAt: Date.now(),
+		expiresAt: Date.now() + 60000,
+		items: [item],
+		receipts: {},
+	};
+	await adapter.authorize(principal);
+	expect(adapter.readiness!(principal, session).code).toBe("authorize_management");
+	await expect(adapter.validate(principal, session, item)).rejects.toThrow("connector management");
+	await adapter.prepare!(principal, session);
+	expect(prepare).not.toHaveBeenCalled();
+	permission = true;
+	await adapter.prepare!(principal, session);
+	expect(adapter.readiness!(principal, session).code).toBe("authorize_management");
+	hosted = true;
+	await adapter.prepare!(principal, session);
+	expect(adapter.readiness!(principal, session).code).toBe("ready");
+	expect(prepare).toHaveBeenCalledTimes(2);
+});

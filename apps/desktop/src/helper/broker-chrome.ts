@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID, timingSafeEqual, createHash } from "node:crypto";
 import { createServer } from "node:http";
+
 import { z } from "zod";
+
 import { browserExtensionId } from "../shared/browser-extension-id";
 import type { LoginObservation } from "./broker-browser";
 
@@ -42,6 +44,7 @@ type Session = {
 	url: string;
 	origins: string[];
 	expires: number;
+	checkOnly?: boolean;
 	pending?: Pending;
 };
 
@@ -91,7 +94,7 @@ export class BrokerChrome {
 				if (req.url === "/connect") {
 					s.token = randomBytes(32).toString("base64url");
 					s.code = "";
-					result = { token: s.token, url: s.url, expires: s.expires };
+					result = { token: s.token, url: s.url, expires: s.expires, checkOnly: s.checkOnly };
 					s.url = "";
 				}
 			} else {
@@ -144,7 +147,7 @@ export class BrokerChrome {
 			});
 		await this.starting;
 	}
-	async open(url: string, origins: string[], signal: AbortSignal) {
+	async open(url: string, origins: string[], signal: AbortSignal, checkOnly = false) {
 		const destination = new URL(url);
 		if (destination.protocol !== "https:" || destination.username || destination.password)
 			throw Error("Unsupported sign-in URL.");
@@ -155,7 +158,8 @@ export class BrokerChrome {
 		this.sessions.set(id, {
 			code,
 			url,
-			origins: z.array(origin).min(1).max(20).parse(origins),
+			origins: z.array(origin).max(20).parse(origins),
+			checkOnly,
 			expires: Date.now() + 15 * 60000,
 		});
 		try {
@@ -215,14 +219,31 @@ export class BrokerChrome {
 		}
 		if (s && !s.token)
 			return {
-				origin: s.origins[0]!,
+				origin: s.origins[0] ?? "https://connect.withlaplace.com",
 				revision: createHash("sha256").update(id).digest("hex"),
 				fields: [],
 				handles: [],
 				handoff: true,
 				handoffReason: "permission_required",
 			};
-		return this.call(id, "inspect", {}, signal);
+		return this.call(id, "inspect", { origins: s?.origins ?? [] }, signal);
+	}
+	allowOrigins(id: string, origins: string[]) {
+		const session = this.sessions.get(id);
+		if (session) session.origins = z.array(origin).min(1).max(20).parse(origins);
+	}
+	isReady(id: string) {
+		const session = this.sessions.get(id);
+		return !!session?.token && session.expires > Date.now();
+	}
+	readiness() {
+		const paired = [...this.sessions.values()].some((s) => s.token && s.expires > Date.now());
+		return {
+			state: paired ? ("ready" as const) : ("not_checked" as const),
+			message: paired
+				? "Chrome extension connected for this session"
+				: "Chrome extension will be checked when you connect",
+		};
 	}
 	async advance(id: string, revision: string, values: Record<string, string>, signal: AbortSignal) {
 		const s = this.sessions.get(id),
