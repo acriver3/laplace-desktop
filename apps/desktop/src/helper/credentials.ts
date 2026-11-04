@@ -17,6 +17,7 @@ import { z } from "zod";
 import type { BitwardenConnection, CredentialBrowserState } from "../shared/credential-setup";
 import { BitwardenConnectionManager } from "./bitwarden-connection";
 import { CredentialBrowser } from "./credential-browser";
+import { BrokerChrome } from "./broker-chrome";
 import { CredentialSetupError } from "./credential-errors";
 import { browserTargets, cdpOrigin, fillBrowser } from "./credentials-cdp";
 import {
@@ -80,6 +81,7 @@ export class CredentialBroker {
 	readonly connection: BitwardenConnectionManager;
 	readonly browser: CredentialBrowser;
 	readonly brokerBrowser: CredentialBrowser;
+	readonly brokerChrome: BrokerChrome;
 	hostedState: CredentialSnapshot["hostedState"] = "disabled";
 	private settings = credentialSettings.parse({});
 	private store: EncryptedStore<CredentialSettings>;
@@ -102,6 +104,7 @@ export class CredentialBroker {
 		this.connection = new BitwardenConnectionManager(root, resources, changed);
 		this.browser = new CredentialBrowser(root, resources, changed);
 		this.brokerBrowser = new CredentialBrowser(join(root, "broker-browser"), resources, changed);
+		this.brokerChrome = new BrokerChrome((url) => this.browser.openExistingChrome(url));
 		this.store = new EncryptedStore(
 			root,
 			"credentials",
@@ -335,6 +338,7 @@ export class CredentialBroker {
 		this.cancelApprovals();
 	}
 	private cancelApprovals() {
+		this.brokerChrome.close();
 		this.brokerSyncAt = 0;
 		this.connectionBroker?.invalidate();
 		this.epoch++;
@@ -355,6 +359,7 @@ export class CredentialBroker {
 		this.lock();
 		void this.browser.close();
 		void this.brokerBrowser.close();
+		this.brokerChrome.shutdown();
 	}
 	revokePrincipal(id: string) {
 		let changed = false;
@@ -795,7 +800,7 @@ export class CredentialBroker {
 				browserConfigured: !!this.settings.cdpEndpoint,
 				browserAvailable: (await this.browser.health(this.settings.cdpEndpoint)).available,
 				browserGuidance:
-					"Hosted OAuth through local_credential_broker opens a separate Desktop browser automatically after approval. Manual browser configuration is only needed for legacy fill/targets operations. Browser availability does not confirm external browser tools are attached.",
+					"Hosted OAuth through local_credential_broker opens a sign-in tab in your normal Chrome profile through the Laplace extension. Allow requested site access in Chrome when prompted. No separate browser or debugging setup is used.",
 				...(!op.principal.hosted && this.settings.cdpEndpoint
 					? { browserEndpoint: this.settings.cdpEndpoint }
 					: {}),

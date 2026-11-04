@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, mkdir, readFile, rm } from "node:fs/promises";
@@ -12,6 +12,7 @@ import { spawnLocal, stopTree } from "@repo/local-mcp-core/process";
 import type { BrowserChoice, CredentialBrowserState } from "../shared/credential-setup";
 import { CredentialSetupError } from "./credential-errors";
 import { cdpOrigin } from "./credentials-cdp";
+import { browserExtensionId } from "../shared/browser-extension-id";
 const exec = promisify(execFile);
 const id = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 24);
 export function browserArgument(command: string, flag: string) {
@@ -62,6 +63,31 @@ export class CredentialBrowser {
 	) {}
 	state(): CredentialBrowserState {
 		return { available: this.available, owned: !!this.owned, name: this.name };
+	}
+	async openExistingChrome(url: string) {
+		const target = new URL(url);
+		if (
+			target.protocol !== "chrome-extension:" ||
+			target.hostname !== browserExtensionId ||
+			target.pathname !== "/broker.html"
+		)
+			throw Error("Invalid Chrome handoff.");
+		await this.discover(true);
+		const chrome = [...this.choices.values()].find(
+			(choice) => choice.name === "Google Chrome" && choice.executable,
+		);
+		if (!chrome?.executable) throw Error("Google Chrome is unavailable.");
+		// Use Chrome's normal profile, without a user-data directory or debugging port.
+		const child = spawn(chrome.executable, [url], {
+			stdio: "ignore",
+			windowsHide: true,
+			detached: true,
+		});
+		await new Promise<void>((resolve, reject) => {
+			child.once("spawn", resolve);
+			child.once("error", reject);
+		});
+		child.unref();
 	}
 	async health(endpoint: string) {
 		if (endpoint !== this.selected) {

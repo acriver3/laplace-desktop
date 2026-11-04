@@ -110,7 +110,7 @@ it("redeems local values directly, follows real installation IDs, and requires c
 	}
 });
 
-it("opens hosted OAuth in an automatic browser only at execution and rechecks permissions after launch", async () => {
+it("opens hosted OAuth through the existing Chrome extension only after approval and permission checks", async () => {
 	const credentialId = randomUUID();
 	const item: BrokerItem = {
 		target: {
@@ -158,15 +158,17 @@ it("opens hosted OAuth in an automatic browser only at execution and rechecks pe
 		credentialRelayApi: async () => ({ post }),
 	} as unknown as DesktopManager;
 	let allowed = true;
-	const ensureOwned = vi.fn(async () => {
+	const ensureOwned = vi.fn();
+	const open = vi.fn(async () => {
 		sequence.push("browser");
-		return "http://127.0.0.1:9223";
+		return "oauth-tab";
 	});
 	const credentials = {
 		allowed: () => allowed,
 		brokerAllowed: () => allowed,
 		brokerCandidates: async () => [{ id: credentialId }],
-		brokerBrowser: { ensureOwned, endpoint: () => "http://127.0.0.1:9223" },
+		brokerBrowser: { ensureOwned },
+		brokerChrome: { open },
 	} as unknown as CredentialBroker;
 	const adapter = desktopBrokerAdapter(
 		manager,
@@ -176,30 +178,23 @@ it("opens hosted OAuth in an automatic browser only at execution and rechecks pe
 		() => {},
 	);
 	const principal = { id: "local:client", name: "Agent", hosted: false, authorize: () => {} };
-	const fetcher = vi.fn(async () => new Response(JSON.stringify({ id: "oauth-tab" })));
-	vi.stubGlobal("fetch", fetcher);
-	try {
-		await adapter.validate(principal, session, item);
-		expect(ensureOwned).not.toHaveBeenCalled();
-		const result = await adapter.execute(principal, session, item, new AbortController().signal);
-		expect(sequence).toEqual(["browser", "execute"]);
-		expect(result).toMatchObject({ browserTargetId: "oauth-tab", state: "user_action_required" });
-		expect(fetcher).toHaveBeenCalledWith(
-			expect.stringContaining("/json/new?https%3A%2F%2Faccounts.google.com"),
-			expect.objectContaining({ method: "PUT" }),
-		);
-		post.mockClear();
-		fetcher.mockClear();
-		ensureOwned.mockImplementation(async () => {
-			allowed = false;
-			return "http://127.0.0.1:9223";
-		});
-		await expect(
-			adapter.execute(principal, session, item, new AbortController().signal),
-		).rejects.toThrow();
-		expect(post).not.toHaveBeenCalled();
-		expect(fetcher).not.toHaveBeenCalled();
-	} finally {
-		vi.unstubAllGlobals();
-	}
+	await adapter.validate(principal, session, item);
+	expect(open).not.toHaveBeenCalled();
+	const result = await adapter.execute(principal, session, item, new AbortController().signal);
+	expect(sequence).toEqual(["execute", "browser"]);
+	expect(ensureOwned).not.toHaveBeenCalled();
+	expect(result).toMatchObject({ browserTargetId: "oauth-tab", state: "user_action_required" });
+	expect(open).toHaveBeenCalledWith(
+		"https://accounts.google.com/oauth",
+		["https://accounts.google.com"],
+		expect.any(AbortSignal),
+	);
+	post.mockClear();
+	open.mockClear();
+	allowed = false;
+	await expect(
+		adapter.execute(principal, session, item, new AbortController().signal),
+	).rejects.toThrow();
+	expect(post).not.toHaveBeenCalled();
+	expect(open).not.toHaveBeenCalled();
 });

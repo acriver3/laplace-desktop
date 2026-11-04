@@ -21,7 +21,7 @@ export function desktopBrokerAdapter(
 	focus: () => void,
 ): ConnectionBrokerAdapter {
 	const localBrowser = new BrokerBrowser(() => credentials.snapshot().settings.cdpEndpoint);
-	const managedBrowser = new BrokerBrowser(() => credentials.brokerBrowser.endpoint());
+	const managedBrowser = credentials.brokerChrome;
 	async function authorize(principal: CredentialPrincipal) {
 		if (!credentialBrokeringEnabled()) throw Error("Credential brokering is disabled.");
 		await principal.authorize();
@@ -127,6 +127,9 @@ export function desktopBrokerAdapter(
 		epoch: () => credentials.brokerEpoch,
 		focus,
 		cancel: async (session) => {
+			for (const item of session.items)
+				if (item.browserTargetId && item.target.location === "cloud")
+					managedBrowser.cancel(item.browserTargetId);
 			if (manager.status().mode === "linked") await gateway(session, "cancel");
 		},
 		validate,
@@ -155,7 +158,6 @@ export function desktopBrokerAdapter(
 			if (item.target.location === "cloud") {
 				const needsBrowser = item.target.authType === "oauth2";
 				if (needsBrowser) {
-					await credentials.brokerBrowser.ensureOwned(signal);
 					signal.throwIfAborted();
 					await validate(principal, session, item);
 				}
@@ -163,9 +165,15 @@ export function desktopBrokerAdapter(
 				const out = receipt(result);
 				if (result.authorizationUrl) {
 					try {
-						out.browserTargetId = await managedBrowser.open(result.authorizationUrl, signal);
+						await authorize(principal);
+						signal.throwIfAborted();
+						out.browserTargetId = await managedBrowser.open(
+							result.authorizationUrl,
+							item.matches.flatMap((m) => m.origins ?? []),
+							signal,
+						);
 						out.message =
-							"Sign-in opened in the Laplace browser. Inspect and advance the approved login; pause for MFA and OAuth consent.";
+							"Sign-in opened in your existing Chrome session. Complete the extension's site-access prompt if shown, then inspect the approved login.";
 					} catch {
 						out.message =
 							"Setup is staged, but the sign-in tab could not open. Continue through the setup request manually; do not repeat the connection request.";
@@ -309,7 +317,9 @@ export function desktopBrokerAdapter(
 					state: "user_action_required",
 					observation,
 					message: observation.handoff
-						? "Complete MFA or provider consent in the browser."
+						? observation.handoffReason === "permission_required"
+							? "Allow the requested sign-in site access in the Laplace extension tab in Chrome."
+							: "Complete the login challenge or provider consent in Chrome."
 						: "Login fields are ready.",
 				};
 			const match = item.matches.find((m) => m.source.kind === "bitwarden");
