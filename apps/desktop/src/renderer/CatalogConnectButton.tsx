@@ -112,7 +112,7 @@ export function CatalogConnectButton({
 		}
 	}
 	return (
-		<div className="max-w-sm gap-2 flex flex-col items-end">
+		<div className="catalog-connect-actions">
 			<BrokerStart entries={[entry]} />
 			<SplitButton
 				disabled={busy || pending || !entry.available}

@@ -1,6 +1,8 @@
 import { brokerHandoff } from "@repo/project-protocol/credential-broker";
 import { useEffect, useState } from "react";
 
+import { Modal } from "./Dialogs";
+
 import { invoke, type CatalogEntry } from "./types";
 /** Copy fallback is supported by every locally connected assistant; no silent dispatch. */
 export function BrokerStart({
@@ -58,44 +60,46 @@ export function BrokerStart({
 		}
 	}
 	return (
-		<div>
+		<div className="broker-start">
 			<button type="button" onClick={() => setOpen((v) => !v)}>
 				{label}
 			</button>
 			{open && (
-				<section aria-label="Prepare credential matching">
-					<p>
-						Choose a credential source for each connection. Your assistant will propose matches for
-						your review.
-					</p>
-					{eligible.map((e) => (
-						<label key={e.id} style={{ display: "block" }}>
-							{batch && (
-								<input
-									type="checkbox"
-									checked={!!selected[e.id]}
-									onChange={(event) =>
-										setSelected((v) => ({ ...v, [e.id]: event.target.checked ? "browser" : "" }))
-									}
-								/>
-							)}
-							{e.name}
-							<select
-								aria-label={"Credential source for " + e.name}
-								disabled={batch && !selected[e.id]}
-								value={selected[e.id] || "browser"}
-								onChange={(event) => setSelected((v) => ({ ...v, [e.id]: event.target.value }))}
-							>
-								<option value="browser">Bitwarden browser login</option>
-								<option value="custom_credential">Doppler configuration fields</option>
-							</select>
-						</label>
-					))}
-					<button type="button" onClick={() => void prepare()}>
-						Copy assistant request
-					</button>
-					{message && <p role="status">{message}</p>}
-				</section>
+				<Modal title="Prepare credential matching" close={() => setOpen(false)}>
+					<section className="dialog-body stack" aria-label="Prepare credential matching">
+						<p>
+							Choose a credential source for each connection. Your assistant will propose matches
+							for your review.
+						</p>
+						{eligible.map((e) => (
+							<label key={e.id} style={{ display: "block" }}>
+								{batch && (
+									<input
+										type="checkbox"
+										checked={!!selected[e.id]}
+										onChange={(event) =>
+											setSelected((v) => ({ ...v, [e.id]: event.target.checked ? "browser" : "" }))
+										}
+									/>
+								)}
+								{e.name}
+								<select
+									aria-label={"Credential source for " + e.name}
+									disabled={batch && !selected[e.id]}
+									value={selected[e.id] || "browser"}
+									onChange={(event) => setSelected((v) => ({ ...v, [e.id]: event.target.value }))}
+								>
+									<option value="browser">Bitwarden browser login</option>
+									<option value="custom_credential">Doppler configuration fields</option>
+								</select>
+							</label>
+						))}
+						<button type="button" onClick={() => void prepare()}>
+							Copy assistant request
+						</button>
+						{message && <p role="status">{message}</p>}
+					</section>
+				</Modal>
 			)}
 		</div>
 	);

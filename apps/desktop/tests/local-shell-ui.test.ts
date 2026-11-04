@@ -259,10 +259,8 @@ it.skipIf(
 					.boundingBox();
 				const menu = await row.getByRole("button", { name: /Choose setup agent/ }).boundingBox();
 				const bounds = await row.boundingBox();
-				expect(action!.x).toBeGreaterThanOrEqual(name!.x + name!.width);
-				expect(Math.abs(action!.y + action!.height / 2 - name!.y - name!.height / 2)).toBeLessThan(
-					2,
-				);
+				expect(action!.x).toBeGreaterThanOrEqual(bounds!.x);
+				expect(action!.y).toBeGreaterThanOrEqual(name!.y + name!.height);
 				expect(menu!.x + menu!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width);
 			}
 			await page.setViewportSize({ width: 1280, height: 900 });

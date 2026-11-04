@@ -20,9 +20,59 @@
 	}
 }
 
-/* Keep the compact catalog action beside the connector name. */
-.desktop-catalog-connection > .connector-row-actions {
-	max-width: 132px;
+/* Keep names readable and give all actions room inside the card. */
+.desktop-connection {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-content: start;
+	row-gap: 12px;
+}
+.desktop-connection > .connector-row-content {
+	min-width: 0;
+}
+.desktop-connection .connector-row-title {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+.desktop-connection > .connector-row-actions {
+	grid-column: 1 / -1;
+	min-width: 0;
+	max-width: 100%;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+.catalog-connect-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	width: 100%;
+}
+.broker-start {
+	min-width: 0;
+	max-width: 100%;
+}
+.broker-start > button {
+	white-space: normal;
+	height: auto;
+	max-width: 100%;
+}
+.setup-activity {
+	margin-block: 12px;
+	font-size: 14px;
+}
+.setup-activity > summary {
+	cursor: pointer;
+	color: var(--muted-foreground);
+	padding-block: 8px;
+}
+.setup-activity-item {
+	padding: 12px;
+	margin-top: 8px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
 }
 :root:not(:has([data-connector-builder]))
 	.desktop-catalog-connection

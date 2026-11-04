@@ -1,3 +1,4 @@
+import { useDismissedSetup } from "./useDismissedSetup";
 import { Button } from "@repo/ui/components/button";
 import { ConnectorPageHeader } from "@repo/ui/components/connector/page-header";
 import { SettingsPageView } from "@repo/ui/components/connector/page-views";
@@ -216,30 +217,46 @@ function ServerDetails({
 }
 
 function CatalogJobs({ jobs, cancel }: { jobs: CatalogJob[]; cancel: (id: string) => void }) {
-	if (!jobs.length) return null;
+	const { hidden, dismiss } = useDismissedSetup("laplace:setup-job-dismissals");
+	const visible = jobs.filter(
+		(job) =>
+			!job.notificationDelivered && job.status !== "completed" && !hidden(job.id, job.status),
+	);
+	if (!visible.length) return null;
 	return (
-		<div className="jobs">
-			{jobs
-				.filter((job) => !job.notificationDelivered)
-				.slice(-4)
-				.reverse()
-				.map((job) => (
-					<div className={`job ${job.status}`} key={job.id}>
-						<div className="row">
-							<span
-								className={`dot ${job.status === "completed" ? "online" : job.status === "failed" ? "needs_attention" : "starting"}`}
-							/>
-							<strong>{job.connectorName ?? "Connection setup"}</strong>
-							<span className="muted small">{job.kind}</span>
+		<details className="setup-activity" open={visible.some((job) => job.status === "running")}>
+			<summary>Setup activity ({visible.length})</summary>
+			<div className="jobs">
+				{visible
+					.slice(-4)
+					.reverse()
+					.map((job) => (
+						<div className={`job ${job.status}`} key={job.id}>
+							<div className="row">
+								<span
+									className={`dot ${job.status === "completed" ? "online" : job.status === "failed" ? "needs_attention" : "starting"}`}
+								/>
+								<strong>{job.connectorName ?? "Connection setup"}</strong>
+								<span className="muted small">{job.kind}</span>
+							</div>
+							<p>{job.message}</p>
+							{job.progress !== undefined && job.status === "running" && (
+								<progress max={1} value={job.progress} aria-label="Installation progress" />
+							)}
+							{job.status === "running" ? (
+								<button onClick={() => cancel(job.id)}>Cancel</button>
+							) : (
+								<button
+									aria-label={`Dismiss ${job.connectorName ?? "connection"} ${job.kind} notification`}
+									onClick={() => dismiss(job.id, job.status)}
+								>
+									Dismiss
+								</button>
+							)}
 						</div>
-						<p>{job.message}</p>
-						{job.progress !== undefined && job.status === "running" && (
-							<progress max={1} value={job.progress} aria-label="Installation progress" />
-						)}
-						{job.status === "running" && <button onClick={() => cancel(job.id)}>Cancel</button>}
-					</div>
-				))}
-		</div>
+					))}
+			</div>
+		</details>
 	);
 }
 

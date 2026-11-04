@@ -1,9 +1,12 @@
 import type { PortableOperation } from "@repo/project-protocol/portable-connectors";
 import { useEffect, useState } from "react";
 
+import { useDismissedSetup } from "./useDismissedSetup";
+
 import { invoke, type CatalogEntry } from "./types";
 
 export function PortableSetup() {
+	const { hidden, dismiss } = useDismissedSetup("laplace:portable-setup-dismissals");
 	const [operations, setOperations] = useState<PortableOperation[]>([]);
 	const [error, setError] = useState(""),
 		[busy, setBusy] = useState(false);
@@ -31,18 +34,35 @@ export function PortableSetup() {
 	};
 	const manage = (command: Record<string, unknown>) =>
 		invoke("portable.manage", { idempotencyKey: crypto.randomUUID(), command });
-	const pending = operations.filter((operation) => operation.status !== "completed");
+	const pending = operations.filter(
+		(operation) =>
+			!["completed", "ready"].includes(operation.status) &&
+			!hidden(`${operation.id}:${operation.updatedAt}`, operation.status),
+	);
 	if (!pending.length && !error && !editing) return null;
 	return (
-		<div className="stack" aria-label="Connector setup progress">
+		<details
+			className="setup-activity"
+			open={!!editing || !!error || pending.some((op) => op.status === "running")}
+			aria-label="Connector setup progress"
+		>
+			<summary>Connection setup ({pending.length})</summary>
 			{error && <p role="alert">{error}</p>}
 			{pending.map((op) => (
-				<div className="stack" key={op.id}>
+				<div className="setup-activity-item" key={op.id}>
 					<strong>{op.name ?? "Connector setup"}</strong>
 					<p role="status">
 						{op.status.replaceAll("_", " ")} · {op.message}
 					</p>
 					<div className="row wrap">
+						{op.status !== "running" && (
+							<button
+								aria-label={`Dismiss ${op.name ?? "connector"} setup`}
+								onClick={() => dismiss(`${op.id}:${op.updatedAt}`, op.status)}
+							>
+								Dismiss
+							</button>
+						)}
 						{op.status === "running" && (
 							<button
 								disabled={busy}
@@ -129,6 +149,6 @@ export function PortableSetup() {
 					</button>
 				</form>
 			)}
-		</div>
+		</details>
 	);
 }

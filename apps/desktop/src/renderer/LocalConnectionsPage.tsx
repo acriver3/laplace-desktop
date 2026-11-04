@@ -141,6 +141,7 @@ export function LocalConnectionsPage({
 											{local.map((server) => (
 												<ConnectionTile
 													key={server.id}
+													className="desktop-connection"
 													title={server.name}
 													subtitle={`${installedCatalog.has(server.id) ? "Catalog" : "Custom"} · ${server.tools.length} tools`}
 													onDetails={() => details(server)}
@@ -185,14 +186,14 @@ export function LocalConnectionsPage({
 															>
 																Restart
 															</DropdownMenuItem>
-													<DropdownMenuSeparator />
-													<DropdownMenuItem
-														className="text-destructive"
-														disabled={busy}
-														onClick={() => remove(server)}
-													>
-														Delete connection
-													</DropdownMenuItem>
+															<DropdownMenuSeparator />
+															<DropdownMenuItem
+																className="text-destructive"
+																disabled={busy}
+																onClick={() => remove(server)}
+															>
+																Delete connection
+															</DropdownMenuItem>
 														</DropdownMenuContent>
 													</DropdownMenu>
 												</ConnectionTile>
@@ -221,7 +222,7 @@ export function LocalConnectionsPage({
 											{available.map((entry) => (
 												<ConnectionTile
 													key={entry.id}
-													className="desktop-catalog-connection"
+													className="desktop-connection desktop-catalog-connection"
 													title={entry.name}
 													onDetails={() => setCatalogDetails(entry)}
 													statusLabel={
