@@ -90,6 +90,15 @@ importers:
       '@repo/tailwind-config':
         specifier: workspace:*
         version: link:../../tooling/tailwind
+      '@repo/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      lucide-react:
+        specifier: 'catalog:'
+        version: 1.11.0(react@19.2.5)
+      react:
+        specifier: 'catalog:'
+        version: 19.2.5
       tailwindcss:
         specifier: 'catalog:'
         version: 4.2.4

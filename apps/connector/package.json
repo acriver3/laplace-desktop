@@ -3,6 +3,9 @@
   "name": "@repo/desktop-assets",
   "devDependencies": {
     "tailwindcss": "catalog:",
-    "@repo/tailwind-config": "workspace:*"
+    "@repo/tailwind-config": "workspace:*",
+    "@repo/ui": "workspace:*",
+    "react": "catalog:",
+    "lucide-react": "catalog:"
   }
 }
