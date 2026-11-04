@@ -11,7 +11,7 @@ test("a consumer accepts the pinned source and rejects changed or injected execu
 	const root = await mkdtemp(join(tmpdir(), "laplace-browser-pin-"));
 	try {
 		await cp(source, root, { recursive: true });
-		assert.equal((await verifyBrowserRuntime(root)).files, 20);
+		assert.equal((await verifyBrowserRuntime(root)).files, 22);
 		await writeFile(join(root, "src", "browser-requests.ts"), "changed");
 		await assert.rejects(verifyBrowserRuntime(root), /source mismatch/);
 		await cp(join(source, "src", "browser-requests.ts"), join(root, "src", "browser-requests.ts"));
