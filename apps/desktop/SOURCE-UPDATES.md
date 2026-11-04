@@ -27,7 +27,7 @@ The updater stores ownership, tool paths, source identity, staging files, and it
 
 ## Using updates
 
-The app checks tag metadata 15 seconds after launch, every six hours while running, and when **Check for updates** is selected in **On this device → Device → Updates**. Metadata checks never fetch source trees or install packages.
+The app checks the latest public GitHub Release 15 seconds after launch, every six hours while running, and when **Check for updates** is selected in **On this device → Device → Updates**. It verifies the release manifest against the Ed25519 public key pinned in its source. Metadata checks never fetch source trees or install packages.
 
 **Download update** fetches the exact selected release into an isolated checkout, checks its commit and version, installs the frozen dependency lockfile, and builds a native package. Downloading a release authorizes running its trusted build scripts. There is no Git pull, stash, reset, or edit in the user's original checkout. The current app remains usable while building. The UI reports download, build, and verification phases; it does not invent a percentage for subprocesses that provide none.
 
@@ -54,6 +54,14 @@ pnpm --filter @repo/desktop source:release /absolute/path/to/native-evidence.jso
 ```
 
 The command creates and pushes an annotated `desktop-vX.Y.Z` tag, verifies its remote commit, and refuses to replace an existing version. This is an explicit release action. It does not deploy the web application or require GitHub Workflows. Release credentials stay with the operator's Git configuration.
+
+Set `releaseSigningPublicKey` in `apps/desktop/package.json` to the approved Ed25519 public key in SPKI PEM format. Keep the matching private key in the release signing environment. After platform signing, notarization, and native validation, prepare the update manifest with:
+
+```sh
+node apps/desktop/scripts/sign-release-manifest.mjs <validated-assets-directory> <private-key-file> <source-commit>
+```
+
+Attach `update-manifest.json`, `update-manifest.sig`, and the exact validated assets to the draft public release before publishing it. The asset directory must contain the three platform ZIPs and the full Windows Squirrel package. The manifest signer records their bytes and hashes. Verify platform signatures separately before signing the manifest.
 
 Evidence must contain the exact `commit`, `version`, `localValidation: "passed"`, and a `platforms` object with `darwin-arm64`, `darwin-x64`, and `win32-x64` entries. Each entry requires `packaged`, `update`, and `recovery` to be `"passed"`, and `execution` to be `"native"`. Record actual runner results; do not mark unavailable platforms as passed. Rosetta is not a physical Intel acceptance result. Save detailed check logs alongside the evidence.
 

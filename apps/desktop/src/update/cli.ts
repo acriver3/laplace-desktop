@@ -227,6 +227,7 @@ export async function publishSourceRelease(checkout: string, evidenceFile: strin
 	const pkg = (await readJson(join(checkout, "apps/desktop/package.json"))) as {
 		version?: string;
 		sourceUpdateProtocol?: number;
+		releaseSigningPublicKey?: string;
 	};
 	if (
 		evidence.commit !== commit ||
@@ -234,6 +235,8 @@ export async function publishSourceRelease(checkout: string, evidenceFile: strin
 		pkg.sourceUpdateProtocol !== 1
 	)
 		throw new Error("Release evidence must match the exact checked-out commit and version.");
+	if (!pkg.releaseSigningPublicKey)
+		throw new Error("Provision the trusted public update signing key before publishing.");
 	const options = { cwd: checkout, authentication: true };
 	const main = await run(git, ["ls-remote", "--", repository, "refs/heads/main"], options);
 	if (main.split(/\s+/)[0] !== commit)

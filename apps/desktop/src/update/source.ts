@@ -316,7 +316,7 @@ export class SourceUpdater {
 			} catch (error) {
 				this.set({
 					phase:
-						error instanceof UpdateError && error.code === "cancelled"
+						controller.signal.aborted || (error instanceof UpdateError && error.code === "cancelled")
 							? this.available
 								? "available"
 								: "idle"
@@ -345,7 +345,9 @@ export class SourceUpdater {
 			this.set({ phase: "checking", message: undefined });
 			if (!releaseSigningPublicKey)
 				throw new UpdateError("invalid", "This build has no trusted public update channel.");
-			this.available = await checkPublicRelease(this.version, releaseSigningPublicKey, signal);
+			const available = await checkPublicRelease(this.version, releaseSigningPublicKey, signal);
+			if (signal.aborted) throw new UpdateError("cancelled", "Update cancelled.");
+			this.available = available;
 			this.set({
 				phase: this.available ? "available" : "idle",
 				availableVersion: this.available?.version,
