@@ -1,0 +1,14 @@
+{
+	"mcpServers": {
+		"laplace-local": {
+			"type": "stdio",
+			"command": "node",
+			"args": ["${PLUGIN_ROOT}/scripts/local-bridge.mjs"]
+		},
+		"laplace": {
+			"type": "streamable-http",
+			"url": "https://connect.withlaplace.com/mcp",
+			"headers": {}
+		}
+	}
+}

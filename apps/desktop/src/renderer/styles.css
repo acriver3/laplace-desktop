@@ -1,0 +1,40 @@
+@layer theme, base, desktop, components, utilities;
+@import "../../../connector/app/globals.css";
+@import "./runtime.css" layer(desktop);
+@source "./**/*.{ts,tsx}";
+
+@layer desktop {
+	.manager {
+		align-content: start;
+	}
+	.browser-page .connection-view-filter button {
+		border: 0;
+		min-height: 0;
+		background: transparent;
+	}
+}
+
+@layer components {
+	[hidden] {
+		display: none !important;
+	}
+}
+
+/* Keep the compact catalog action beside the connector name. */
+.desktop-catalog-connection > .connector-row-actions {
+	max-width: 132px;
+}
+:root:not(:has([data-connector-builder]))
+	.desktop-catalog-connection
+	.agent-setup-button
+	[data-split-action="primary"] {
+	min-width: 0;
+	padding-inline: 10px;
+}
+:root:not(:has([data-connector-builder]))
+	.desktop-catalog-connection
+	.agent-setup-button
+	[data-split-action="menu"] {
+	width: 44px;
+	padding-inline: 6px;
+}

@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "name": "@repo/desktop-assets",
+  "devDependencies": {
+    "tailwindcss": "catalog:",
+    "@repo/tailwind-config": "workspace:*"
+  }
+}

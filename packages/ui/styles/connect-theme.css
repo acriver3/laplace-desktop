@@ -1,0 +1,172 @@
+@layer base {
+	/* Connect-only bridge to the reference tokens. The native builder is a
+	 * separate standalone route and retains the shared application's theme.
+	 * Document scoping also lets portalled menus, dialogs and toasts inherit. */
+	:root:not(:has([data-connector-builder])) {
+		color-scheme: light;
+		/* Slate + indigo primitives (Laplace Clean) */
+		--slate-50: oklch(0.98 0 247.86);
+		--slate-100: oklch(0.97 0 264.54);
+		--slate-200: oklch(0.93 0.01 264.53);
+		--slate-300: oklch(0.87 0.01 258.34);
+		--slate-400: oklch(0.71 0.02 261.32);
+		--slate-500: oklch(0.55 0.02 264.36);
+		--slate-600: oklch(0.45 0.03 256.8);
+		--slate-700: oklch(0.37 0.03 259.73);
+		--slate-800: oklch(0.34 0.03 260.91);
+		--slate-900: oklch(0.28 0.04 260.03);
+		--slate-950: oklch(0.21 0.04 265.75);
+		--indigo-50: oklch(0.93 0.03 272.79);
+		--indigo-300: oklch(0.78 0.11 276.93);
+		--indigo-400: oklch(0.68 0.16 276.93);
+		--indigo-500: oklch(0.59 0.2 277.12);
+		--indigo-600: oklch(0.51 0.23 276.97);
+		--indigo-700: oklch(0.46 0.21 277.02);
+		--indigo-800: oklch(0.4 0.18 277.37);
+		--indigo-900: oklch(0.36 0.14 278.7);
+		--red-500: oklch(0.64 0.21 25.33);
+		--red-700: oklch(0.505 0.213 27.518);
+		--green-700: oklch(0.52 0.14 155);
+		--green-400: oklch(0.79 0.17 155);
+		--amber-700: oklch(0.55 0.14 66);
+		--amber-400: oklch(0.8 0.16 80);
+		--white: oklch(1 0 0);
+
+		/* Semantic — Laplace names */
+		--background: var(--slate-50);
+		--foreground: var(--slate-900);
+		--card: var(--white);
+		--card-foreground: var(--slate-900);
+		--popover: var(--white);
+		--popover-foreground: var(--slate-900);
+		--primary: var(--indigo-700);
+		--primary-foreground: var(--white);
+		--button-primary: var(--primary);
+		--button-primary-foreground: var(--primary-foreground);
+		--button-primary-hover: oklch(from var(--button-primary) calc(l - 0.05) c h);
+		--button-primary-border: oklch(from var(--button-primary) calc(l - 0.04) c h);
+		--button-primary-hover-border: oklch(from var(--button-primary) calc(l - 0.09) c h);
+		--secondary: var(--slate-200);
+		--secondary-foreground: var(--slate-700);
+		--muted: var(--slate-100);
+		--muted-foreground: var(--slate-600);
+		--accent: oklch(0.96 0.02 262);
+		--accent-foreground: var(--slate-700);
+		--destructive: var(--red-700);
+		--destructive-foreground: var(--white);
+		/* Error text can lighten in dark mode; white button labels need a darker fill. */
+		--button-destructive: var(--red-700);
+		--button-destructive-hover: oklch(from var(--button-destructive) calc(l - 0.05) c h);
+		--success: var(--green-700);
+		--success-foreground: var(--white);
+		--warning: var(--amber-700);
+		--warning-foreground: var(--white);
+		/* Compatibility alias: filled actions use one blue in each theme. */
+		--touch: var(--primary);
+		--touch-foreground: var(--primary-foreground);
+		--border: var(--slate-300);
+		--input: var(--slate-300);
+		--ring: var(--indigo-500);
+
+		/* Outline button slots — the standard supporting-action button: neutral card fill, foreground text, input hairline. */
+		--button-outline: var(--card);
+		--button-outline-text: var(--foreground);
+		--button-outline-border: var(--input);
+		--button-outline-shadow: var(--shadow-xs);
+		--button-outline-hover: var(--muted);
+		--button-outline-hover-border: var(--input);
+
+		/* Connected state — one green dot, neutral containers and text. */
+		--connected: var(--green-700);
+		--connected-dot: var(--connected);
+		--connected-border: var(--border);
+		--connected-surface: var(--card);
+		--connected-surface-strong: var(--muted);
+		--connected-foreground: var(--foreground);
+		--available-dot: var(--indigo-500);
+
+		/* Charts — indigo ramp (Laplace Clean) */
+		--chart-1: var(--indigo-500);
+		--chart-2: var(--indigo-600);
+		--chart-3: var(--indigo-700);
+		--chart-4: var(--indigo-800);
+		--chart-5: var(--indigo-900);
+
+		/* Sidebar (Laplace Clean) */
+		--sidebar: var(--slate-100);
+		--sidebar-foreground: var(--slate-900);
+		--sidebar-primary: var(--indigo-500);
+		--sidebar-primary-foreground: var(--white);
+		--sidebar-accent: var(--indigo-50);
+		--sidebar-accent-foreground: var(--slate-700);
+		--sidebar-border: var(--slate-300);
+		--sidebar-ring: var(--indigo-500);
+		--primary-hover: oklch(from var(--primary) calc(l - 0.05) c h);
+		--touch-hover: var(--primary-hover);
+		--font-sans: var(--font-connect-sans), ui-sans-serif, system-ui, sans-serif;
+		--font-mono: var(--font-connect-mono), ui-monospace, monospace;
+		--radius: 8px;
+		--radius-sm: 4px;
+		--radius-md: 8px;
+		--radius-lg: 12px;
+		--radius-xl: 12px;
+		--radius-2xl: 16px;
+		--radius-3xl: 24px;
+		--shadow-xs: 0 1px 2px oklch(0 0 0 / 0.05);
+		--text-section-title: 600 16px/24px var(--font-sans);
+	}
+	:root.dark:not(:has([data-connector-builder])) {
+		color-scheme: dark;
+		--background: var(--slate-950);
+		--foreground: oklch(0.93 0.01 255.51);
+		--card: var(--slate-900);
+		--card-foreground: oklch(0.93 0.01 255.51);
+		--popover: var(--slate-900);
+		--popover-foreground: oklch(0.93 0.01 255.51);
+		--primary: var(--indigo-300);
+		--primary-foreground: var(--slate-950);
+		--button-primary: var(--primary);
+		--button-primary-foreground: var(--primary-foreground);
+		--secondary: var(--slate-800);
+		--secondary-foreground: var(--slate-300);
+		--muted: var(--slate-900);
+		--muted-foreground: var(--slate-400);
+		--accent: oklch(0.31 0.04 262);
+		--accent-foreground: var(--slate-300);
+		--destructive: var(--red-500);
+		--destructive-foreground: var(--white);
+		--success: var(--green-400);
+		--success-foreground: var(--slate-950);
+		--warning: var(--amber-400);
+		--warning-foreground: var(--slate-950);
+		--touch: var(--primary);
+		--touch-foreground: var(--primary-foreground);
+		--border: var(--slate-600);
+		--input: var(--slate-600);
+		--ring: var(--indigo-400);
+		--chart-1: var(--indigo-400);
+		--chart-2: var(--indigo-500);
+		--chart-3: var(--indigo-600);
+		--chart-4: var(--indigo-700);
+		--chart-5: var(--indigo-800);
+		--sidebar: var(--slate-900);
+		--sidebar-foreground: oklch(0.93 0.01 255.51);
+		--sidebar-primary: var(--indigo-400);
+		--sidebar-primary-foreground: var(--slate-950);
+		--sidebar-accent: var(--slate-700);
+		--sidebar-accent-foreground: var(--slate-300);
+		--sidebar-border: var(--slate-600);
+		--sidebar-ring: var(--indigo-400);
+		--connected: var(--green-400);
+		--connected-dot: var(--connected);
+		--connected-border: var(--border);
+		--connected-surface: var(--card);
+		--connected-surface-strong: var(--muted);
+		--connected-foreground: var(--foreground);
+		--available-dot: var(--indigo-400);
+	}
+	:root:not(:has([data-connector-builder])) body {
+		font-size: 14px;
+		line-height: 20px;
+	}
+}

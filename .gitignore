@@ -1,0 +1,154 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# testing
+coverage
+
+# next.js
+.next/
+out/
+build
+.swc/
+
+# misc
+.DS_Store
+*.pem
+.claude/
+.cursor/
+!.cursor/
+.cursor/*
+!.cursor/mcp.json
+!.cursor/environment.json
+!.cursor/scripts
+!.cursor/scripts/**
+/backups/
+/batch photos example/
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# turbo
+.turbo
+
+# Legacy local verification files retained by existing dev processes
+.agent-verify/
+
+# ui
+dist/
+
+# typescript
+*.tsbuildinfo
+
+# other
+.react-email/
+.content-collections/
+.prisma-zod-generator-manifest.json
+.vercel
+
+# tooling installers and downloaded data
+install.ps1
+price-guide.csv
+hobbydb_csv_example.csv
+
+# Local supplier inputs for catalog tooling (not application source)
+funko catalogs/
+
+# Price Lab XGBoost export + artifacts
+ml/funko-valuation/data/
+ml/funko-valuation/artifacts/
+ml/funko-valuation/**/*.egg-info/
+ml/funko-valuation/**/__pycache__/
+
+# Generated Python bytecode
+__pycache__/
+.next-cloud-apps/
+
+# Vendored VibeSDK local artifacts (Bun/Vite/Wrangler; source stays tracked)
+apps/vibesdk/.wrangler/
+apps/vibesdk/.dev.vars
+apps/vibesdk/.dev.vars.*
+apps/vibesdk/.prod.vars
+apps/vibesdk/node_modules/
+apps/vibesdk/space/node_modules/
+apps/vibesdk/**/*.bak
+.env.rls-*
+
+# Emitted Monaco workers for the native builder
+/apps/connector/public/_builder-workers/
+!/apps/connector/app/apps/*/build/
+!/apps/connector/app/apps/*/build/page.tsx
+!/apps/connector/app/api/container-apps/build/
+!/apps/connector/app/api/container-apps/build/route.ts
+
+# Cloudflare builds and local release evidence/configuration
+.open-next/
+.release/
+.dev.vars
+.dev.vars.*
+.wrangler/
+/apps/vibesdk/wrangler.doppler.local.jsonc
+wrangler.release.json
+wrangler.vinext-release.json
+packages/database/prisma/schema.cloudflare.prisma
+/tests/browser/playwright-report/
+/tests/browser/test-results/
+/playwright-report/
+/test-results/
+
+# Isolated vinext compatibility artifacts
+/apps/connector/dist/
+/apps/connector/.vinext/
+/apps/connector/.cloudflare/
+/.vinext-evidence/
+/*-dev*.log
+/install-*.log
+/prisma-generate.log
+/builder-ui.log
+/connector-check.log
+/.vinext-recovered/
+/*-workers.log
+/worker-generate.log
+/apps/marketing/dist/
+/apps/marketing/.vinext/
+/apps/marketing/.cloudflare/
+/apps/connector/app/vinext-poc/
+/connector-runtime*.log
+/runtime-setup.log
+/marketing-generate.log
+/*-runtime*.log
+/connector-workers-*.log
+/marketing-check.log
+/marketing-workers-*.log
+
+/apps/local-mcp/resources/runtimes/
+/apps/local-mcp/dist/
+/apps/local-mcp/.cache/
+/apps/local-mcp/release/
+
+# Desktop build products and downloaded, verified runtime assets
+/apps/desktop/dist/
+/apps/desktop/resources/
+/apps/desktop/.cache/
+/apps/desktop/out/
+
+# Hosted Codex private session state (never commit credentials or conversations).
+/data/hosted-codex/
+/data/hosted-codex-deployment/
+
+# Shared MCP Apps widget, generated for both session owners
+packages/project-protocol/src/mcp/widget.ts
+packages/project-protocol/src/mcp/yc-widget.ts
+packages/project-protocol/src/mcp/browser-approval-widget.ts

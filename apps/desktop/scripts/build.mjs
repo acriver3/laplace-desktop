@@ -1,0 +1,85 @@
+import { execFileSync } from "node:child_process";
+import { mkdir, copyFile, cp } from "node:fs/promises";
+import { join } from "node:path";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { build } from "esbuild";
+import { build as buildRenderer } from "vite";
+
+const root = fileURLToPath(new URL("..", import.meta.url));
+process.chdir(root);
+execFileSync(
+	process.execPath,
+	[resolve(root, "../../packages/project-protocol/scripts/build-mcp-ui.mjs")],
+	{ stdio: "inherit" },
+);
+await mkdir("dist/main", { recursive: true });
+await build({
+	entryPoints: [
+		"src/main/index.ts",
+		"src/main/preload.ts",
+		"src/main/web-preload.ts",
+		"src/main/point-preload.ts",
+	],
+	outdir: "dist/main",
+	outExtension: { ".js": ".cjs" },
+	platform: "node",
+	format: "cjs",
+	target: "node24",
+	bundle: true,
+	external: ["electron"],
+	logLevel: "info",
+});
+await build({
+	entryPoints: [
+		"src/helper/main.ts",
+		"src/helper/bridge.ts",
+		"src/helper/slack-browser.ts",
+		"src/helper/yc-browser.ts",
+		"src/helper/browser-native-entry.ts",
+	],
+	outdir: "dist/helper",
+	outExtension: { ".js": ".cjs" },
+	platform: "node",
+	format: "cjs",
+	target: "node24",
+	bundle: true,
+	external: ["@napi-rs/keyring"],
+	logLevel: "info",
+});
+await build({
+	entryPoints: ["src/update/entry.ts"],
+	outfile: "dist/update/cli.cjs",
+	platform: "node",
+	format: "cjs",
+	target: "node24",
+	bundle: true,
+});
+await buildRenderer({ configFile: resolve(root, "vite.config.ts") });
+await mkdir("dist/licenses", { recursive: true });
+await copyFile("../connector/app/fonts/inter-OFL.txt", "dist/licenses/inter-OFL.txt");
+await mkdir("resources", { recursive: true });
+await copyFile("../../packages/ui/brand/app-icon.svg", "resources/icon.svg");
+await import("./icons.mjs");
+
+await cp("browser-extension", "resources/browser-extension", { recursive: true });
+// Development uses resources directly; packaged builds copy dist/helper here too.
+await mkdir("resources/helper", { recursive: true });
+await copyFile("dist/helper/slack-browser.cjs", "resources/helper/slack-browser.cjs");
+await copyFile("dist/helper/yc-browser.cjs", "resources/helper/yc-browser.cjs");
+await copyFile("dist/helper/browser-native-entry.cjs", "resources/helper/browser-native-entry.cjs");
+
+if (process.platform === "win32") {
+	await mkdir("resources/runtimes", { recursive: true });
+	execFileSync(
+		join(process.env.SystemRoot || "C:\\Windows", "Microsoft.NET/Framework64/v4.0.30319/csc.exe"),
+		[
+			"/nologo",
+			"/target:exe",
+			"/out:" + resolve("resources/runtimes/browser-native-host.exe"),
+			resolve("native/browser-native-host.cs"),
+		],
+		{ stdio: "inherit", windowsHide: true },
+	);
+}

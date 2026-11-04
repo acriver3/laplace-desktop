@@ -1,0 +1,92 @@
+.browser-approval {
+	font: 14px system-ui;
+	line-height: 1.5;
+	color: var(--color-text-primary, CanvasText);
+	max-width: 540px;
+	margin: auto;
+	padding: 24px;
+	border: 1px solid var(--color-border-primary, #8885);
+	border-radius: 16px;
+	background: var(--color-background-primary, Canvas);
+}
+.browser-approval p {
+	margin: 0 0 16px;
+}
+.browser-approval ul {
+	list-style: disc;
+	padding-left: 22px;
+	margin: 20px 0;
+}
+.browser-approval small {
+	display: block;
+	line-height: 1.5;
+}
+.desktop-browser-approval .browser-approval {
+	max-width: none;
+	margin: 0;
+	border: 0;
+	border-radius: 0;
+	color: inherit;
+	background: transparent;
+}
+.desktop-browser-approval .browser-approval button.primary {
+	background: var(--primary, #4f46e5);
+}
+.browser-approval h2 {
+	margin: 8px 0;
+	font-size: 22px;
+}
+.browser-approval .eyebrow {
+	font-size: 10px;
+	letter-spacing: 0.12em;
+	opacity: 0.65;
+}
+.browser-approval .workspace {
+	overflow-wrap: anywhere;
+	opacity: 0.7;
+}
+.browser-approval label {
+	display: grid;
+	gap: 8px;
+	font-weight: 600;
+}
+.browser-approval select {
+	padding: 10px;
+	border: 1px solid #8886;
+	border-radius: 8px;
+	width: 100%;
+	background: transparent;
+	color: inherit;
+}
+.browser-approval li {
+	margin: 8px 0;
+}
+.browser-approval .actions {
+	display: flex;
+	gap: 10px;
+	flex-wrap: wrap;
+	margin: 16px 0;
+}
+.browser-approval button {
+	padding: 10px 16px;
+	border-radius: 8px;
+	border: 1px solid #8886;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+}
+.browser-approval button.primary {
+	background: #25654c;
+	color: white;
+	border-color: transparent;
+}
+.browser-approval button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+.browser-approval small {
+	opacity: 0.65;
+}
+.browser-approval [role="alert"] {
+	color: #bd4935;
+}

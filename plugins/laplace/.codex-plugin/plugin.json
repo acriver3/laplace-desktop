@@ -1,0 +1,29 @@
+{
+	"interface": {
+		"displayName": "Laplace",
+		"shortDescription": "Use your connected services",
+		"longDescription": "Use hosted services through your Laplace organization and local tools through Laplace Desktop. Local-only tools work without a Laplace login; Desktop bridge setup is required.",
+		"developerName": "Laplace",
+		"category": "Productivity",
+		"capabilities": ["Read", "Write"],
+		"websiteURL": "https://connect.withlaplace.com",
+		"defaultPrompt": [
+			"Which services do I have connected in Laplace?",
+			"Find actions available for one of my connected services.",
+			"Help me complete a workflow using Laplace."
+		],
+		"brandColor": "#000000",
+		"composerIcon": "./assets/icon.png",
+		"logo": "./assets/logo.png"
+	},
+	"name": "laplace",
+	"version": "0.2.1",
+	"description": "Use hosted services and local Desktop tools through Laplace.",
+	"author": {
+		"name": "Laplace"
+	},
+	"keywords": ["laplace", "connect", "integrations", "automation"],
+	"homepage": "https://connect.withlaplace.com",
+	"skills": "./skills",
+	"mcpServers": "./.mcp.json"
+}

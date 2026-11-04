@@ -1,0 +1,12 @@
+{
+	"builders": {
+		"claude-color": "/images/provider-logos/claude-color.a3101f3047a119aa.svg",
+		"claude": "/images/provider-logos/claude.365a70a7eb3956d9.svg",
+		"claudecode-color": "/images/provider-logos/claudecode-color.670b3d8d749d0815.svg",
+		"codex-color": "/images/provider-logos/codex-color.4a2f43ce46b5b6e3.svg",
+		"codex": "/images/provider-logos/codex.d08b4e824cd6727e.svg",
+		"cursor": "/images/provider-logos/cursor.0cb51bddf264ae10.svg",
+		"openai": "/images/provider-logos/openai.a595df6b423920c6.svg",
+		"hermes": "/images/provider-logos/hermes.a8a8365ffe94b988.png"
+	}
+}

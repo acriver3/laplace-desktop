@@ -1,0 +1,346 @@
+[
+	{
+		"id": "canvas-session-mcp",
+		"name": "Canvas",
+		"description": "Read courses, assignments, announcements and grades using your Canvas browser login.",
+		"capabilities": ["Read Canvas course data", "Read documents", "Save course files locally"],
+		"repository": "https://github.com/CorCvusRamboChen/canvas-session-mcp",
+		"upstreamCommit": "9780f271fafc280498080222fe33374ac346fb03",
+		"upstreamVersion": "0.1.0",
+		"version": "0.1.0-laplace.1",
+		"license": "MIT",
+		"recipe": "canvas",
+		"patches": ["canvas-cookie-origin.patch"],
+		"reviewedAt": "2026-10-09",
+		"reviewEvidence": [
+			"reviews/local-mcp-bundle-review.md",
+			"connectors/canvas-session-mcp/laplace-patches/canvas-cookie-origin.patch"
+		],
+		"reviewNotes": [
+			"Includes the Laplace cookie-origin fix and its regression test. Canvas session cookies stay on the Canvas origin across download redirects.",
+			"Provider access is read-only; saving course files writes to your chosen local directory.",
+			"Windows and macOS acceptance was confirmed by the user for this implementation. Review evidence records that report separately from automated source/build checks."
+		],
+		"prerequisites": [
+			"A coding agent with shell access, or a terminal",
+			"Laplace Local",
+			"Chrome or Edge",
+			"Your institution's Canvas URL and a download folder"
+		],
+		"authentication": [
+			"Sign in interactively to your institution's Canvas, including SSO and MFA.",
+			"Use a dedicated local session directory outside the bundle."
+		],
+		"artifacts": [
+			{
+				"name": "canvas-session-mcp-0.1.0-laplace.1-universal.mcpb",
+				"storagePrefix": "v0.1.0",
+				"sha256": "221eb61d65673adb71d61db1d6061e290bfdf43ead54a407830a0b43b7e17bad",
+				"size": 9185616,
+				"platforms": ["win32-x64", "darwin-x64", "darwin-arm64"],
+				"published": true,
+				"acceptance": [
+					{
+						"platform": "win32-x64",
+						"archiveSha256": "221eb61d65673adb71d61db1d6061e290bfdf43ead54a407830a0b43b7e17bad",
+						"acceptedAt": "2026-10-09T18:18:46Z",
+						"evidence": "User-confirmed Windows/macOS acceptance in this implementation session; docs/local-mcp-bundle-review.md records the confirmation and agent checks separately."
+					},
+					{
+						"platform": "darwin-x64",
+						"archiveSha256": "221eb61d65673adb71d61db1d6061e290bfdf43ead54a407830a0b43b7e17bad",
+						"acceptedAt": "2026-10-09T18:18:46Z",
+						"evidence": "User-confirmed Windows/macOS acceptance in this implementation session; docs/local-mcp-bundle-review.md records the confirmation and agent checks separately."
+					},
+					{
+						"platform": "darwin-arm64",
+						"archiveSha256": "221eb61d65673adb71d61db1d6061e290bfdf43ead54a407830a0b43b7e17bad",
+						"acceptedAt": "2026-10-09T18:18:46Z",
+						"evidence": "User-confirmed Windows/macOS acceptance in this implementation session; docs/local-mcp-bundle-review.md records the confirmation and agent checks separately."
+					}
+				],
+				"legacyUrl": "https://downloads.withlaplace.com/v0.1.0/bundles/canvas-session-mcp/0.1.0-laplace.1/canvas-session-mcp-0.1.0-laplace.1-universal.mcpb",
+				"url": "https://raw.githubusercontent.com/acriver3/laplace-mcp-library/fa29103099f9f735da1b9c0ac10410ebda816249/bundles/canvas-session-mcp/0.1.0-laplace.1/canvas-session-mcp-0.1.0-laplace.1-universal.mcpb",
+				"path": "bundles/canvas-session-mcp/0.1.0-laplace.1/canvas-session-mcp-0.1.0-laplace.1-universal.mcpb"
+			}
+		],
+		"sourceDirectory": "connectors/canvas-session-mcp",
+		"sourceArchiveSha256": "221eb61d65673adb71d61db1d6061e290bfdf43ead54a407830a0b43b7e17bad"
+	},
+	{
+		"id": "linkedin-mcp-server",
+		"name": "LinkedIn",
+		"description": "Read profiles, companies, jobs and conversations using a dedicated local LinkedIn browser session.",
+		"capabilities": [
+			"Read profiles, companies and jobs",
+			"Read conversations",
+			"Send messages and connection requests"
+		],
+		"repository": "https://github.com/stickerdaniel/linkedin-mcp-server",
+		"upstreamCommit": "01c2d5e036bb364efe5fde2546c8fd550b4f89f2",
+		"upstreamVersion": "4.26.2",
+		"version": "4.26.2-laplace.1",
+		"license": "Apache-2.0",
+		"recipe": "linkedin",
+		"patches": [],
+		"reviewedAt": "2026-10-09",
+		"reviewEvidence": ["reviews/local-mcp-bundle-review.md"],
+		"reviewNotes": [
+			"Uses a dedicated browser profile with automatic browser-session import enabled and the shared daemon disabled.",
+			"Includes messaging and connection-request tools. Your AI client's permissions govern approvals.",
+			"Windows and macOS acceptance was confirmed by the user for this implementation. Review evidence records that report separately from automated source/build checks."
+		],
+		"prerequisites": [
+			"A coding agent with shell access, or a terminal",
+			"Laplace Local and its included uv",
+			"Python 3.13 (uv can provision it)",
+			"A LinkedIn account and the server's managed browser"
+		],
+		"authentication": [
+			"Try automatic session import from your signed-in browser first; complete interactive login, MFA or challenges if needed.",
+			"Keep the dedicated LinkedIn profile in its own session root outside the bundle directory."
+		],
+		"artifacts": [
+			{
+				"name": "linkedin-mcp-server-4.26.2-laplace.1-universal.mcpb",
+				"storagePrefix": "v0.1.0",
+				"sha256": "1dcdd2b9f7f90e99255213e405216d542a138eae29026f1c4d1556e78f192b2c",
+				"size": 787885,
+				"platforms": ["win32-x64", "darwin-x64", "darwin-arm64"],
+				"published": true,
+				"acceptance": [
+					{
+						"platform": "win32-x64",
+						"archiveSha256": "1dcdd2b9f7f90e99255213e405216d542a138eae29026f1c4d1556e78f192b2c",
+						"acceptedAt": "2026-10-09T18:18:46Z",
+						"evidence": "User-confirmed Windows/macOS acceptance in this implementation session; docs/local-mcp-bundle-review.md records the confirmation and agent checks separately."
+					},
+					{
+						"platform": "darwin-x64",
+						"archiveSha256": "1dcdd2b9f7f90e99255213e405216d542a138eae29026f1c4d1556e78f192b2c",
+						"acceptedAt": "2026-10-09T18:18:46Z",
+						"evidence": "User-confirmed Windows/macOS acceptance in this implementation session; docs/local-mcp-bundle-review.md records the confirmation and agent checks separately."
+					},
+					{
+						"platform": "darwin-arm64",
+						"archiveSha256": "1dcdd2b9f7f90e99255213e405216d542a138eae29026f1c4d1556e78f192b2c",
+						"acceptedAt": "2026-10-09T18:18:46Z",
+						"evidence": "User-confirmed Windows/macOS acceptance in this implementation session; docs/local-mcp-bundle-review.md records the confirmation and agent checks separately."
+					}
+				],
+				"legacyUrl": "https://downloads.withlaplace.com/v0.1.0/bundles/linkedin-mcp-server/4.26.2-laplace.1/linkedin-mcp-server-4.26.2-laplace.1-universal.mcpb",
+				"url": "https://raw.githubusercontent.com/acriver3/laplace-mcp-library/fa29103099f9f735da1b9c0ac10410ebda816249/bundles/linkedin-mcp-server/4.26.2-laplace.1/linkedin-mcp-server-4.26.2-laplace.1-universal.mcpb",
+				"path": "bundles/linkedin-mcp-server/4.26.2-laplace.1/linkedin-mcp-server-4.26.2-laplace.1-universal.mcpb"
+			}
+		],
+		"sourceDirectory": "connectors/linkedin-mcp-server",
+		"sourceArchiveSha256": "1dcdd2b9f7f90e99255213e405216d542a138eae29026f1c4d1556e78f192b2c"
+	},
+	{
+		"id": "yale-som-ems-mcp",
+		"name": "Yale SOM EMS",
+		"description": "Find student rooms and preview one-time booking changes using your dedicated Yale SOM EMS browser login.",
+		"capabilities": [
+			"Search student room availability",
+			"Read your reservations and bookings",
+			"Preview and confirm individual booking changes"
+		],
+		"repository": "https://github.com/acriver3/Laplace",
+		"sourceSubdirectory": "apps/yale-som-ems-mcp",
+		"upstreamCommit": "ed48ceb9d04e2a3a352c70ff275cf534f99e79b8",
+		"upstreamVersion": "0.1.0",
+		"version": "0.1.0",
+		"license": "UNLICENSED",
+		"recipe": "yale-som-ems",
+		"patches": [],
+		"reviewedAt": "2026-10-09",
+		"reviewEvidence": ["reviews/yale-som-ems-mcp-review.md"],
+		"reviewNotes": [
+			"Candidate for Yale SOM student breakout rooms, interview rooms and Fit for Thought. Windows student-account create, edit and cancellation passed against the exact artifact.",
+			"Uses a dedicated local Chrome/Edge profile and interactive Yale SSO/MFA. Never imports your everyday browser cookies.",
+			"Preview and confirm one-time individual booking changes. Pending approval is reported as pending; uncertain writes require local reconciliation and are never replayed.",
+			"Published for Windows x64 with agent-verified acceptance and macOS Apple Silicon with user-reported acceptance against the exact checksum. macOS Intel and Linux remain unverified and are excluded from catalog support."
+		],
+		"prerequisites": [
+			"Laplace Local and its included Node 24 runtime",
+			"Installed Chrome or Edge",
+			"A Yale SOM student EMS account",
+			"A dedicated profile directory outside the versioned bundle"
+		],
+		"authentication": [
+			"Run the bundled CLI login command and complete Yale SSO/MFA in the dedicated browser.",
+			"Reuse that profile with the same browser channel for status and serve."
+		],
+		"artifacts": [
+			{
+				"name": "yale-som-ems-mcp-0.1.0-universal.mcpb",
+				"storagePrefix": "v0.1.0",
+				"sha256": "22447c4b7ea80bd044b9bc01fdd4085594924c3572058a3bdec981b1759c5a8a",
+				"size": 5827293,
+				"platforms": ["win32-x64", "darwin-arm64"],
+				"published": true,
+				"acceptance": [
+					{
+						"platform": "win32-x64",
+						"archiveSha256": "22447c4b7ea80bd044b9bc01fdd4085594924c3572058a3bdec981b1759c5a8a",
+						"acceptedAt": "2026-10-10T02:28:21Z",
+						"evidence": "Agent-verified native Windows student-account acceptance on the exact extracted candidate: all read tools; confirmed create, edit and individual cancellation; authenticated reads through installed Laplace Local 0.1.0. See docs/yale-som-ems-mcp-review.md; private diagnostics remain local."
+					},
+					{
+						"platform": "darwin-arm64",
+						"archiveSha256": "22447c4b7ea80bd044b9bc01fdd4085594924c3572058a3bdec981b1759c5a8a",
+						"acceptedAt": "2026-10-10T02:39:26Z",
+						"evidence": "User-reported Apple Silicon acceptance in this implementation session for the exact 0.1.0 candidate, including login, reads, create/edit/cancel and Laplace Local. Report timestamp; the agent did not run these macOS checks. See docs/yale-som-ems-mcp-review.md."
+					}
+				],
+				"legacyUrl": "https://downloads.withlaplace.com/v0.1.0/bundles/yale-som-ems-mcp/0.1.0/yale-som-ems-mcp-0.1.0-universal.mcpb",
+				"url": "https://raw.githubusercontent.com/acriver3/laplace-mcp-library/fa29103099f9f735da1b9c0ac10410ebda816249/bundles/yale-som-ems-mcp/0.1.0/yale-som-ems-mcp-0.1.0-universal.mcpb",
+				"path": "bundles/yale-som-ems-mcp/0.1.0/yale-som-ems-mcp-0.1.0-universal.mcpb"
+			}
+		],
+		"sourceDirectory": "connectors/yale-som-ems-mcp",
+		"sourceArchiveSha256": "22447c4b7ea80bd044b9bc01fdd4085594924c3572058a3bdec981b1759c5a8a"
+	},
+	{
+		"id": "msoutlook-mcp",
+		"name": "Outlook",
+		"description": "Read and manage Outlook mail, calendars, contacts and directory profiles using a local browser sign-in.",
+		"capabilities": [
+			"Read and search email",
+			"Create drafts, send mail and manage folders",
+			"Read and manage calendars",
+			"Read contacts and organization profiles"
+		],
+		"repository": "https://github.com/shayanline/msoutlook-mcp",
+		"upstreamCommit": "834e3764e01aa06ddde73590a8bc71aeafab74c0",
+		"upstreamVersion": "0.5.0",
+		"version": "0.5.0-laplace.1",
+		"license": "MIT",
+		"recipe": "outlook",
+		"patches": [],
+		"reviewedAt": "2026-10-10",
+		"reviewEvidence": ["reviews/local-mcp-outlook-review.md"],
+		"reviewNotes": [
+			"Includes pinned source, compiled server and locked production dependencies. Automatic browser-session import is enabled; complete interactive login if the existing session cannot be reused.",
+			"Includes mail sending, deletion, calendar changes and account-setting tools. Your AI client permissions govern approvals.",
+			"The user accepted and authorized publication of this exact bundle for the declared Windows/macOS targets. Review evidence distinguishes release approval from automated checks; authenticated platform tests were not reported."
+		],
+		"prerequisites": [
+			"A coding agent with shell access, or a terminal",
+			"Laplace Local",
+			"An installed Chrome or Edge browser",
+			"A Microsoft account with access to Outlook Web"
+		],
+		"authentication": [
+			"Run outlook_login to try automatic session import first. Approve any Keychain prompt yourself, or complete Microsoft sign-in and MFA in the dedicated browser if needed. Let the window close itself.",
+			"Session data stays outside the bundle in the upstream OS-specific msoutlook-mcp-server directory."
+		],
+		"artifacts": [
+			{
+				"name": "msoutlook-mcp-0.5.0-laplace.1-universal.mcpb",
+				"storagePrefix": "v0.1.0",
+				"sha256": "df2c9e92ed0ac692817e311c2217ddf0da2db9fbfbec17c0c0e45eb8d25b9d1b",
+				"size": 11000205,
+				"platforms": ["win32-x64", "darwin-x64", "darwin-arm64"],
+				"published": true,
+				"acceptance": [
+					{
+						"platform": "win32-x64",
+						"archiveSha256": "df2c9e92ed0ac692817e311c2217ddf0da2db9fbfbec17c0c0e45eb8d25b9d1b",
+						"acceptedAt": "2026-10-10T22:48:43Z",
+						"evidence": "User approved release of this exact bundle in this implementation session: \"I accept and please publish the bundle\". This records release acceptance for the declared Windows/macOS targets, not a report of authenticated platform testing; docs/local-mcp-outlook-review.md distinguishes approval from automated checks."
+					},
+					{
+						"platform": "darwin-x64",
+						"archiveSha256": "df2c9e92ed0ac692817e311c2217ddf0da2db9fbfbec17c0c0e45eb8d25b9d1b",
+						"acceptedAt": "2026-10-10T22:48:43Z",
+						"evidence": "User approved release of this exact bundle in this implementation session: \"I accept and please publish the bundle\". This records release acceptance for the declared Windows/macOS targets, not a report of authenticated platform testing; docs/local-mcp-outlook-review.md distinguishes approval from automated checks."
+					},
+					{
+						"platform": "darwin-arm64",
+						"archiveSha256": "df2c9e92ed0ac692817e311c2217ddf0da2db9fbfbec17c0c0e45eb8d25b9d1b",
+						"acceptedAt": "2026-10-10T22:48:43Z",
+						"evidence": "User approved release of this exact bundle in this implementation session: \"I accept and please publish the bundle\". This records release acceptance for the declared Windows/macOS targets, not a report of authenticated platform testing; docs/local-mcp-outlook-review.md distinguishes approval from automated checks."
+					}
+				],
+				"legacyUrl": "https://downloads.withlaplace.com/v0.1.0/bundles/msoutlook-mcp/0.5.0-laplace.1/msoutlook-mcp-0.5.0-laplace.1-universal.mcpb",
+				"url": "https://raw.githubusercontent.com/acriver3/laplace-mcp-library/fa29103099f9f735da1b9c0ac10410ebda816249/bundles/msoutlook-mcp/0.5.0-laplace.1/msoutlook-mcp-0.5.0-laplace.1-universal.mcpb",
+				"path": "bundles/msoutlook-mcp/0.5.0-laplace.1/msoutlook-mcp-0.5.0-laplace.1-universal.mcpb"
+			}
+		],
+		"sourceDirectory": "connectors/msoutlook-mcp",
+		"sourceArchiveSha256": "df2c9e92ed0ac692817e311c2217ddf0da2db9fbfbec17c0c0e45eb8d25b9d1b"
+	},
+	{
+		"id": "slack-mcp-server",
+		"name": "Slack",
+		"version": "1.1.0-laplace.1",
+		"recipe": "slack-ready",
+		"sourceDirectory": "connectors/slack-mcp-server",
+		"repository": "https://github.com/korotovsky/slack-mcp-server",
+		"upstreamCommit": "b88c0de3f706f4f07337c9eda7133c736d1c9524",
+		"license": "MIT",
+		"prerequisites": [
+			"Included Node runtime and Go executable; no compiler or npm needed",
+			"Internet access for first-login Chromium download",
+			"Graphical desktop for Slack sign-in/MFA",
+			"Linux: Chromium OS shared libraries",
+			"Laplace Local"
+		],
+		"artifacts": [
+			{
+				"name": "slack-mcp-server-1.1.0-laplace.1-win32-x64.mcpb",
+				"sha256": "36fa113364eeb51f73189dec1c87adb6ff9ae7852d32d2e773adb474b5523af6",
+				"size": 44336438,
+				"platforms": ["win32-x64"],
+				"published": true,
+				"candidate": true,
+				"acceptance": [],
+				"path": "bundles/slack-mcp-server/1.1.0-laplace.1/slack-mcp-server-1.1.0-laplace.1-win32-x64.mcpb",
+				"url": "https://raw.githubusercontent.com/acriver3/laplace-mcp-library/fa29103099f9f735da1b9c0ac10410ebda816249/bundles/slack-mcp-server/1.1.0-laplace.1/slack-mcp-server-1.1.0-laplace.1-win32-x64.mcpb"
+			},
+			{
+				"name": "slack-mcp-server-1.1.0-laplace.1-darwin-x64.mcpb",
+				"sha256": "8acdd567716d598303bb22be5976e2e6029871d41ae077dee1363b85fd54eb00",
+				"size": 49921869,
+				"platforms": ["darwin-x64"],
+				"published": true,
+				"candidate": true,
+				"acceptance": [],
+				"path": "bundles/slack-mcp-server/1.1.0-laplace.1/slack-mcp-server-1.1.0-laplace.1-darwin-x64.mcpb",
+				"url": "https://raw.githubusercontent.com/acriver3/laplace-mcp-library/fa29103099f9f735da1b9c0ac10410ebda816249/bundles/slack-mcp-server/1.1.0-laplace.1/slack-mcp-server-1.1.0-laplace.1-darwin-x64.mcpb"
+			},
+			{
+				"name": "slack-mcp-server-1.1.0-laplace.1-darwin-arm64.mcpb",
+				"sha256": "b29cbebe24c4f6f0590f355df24bc941f66260a6831a28942fd3775de654878d",
+				"size": 48246230,
+				"platforms": ["darwin-arm64"],
+				"published": true,
+				"candidate": true,
+				"acceptance": [],
+				"path": "bundles/slack-mcp-server/1.1.0-laplace.1/slack-mcp-server-1.1.0-laplace.1-darwin-arm64.mcpb",
+				"url": "https://raw.githubusercontent.com/acriver3/laplace-mcp-library/fa29103099f9f735da1b9c0ac10410ebda816249/bundles/slack-mcp-server/1.1.0-laplace.1/slack-mcp-server-1.1.0-laplace.1-darwin-arm64.mcpb"
+			},
+			{
+				"name": "slack-mcp-server-1.1.0-laplace.1-linux-x64.mcpb",
+				"sha256": "5e446004de615704a49ca15e75c9e5ef7a4d0815e9dba6592583b0ce49517e64",
+				"size": 53835541,
+				"platforms": ["linux-x64"],
+				"published": true,
+				"candidate": true,
+				"acceptance": [],
+				"path": "bundles/slack-mcp-server/1.1.0-laplace.1/slack-mcp-server-1.1.0-laplace.1-linux-x64.mcpb",
+				"url": "https://raw.githubusercontent.com/acriver3/laplace-mcp-library/fa29103099f9f735da1b9c0ac10410ebda816249/bundles/slack-mcp-server/1.1.0-laplace.1/slack-mcp-server-1.1.0-laplace.1-linux-x64.mcpb"
+			}
+		],
+		"reviewEvidence": [
+			"reviews/slack-ready-bundles.md",
+			"connectors/slack-mcp-server/LAPLACE-PROVENANCE.json"
+		],
+		"reviewNotes": [
+			"Includes precompiled Go server, Node 24.19.0 and locked Patchright 1.63.0 dependencies.",
+			"First login downloads Chromium automatically; serve never downloads or opens a login window.",
+			"Linux offline startup and local browser checks are recorded separately from real Slack sign-in; native Windows/macOS acceptance is pending."
+		]
+	}
+]

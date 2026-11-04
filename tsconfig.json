@@ -1,0 +1,7 @@
+{
+	// Isolated VibeSDK CI does not install the @repo/tsconfig workspace package.
+	"extends": "./tooling/typescript/base.json",
+	"compilerOptions": {
+		"noEmit": true
+	}
+}

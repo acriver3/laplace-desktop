@@ -1,0 +1,80 @@
+@layer components {
+	.connector-row {
+		position: relative;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg, 12px);
+		background: var(--card);
+		color: var(--card-foreground);
+		transition: background-color 150ms;
+	}
+	.connector-row:focus-within {
+		background: var(--muted);
+	}
+	.connector-row-content {
+		min-width: 0;
+		flex: 1;
+	}
+	.connector-row-title,
+	.connector-row-subtitle {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.connector-row-title {
+		font-size: 14px;
+		line-height: 20px;
+		font-weight: 600;
+	}
+	.connector-row-subtitle {
+		font-size: 12px;
+		line-height: 16px;
+		color: var(--muted-foreground);
+	}
+	.connector-row-actions {
+		position: relative;
+		display: flex;
+		align-items: center;
+		flex-shrink: 0;
+		gap: 8px;
+	}
+	.connector-row-target {
+		position: absolute;
+		inset: 0;
+		border: 0;
+		padding: 0;
+		border-radius: inherit;
+		background: transparent;
+		cursor: pointer;
+	}
+	.connector-row-target:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+	.connector-row-connected .connector-row-subtitle {
+		color: var(--success);
+		font-weight: 500;
+	}
+	.connector-row-needs-refresh .connector-row-subtitle {
+		color: var(--warning);
+	}
+	.connector-row[data-density="compact"] {
+		min-height: 52px;
+		padding: 7px 10px;
+	}
+	@media (hover: hover) and (pointer: fine) {
+		.connector-row:hover {
+			background: var(--muted);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.connector-row {
+			transition: none;
+		}
+	}
+}

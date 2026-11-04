@@ -1,0 +1,161 @@
+@property --glow-angle {
+	syntax: "<angle>";
+	inherits: false;
+	initial-value: 0deg;
+}
+
+@keyframes logo-glow-spin {
+	to {
+		--glow-angle: 360deg;
+	}
+}
+
+.logo-glow {
+	display: inline-flex;
+	flex-shrink: 0;
+	border-radius: 0.5rem;
+	padding: 2px;
+	background: conic-gradient(
+		from var(--glow-angle),
+		var(--logo-c1),
+		var(--logo-c2),
+		var(--logo-c3),
+		var(--logo-c1)
+	);
+	animation: logo-glow-spin 2.8s linear infinite;
+}
+
+.logo-glow-face {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: calc(0.5rem - 1px);
+	background: var(--background);
+	color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.logo-glow {
+		animation: none;
+	}
+}
+
+@layer base {
+	:root {
+		--border: var(--color-olive-200);
+		--input: var(--color-olive-500);
+		--ring: var(--color-olive-400);
+		--background: var(--color-olive-50);
+		--foreground: var(--color-olive-950);
+		--primary: var(--color-olive-950);
+		--primary-foreground: var(--color-olive-50);
+		--secondary: var(--color-olive-100);
+		--secondary-foreground: var(--color-olive-900);
+		--destructive: var(--color-red-700);
+		--destructive-foreground: var(--color-white);
+		--success: var(--color-green-800);
+		--success-foreground: var(--color-white);
+		--warning: var(--color-yellow-700);
+		--warning-foreground: var(--color-white);
+		--muted: var(--color-olive-100);
+		--muted-foreground: var(--color-olive-700);
+		--accent: var(--color-olive-100);
+		--accent-foreground: var(--color-olive-900);
+		--touch: oklch(0.4 0.12 128);
+		--touch-foreground: oklch(0.99 0.01 128);
+		--button-outline: transparent;
+		--button-outline-text: var(--foreground);
+		--button-outline-border: var(--input);
+		--button-outline-shadow: 0 0 #0000;
+		--button-outline-hover: color-mix(in oklab, var(--foreground) 10%, transparent);
+		--button-outline-hover-border: var(--input);
+		--popover: var(--color-white);
+		--popover-foreground: var(--color-olive-950);
+		--card: var(--color-white);
+		--card-foreground: var(--color-olive-950);
+		--radius: 0.625rem;
+	}
+
+	.dark {
+		--border: var(--color-olive-800);
+		--input: var(--color-olive-400);
+		--ring: var(--color-olive-500);
+		--background: var(--color-olive-950);
+		--foreground: var(--color-olive-50);
+		--primary: var(--color-olive-50);
+		--primary-foreground: var(--color-olive-950);
+		--secondary: var(--color-olive-900);
+		--secondary-foreground: var(--color-olive-50);
+		--destructive: var(--color-red-400);
+		--destructive-foreground: var(--color-white);
+		--success: var(--color-green-400);
+		--success-foreground: var(--color-olive-950);
+		--warning: var(--color-yellow-500);
+		--warning-foreground: var(--color-olive-950);
+		--muted: var(--color-olive-900);
+		--muted-foreground: var(--color-olive-400);
+		--accent: var(--color-olive-900);
+		--accent-foreground: var(--color-olive-50);
+		--touch: oklch(0.86 0.08 128);
+		--touch-foreground: var(--color-olive-950);
+		--popover: var(--color-olive-900);
+		--popover-foreground: var(--color-olive-50);
+		--card: var(--color-olive-900);
+		--card-foreground: var(--color-olive-50);
+	}
+}
+
+@theme {
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-touch: var(--touch);
+	--color-touch-foreground: var(--touch-foreground);
+	--color-success: var(--success);
+	--color-success-foreground: var(--success-foreground);
+	--color-warning: var(--warning);
+	--color-warning-foreground: var(--warning-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--radius-sm: calc(var(--radius) * 0.6);
+	--radius-md: calc(var(--radius) * 0.8);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) * 1.4);
+	--radius-2xl: calc(var(--radius) * 1.8);
+	--radius-3xl: calc(var(--radius) * 2.2);
+	--radius-4xl: calc(var(--radius) * 2.6);
+
+	--animate-accordion-down: accordion-down 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+	--animate-accordion-up: accordion-up 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+
+	@keyframes accordion-down {
+		from {
+			height: 0;
+		}
+		to {
+			height: var(--accordion-panel-height);
+		}
+	}
+	@keyframes accordion-up {
+		from {
+			height: var(--accordion-panel-height);
+		}
+		to {
+			height: 0;
+		}
+	}
+}

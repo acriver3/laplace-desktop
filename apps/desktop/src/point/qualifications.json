@@ -1,0 +1,10 @@
+[
+	{
+		"platform": "win32",
+		"arch": "x64",
+		"version": "OpenAI.Codex_26.1023.6621.0_x64__2p2nqsd0c76g0",
+		"annotationDraft": true,
+		"annotationImageDurable": false,
+		"evidence": "docs/point-windows-26.1023.6621.md"
+	}
+]
