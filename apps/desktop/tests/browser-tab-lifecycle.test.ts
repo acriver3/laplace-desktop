@@ -99,7 +99,10 @@ async function fixture(providerId: string, workspace: string, tabUrl: string) {
 		setTimeout() {},
 		clearTimeout() {},
 	});
-	const source = await readFile(new URL("../../../packages/browser-runtime/extension/worker.js", import.meta.url), "utf8");
+	const source = await readFile(
+		new URL("../../../packages/browser-runtime/extension/worker.js", import.meta.url),
+		"utf8",
+	);
 	runInContext(source.replace('import { provider } from "./providers.js";', ""), context);
 	const id = randomUUID();
 	const discover = async () => {
