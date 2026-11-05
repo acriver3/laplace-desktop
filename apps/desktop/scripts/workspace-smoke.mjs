@@ -48,7 +48,8 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 	for (const entry of catalog.filter((entry) => !entry.installed)) {
 		const row = available
 			.getByRole("listitem")
-			.filter({ has: page.getByText(entry.name, { exact: true }) });
+			.filter({ has: page.getByRole("button", { name: entry.importOnly ? "Import" : `More setup options for ${entry.name}`, exact: true }) });
+		if (entry.browserMode) await expect(row.locator(".connector-row-title")).toContainText(entry.browserMode === "tethered" ? "[Tethered]" : "[Background Browser]");
 		const action = row.getByRole("button", {
 			name: entry.importOnly ? "Import" : `More setup options for ${entry.name}`,
 			exact: true,
@@ -69,7 +70,7 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 	try {
 		const setupRow = available
 			.getByRole("listitem")
-			.filter({ has: page.getByText(setupEntry.name, { exact: true }) });
+			.filter({ has: page.getByRole("button", { name: `More setup options for ${setupEntry.name}`, exact: true }) });
 		await setupRow
 			.getByRole("button", { name: `More setup options for ${setupEntry.name}` })
 			.click();
@@ -224,7 +225,7 @@ export async function checkLocalData(page, invoke) {
 	await nav.getByRole("button", { name: "Connections", exact: true }).click();
 	const available = page.getByRole("list", { name: "Available connections" });
 	const local = page.getByRole("list", { name: "Local connections" });
-	const yc = available.getByText("Y Combinator · Demo Only", { exact: true });
+	const yc = available.getByText("Y Combinator · Demo Only [Tethered]", { exact: true });
 	await expect(yc).toBeVisible();
 	await invoke("catalog.install", { catalogId: "ycombinator-demo", configuration: {} });
 	const ycOptions = local.getByRole("button", { name: /^Options for Y Combinator / });

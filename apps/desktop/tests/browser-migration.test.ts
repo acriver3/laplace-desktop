@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -28,6 +28,10 @@ async function fixture() {
 	const { BrowserApprovals } = await import("../src/helper/browser-approvals");
 	const { CatalogInstaller } = await import("../src/helper/catalog");
 	const resources = join(root, "resources");
+	if (process.platform === "win32") {
+		await mkdir(join(resources, "runtimes"), { recursive: true });
+		await copyFile(join(process.cwd(), "resources/runtimes/process-host.exe"), join(resources, "runtimes/process-host.exe"));
+	}
 	await mkdir(join(resources, "helper"), { recursive: true });
 	const bytes = gunzipSync(
 		await readFile(

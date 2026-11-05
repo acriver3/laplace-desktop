@@ -24,14 +24,14 @@ export const slackSettings = [
 	"SLACK_MCP_GOVSLACK",
 ];
 // Release qualification is platform-specific. An explicit false remains the rollback switch.
-// Runtime 0.4.1 / extension 0.7.0 passed native and live acceptance on macOS ARM64.
+// Windows x64 and macOS ARM64 use the bundled tethered runtime.
 export function browserEnabled(
 	platform: string = process.platform,
 	arch: string = process.arch,
 	override = process.env.LAPLACE_TETHERED_BROWSER_V1,
 ) {
 	if (override !== undefined) return override === "true";
-	return platform === "darwin" && arch === "arm64";
+	return (platform === "darwin" && arch === "arm64") || (platform === "win32" && arch === "x64");
 }
 export const browserSetupTools = ["pair", "status", "review", "authorize", "focus", "revoke"].map(
 	(action) => "laplace_browser_" + action,

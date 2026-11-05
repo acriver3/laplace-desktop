@@ -15,6 +15,7 @@ import type { ServerSnapshot } from "../shared/helper-contracts";
 import { BrokerStart } from "./BrokerStart";
 import { CatalogConnectButton } from "./CatalogConnectButton";
 import { ConnectionIcon } from "./ConnectionIcon";
+import { connectionName } from "./connection-name";
 import { Modal } from "./Dialogs";
 import { PortablePeers } from "./PortablePeers";
 import { PortableSetup } from "./PortableSetup";
@@ -63,9 +64,9 @@ export function LocalConnectionsPage({
 	const query = search.trim().toLowerCase();
 	const matches = (...values: (string | undefined)[]) =>
 		values.join(" ").toLowerCase().includes(query);
-	const local = servers.filter((server) => matches(server.name, server.id));
+	const local = servers.filter((server) => matches(connectionName(server.name, installedCatalog.get(server.id)?.installedBrowserMode), server.id));
 	const available = catalog.filter(
-		(entry) => !entry.installed && matches(entry.name, entry.description),
+		(entry) => !entry.installed && matches(connectionName(entry.name, entry.browserMode), entry.description),
 	);
 	return (
 		<ConnectionsPageView
@@ -110,7 +111,7 @@ export function LocalConnectionsPage({
 					<PortableSetup />
 					<BrokerStart entries={available} label="Connect selected with assistant" batch />
 					{catalogDetails && (
-						<Modal title={catalogDetails.name} close={() => setCatalogDetails(undefined)}>
+						<Modal title={connectionName(catalogDetails.name, catalogDetails.installed ? catalogDetails.installedBrowserMode : catalogDetails.browserMode)} close={() => setCatalogDetails(undefined)}>
 							<div className="dialog-body stack">
 								<p>{catalogDetails.description}</p>
 								{catalogDetails.setupUrl && (
@@ -147,7 +148,7 @@ export function LocalConnectionsPage({
 												<ConnectionTile
 													key={server.id}
 													className="desktop-connection"
-													title={server.name}
+													title={connectionName(server.name, installedCatalog.get(server.id)?.installedBrowserMode)}
 													subtitle={`${installedCatalog.has(server.id) ? (installedCatalog.get(server.id)?.installedBrowserMode === "tethered" ? "Tethered" : "Background Browser") : "Custom"} · ${server.tools.length} tools`}
 													onDetails={() => details(server)}
 													statusLabel={
@@ -235,7 +236,7 @@ export function LocalConnectionsPage({
 												<ConnectionTile
 													key={entry.id}
 													className="desktop-connection desktop-catalog-connection"
-													title={entry.name}
+													title={connectionName(entry.name, entry.browserMode)}
 													onDetails={() => setCatalogDetails(entry)}
 													statusLabel={
 														entry.demoOnly

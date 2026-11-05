@@ -23,6 +23,7 @@ import { approveBrowser } from "./fixtures/browser-approval";
 
 const roots: string[] = [];
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 async function root() {
@@ -114,6 +115,7 @@ it("discovers active requests via framed native messaging and rejects other exte
 	expect(await listBrowserRequests(directory)).toEqual([]);
 });
 it("registers only the Laplace extension with the existing executable and preserves foreign manifests", async () => {
+	vi.stubEnv("LAPLACE_TETHERED_BROWSER_V1", "false");
 	const home = await root(),
 		registerWindows = vi.fn(async () => {});
 	await registerBrowserNativeHost("/resources", {
