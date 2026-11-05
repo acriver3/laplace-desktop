@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+
 import { chromium } from "@playwright/test";
 import { expect, it } from "vitest";
 
@@ -10,7 +11,10 @@ it.skipIf(!existsSync(chromium.executablePath()))(
 		try {
 			const page = await browser.newPage();
 			const source = (
-				await readFile(new URL("../browser-extension/broker.js", import.meta.url), "utf8")
+				await readFile(
+					new URL("../../../packages/browser-runtime/extension/broker.js", import.meta.url),
+					"utf8",
+				)
 			).split("export async function connectBroker")[0]!;
 			await page.route("**/*", (route) =>
 				route.fulfill({ contentType: "text/html", body: "<html><body></body></html>" }),

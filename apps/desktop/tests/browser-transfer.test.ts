@@ -162,7 +162,7 @@ it("the shipped worker sends chunks to new relays while preserving legacy JSON i
 			action: { setBadgeText: async () => {} },
 		},
 	});
-	runInContext(source.replace(/^import .*;$/m, ""), context);
+	runInContext(source.replace(/^import .*;$/gm, ""), context);
 	const value = { ok: true, result: { attachment: "a".repeat(1024 * 1024) } };
 	await context.sendResult(
 		{ base: "http://127.0.0.1:1", token: "fixture" },

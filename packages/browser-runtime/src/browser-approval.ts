@@ -14,6 +14,24 @@ export const browserCandidate = z
 	.strict();
 export type BrowserCandidate = z.infer<typeof browserCandidate>;
 export const browserProviders = {
+	"slack-tethered": {
+		label: "Slack",
+		scopes: [
+			"Read channels, conversations, users, groups, saved items and attachments",
+			"Send messages, change reactions, channel membership, read state, user groups and saved items when requested",
+		],
+		revision: "slack-full-v1",
+		verify: "laplace_slack_verify",
+	},
+	outlook: {
+		label: "Outlook",
+		scopes: [
+			"Read mail, calendars, contacts, directory, and attachments",
+			"Send and change mail, calendar events, contacts, and mailbox settings when requested",
+		],
+		revision: "outlook-full-v1",
+		verify: "outlook_list_folders",
+	},
 	slack: {
 		label: "Slack",
 		scopes: ["List channels", "Read conversation history and replies", "Search messages"],

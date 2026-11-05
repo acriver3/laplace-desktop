@@ -11,7 +11,7 @@ export const localConnectorDefinitions = [
 	{
 		id: "linkedin-mcp-server",
 		name: "LinkedIn",
-		mode: "tethered",
+		mode: "background-browser",
 		serverId: "linkedin",
 		verify: ["get_my_profile"],
 	},
@@ -62,7 +62,11 @@ export function localConnectorMetadata(id: string, tethered = false) {
 			: tethered && entry.id !== "ycombinator-demo"
 				? " [Tethered]"
 				: "";
-	return { name: entry.name + suffix, browserMode, setupUrl: localConnectorSetupUrl(id) };
+	return {
+		name: entry.name + suffix + (entry.id === "ycombinator-demo" ? " · Demo Only" : ""),
+		browserMode,
+		setupUrl: localConnectorSetupUrl(id),
+	};
 }
 export function localConnectorSetupUrl(
 	id: string,

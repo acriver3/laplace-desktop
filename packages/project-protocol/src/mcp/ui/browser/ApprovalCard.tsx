@@ -12,7 +12,7 @@ export interface ApprovalView {
 		profileId: string;
 		profileLabel: string;
 		revision: string;
-		identity: { userId: string; workspace: string };
+		identity: { userId: string; workspace: string; accountLabel?: string };
 	}>;
 	profiles?: Array<{ profileId: string; profileLabel: string }>;
 	selectedId?: string;
@@ -82,7 +82,7 @@ export function ApprovalCard({
 						</option>
 						{view.candidates.map((c) => (
 							<option key={c.id} value={c.id}>
-								{c.identity.userId} · {c.profileLabel}
+								{c.identity.accountLabel ?? c.identity.userId} · {c.profileLabel}
 							</option>
 						))}
 					</select>

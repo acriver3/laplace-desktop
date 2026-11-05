@@ -34,7 +34,10 @@ export async function openBrowserApprovalPage(
 				return;
 			}
 			res.setHeader("Cache-Control", "no-store");
-			res.setHeader("Referrer-Policy", "no-referrer");
+			// Chrome sends Origin: null for form POSTs under no-referrer.
+			// same-origin keeps the request-bound URL private from external sites
+			// while preserving the exact-origin CSRF check below.
+			res.setHeader("Referrer-Policy", "same-origin");
 			res.setHeader("X-Content-Type-Options", "nosniff");
 			res.setHeader(
 				"Content-Security-Policy",
@@ -63,6 +66,17 @@ export async function openBrowserApprovalPage(
 				return;
 			}
 			const { view, capabilities } = approvals.review(requestId, clientId);
+			// Keep discovery moving and renew the displayed one-minute capability
+			// during review. Refresh only reads status; approval still needs a POST
+			// and revalidates the exact account, profile and candidate revision.
+			const refresh =
+				view.state === "approval_required"
+					? '<meta http-equiv="refresh" content="20">'
+					: ["discovering", "permission_required", "sign_in_required", "verifying"].includes(
+								view.state,
+						  )
+						? '<meta http-equiv="refresh" content="2">'
+						: "";
 			const hidden = (name: string, value: string) =>
 				`<input type="hidden" name="${name}" value="${escape(value)}">`;
 			const form = (action: string, fields: string, label: string) =>
@@ -70,7 +84,7 @@ export async function openBrowserApprovalPage(
 			const candidates = view.candidates
 				.map(
 					(c) =>
-						`<li><p>${escape(c.profileLabel)} — ${escape(c.identity.userId)} — ${escape(c.identity.workspace)}</p>${capabilities[c.id] ? form("approve", hidden("capability", capabilities[c.id]!), "Approve this account") : ""}</li>`,
+						`<li><p>${escape(c.profileLabel)} — ${escape(typeof c.identity.accountLabel === "string" ? c.identity.accountLabel : c.identity.userId)} — ${escape(c.identity.workspace)}</p>${capabilities[c.id] ? form("approve", hidden("capability", capabilities[c.id]!), "Approve this account") : ""}</li>`,
 				)
 				.join("");
 			const focus = (view.profiles ?? [])
@@ -80,11 +94,13 @@ export async function openBrowserApprovalPage(
 				.join("");
 			res.setHeader("Content-Type", "text/html; charset=utf-8");
 			res.end(
-				`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Laplace browser approval</title><style>body{font:16px system-ui;max-width:45rem;margin:3rem auto;padding:1rem}button{padding:.6rem;margin:.5rem 0}li{margin:1rem 0}</style><main><h1>Connect ${escape(view.provider)}</h1><p>${escape(view.workspace)}</p><p>${escape(view.message)}</p><ul>${view.scopes.map((s) => `<li>${escape(s)}</li>`).join("")}</ul><ul>${candidates}</ul>${focus}${form("disconnect", "", "Cancel or disconnect")}<p><a href="${route}">Refresh connection status</a></p></main></html>`,
+				`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">${refresh}<title>Laplace browser approval</title><style>body{font:16px system-ui;max-width:45rem;margin:3rem auto;padding:1rem}button{padding:.6rem;margin:.5rem 0}li{margin:1rem 0}</style><main><h1>Connect ${escape(view.provider)}</h1><p>${escape(view.workspace)}</p><p>${escape(view.message)}</p><ul>${view.scopes.map((s) => `<li>${escape(s)}</li>`).join("")}</ul><ul>${candidates}</ul>${focus}${form("disconnect", "", "Cancel or disconnect")}<p><a href="${route}">Refresh connection status</a></p></main></html>`,
 			);
 		})().catch(() => {
-			if (!res.headersSent) res.writeHead(400);
-			res.end("Request expired or account changed. Refresh and review again.");
+			if (!res.headersSent) res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+			res.end(
+				`<!doctype html><html lang="en"><meta charset="utf-8"><title>Review connection again</title><p>Request expired or account changed.</p><p><a href="${route}">Refresh and review again</a></p></html>`,
+			);
 		});
 	});
 	server.requestTimeout = 10000;

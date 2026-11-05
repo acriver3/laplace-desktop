@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { connectorOriginSchema } from "@repo/project-protocol/local-mcp";
 import { z } from "zod";
 
+import { browserMigration } from "./browser-migration";
 import { serverConfig } from "./config";
 
 export interface SecretEntry {
@@ -30,6 +31,8 @@ export async function systemEntry(root: string, name: string): Promise<SecretEnt
 const stateSchema = z
 	.object({
 		servers: z.array(serverConfig).max(50).default([]),
+		browserConsent: z.array(z.unknown()).max(100).optional(),
+		browserMigrations: z.array(browserMigration).max(100).optional(),
 		pendingRemovals: z.array(z.string()).max(50).optional(),
 		pairing: z
 			.object({

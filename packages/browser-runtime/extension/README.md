@@ -1,15 +1,15 @@
 # Laplace Browser Connection
 
 Connect existing signed-in browser accounts from an MCP agent without opening the extension popup.
-The adapter remains opt-in through LAPLACE_BROWSER_CONNECTION_ENABLED=true.
+Outlook and full Slack remain opt-in through LAPLACE_TETHERED_BROWSER_V1=true. The earlier read-only Slack preview uses LAPLACE_BROWSER_CONNECTION_ENABLED=true. LinkedIn, Canvas and EMS retain their background-browser implementations.
 
 ## Setup and use
 
-1. Install or reload the bundled extension in Chrome or Edge. Version 0.4.0 requires accepting site access for Slack, Slack Gov and apply.ycombinator.com. It does not request all-sites, cookies or debugger access.
+1. Install or reload the bundled extension in Chrome or Edge. Version 0.7.0 requires accepting site access for Slack, Slack Gov, apply.ycombinator.com and the three Outlook origins listed in manifest.json. It does not request all-sites, cookies or debugger access.
 2. Ask the agent to connect a catalog service. It calls local_connectors_authenticate, polls local_connectors_status, then calls local_connectors_browser_show with browserApproval.requestId.
 3. Review the account, workspace, browser profile and scopes in chat and select Approve connection. Multiple matches require account selection. Desktop verifies a provider read before reporting Connected.
 4. If no matching tab exists, discovery waits without opening a tab. Clicking Finish signing in opens the provider's allowlisted URL or brings an existing tab forward in the selected profile. Installation permissions and provider login/MFA still happen in the browser.
-5. Hosts without MCP Apps use local_connectors_browser_desktop for the same request-specific review in Laplace Desktop.
+5. Hosts without MCP Apps use local_connectors_browser_desktop for the same request-specific review in Laplace Desktop. Standalone CLI uses the request-scoped loopback approval page returned by `browser authenticate`; it needs no Electron process.
 
 The popup lists active connections and Disconnect; no pending-request picker is needed.
 The consent card also supports cancellation and disconnect. Keep the browser running;
@@ -24,7 +24,7 @@ host streams bounded, short-lived tickets, and cannot approve or execute provide
 A retry timer and alarm recover the subscription. Each profile has a random installation
 ID stored locally (never synced). Only matching provider tabs receive identity checks.
 
-Desktop owns consent. Extension identity reports are shown in a bundled MCP App; approval
+The initiating Desktop or CLI installation owns consent. Extension identity reports are shown in a bundled MCP App; approval
 capabilities exist only in UI metadata and are bound to client, request, candidate and
 revision. They expire after one minute and are consumed once. The relay requires a
 separate Desktop authorization before accepting a single-use pairing ticket, and the
@@ -41,7 +41,7 @@ never leave the browser, and writes are never replayed on reconnect.
 
 ## Compatibility and rollout
 
-Ship extension 0.4.1 with the matching Desktop build. Existing unpacked installations need
+Ship extension 0.7.0 with matching Desktop and CLI runtime assets. Existing unpacked installations need
 Reload and acceptance of the new site permissions. An old extension cannot authorize the
 new relay. Existing session approvals do not become permanent grants: the first use of the
 new flow requires explicit approval. Existing connector restrictions are preserved while

@@ -10,7 +10,7 @@ import { z } from "zod";
 import { browserExtensionId } from "./browser-extension-id";
 import { browserHostName } from "./browser-requests";
 
-export const nativeRuntimeVersion = "0.2.0";
+export const nativeRuntimeVersion = "0.3.0";
 export const nativeProtocolVersion = 1;
 const extensionOrigin = `chrome-extension://${browserExtensionId}/`;
 const versionSchema = z.string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);

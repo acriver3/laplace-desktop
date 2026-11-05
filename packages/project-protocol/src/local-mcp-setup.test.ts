@@ -19,13 +19,15 @@ describe("public local connector setup", () => {
 				.map((entry) => localConnectorMetadata(entry.id, true).name),
 		).toEqual([
 			"Canvas [Background Browser]",
-			"LinkedIn [Tethered]",
+			"LinkedIn [Background Browser]",
 			"Yale SOM EMS [Background Browser]",
 			"Outlook [Tethered]",
 			"Slack [Tethered]",
 		]);
-		expect(localConnectorMetadata("linkedin-mcp-server").name).toBe("LinkedIn");
-		expect(localConnectorMetadata("ycombinator-demo", true).name).toBe("Y Combinator");
+		expect(localConnectorMetadata("linkedin-mcp-server").name).toBe(
+			"LinkedIn [Background Browser]",
+		);
+		expect(localConnectorMetadata("ycombinator-demo", true).name).toBe("Y Combinator · Demo Only");
 	});
 	it("uses only allowlisted context and encodes it as data", () => {
 		const url = new URL(

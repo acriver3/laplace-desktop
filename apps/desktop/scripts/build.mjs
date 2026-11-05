@@ -1,4 +1,3 @@
-import { verifyBrowserRuntime } from "../../../packages/browser-runtime/scripts/verify-source.mjs";
 import { execFileSync } from "node:child_process";
 import { mkdir, copyFile, cp } from "node:fs/promises";
 import { join } from "node:path";
@@ -7,6 +6,9 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
 import { build as buildRenderer } from "vite";
+
+import { verifyBrowserRuntime } from "../../../packages/browser-runtime/scripts/verify-source.mjs";
+import { buildBrowserAssets } from "../../../packages/browser-runtime/src/build-assets.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 process.chdir(root);
@@ -34,13 +36,7 @@ await build({
 	logLevel: "info",
 });
 await build({
-	entryPoints: [
-		"src/helper/main.ts",
-		"src/helper/bridge.ts",
-		"src/helper/slack-browser.ts",
-		"src/helper/yc-browser.ts",
-		"src/helper/browser-native-entry.ts",
-	],
+	entryPoints: ["src/helper/main.ts", "src/helper/bridge.ts", "src/helper/slack-browser.ts"],
 	outdir: "dist/helper",
 	outExtension: { ".js": ".cjs" },
 	platform: "node",
@@ -71,8 +67,9 @@ await cp("../../packages/browser-runtime/extension", "resources/browser-extensio
 // Development uses resources directly; packaged builds copy dist/helper here too.
 await mkdir("resources/helper", { recursive: true });
 await copyFile("dist/helper/slack-browser.cjs", "resources/helper/slack-browser.cjs");
-await copyFile("dist/helper/yc-browser.cjs", "resources/helper/yc-browser.cjs");
-await copyFile("dist/helper/browser-native-entry.cjs", "resources/helper/browser-native-entry.cjs");
+await buildBrowserAssets(build, resolve("resources"));
+await copyFile("resources/helper/yc-browser.cjs", "dist/helper/yc-browser.cjs");
+await copyFile("resources/helper/browser-native-entry.cjs", "dist/helper/browser-native-entry.cjs");
 
 if (process.platform === "win32") {
 	await mkdir("resources/runtimes", { recursive: true });
@@ -82,7 +79,7 @@ if (process.platform === "win32") {
 			"/nologo",
 			"/target:exe",
 			"/out:" + resolve("resources/runtimes/browser-native-host.exe"),
-			resolve("native/browser-native-host.cs"),
+			resolve("resources/helper/browser-native-host.cs"),
 		],
 		{ stdio: "inherit", windowsHide: true },
 	);

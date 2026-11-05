@@ -9,6 +9,8 @@ export interface CatalogEntry {
 	available: boolean;
 	demoOnly?: boolean;
 	installed?: boolean;
+	installedVersion?: string;
+	installedBrowserMode?: "tethered" | "background-browser";
 	importOnly?: boolean;
 	capabilities?: string[];
 	authentication?: string[];

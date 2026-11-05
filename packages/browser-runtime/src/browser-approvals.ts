@@ -22,7 +22,7 @@ export function browserAuthorizer(fn: () => void, clientId: string, tool: string
 }
 const grant = z.object({
 	serverId: z.string(),
-	provider: z.enum(["slack", "ycombinator"]),
+	provider: z.enum(["slack", "ycombinator", "outlook", "slack-tethered"]),
 	workspace: z.string(),
 	clientId: z.string(),
 	tool: z.string(),
@@ -61,7 +61,7 @@ type Request = Owner & {
 	terminal: boolean;
 	verified: boolean;
 };
-/** Desktop is the sole owner of consent. Native discovery never authorizes a relay. */
+/** The initiating Laplace client owns consent. Native discovery never authorizes a relay. */
 export class BrowserApprovals {
 	private requests = new Map<string, Request>();
 	private capabilities = new Map<
@@ -140,8 +140,9 @@ export class BrowserApprovals {
 		authorize?: () => void,
 		saved?: Grant,
 	) {
-		if (this.closed) throw Error("Desktop is stopping.");
-		workspace = provider === "slack" ? slackWorkspace(workspace) : workspace;
+		if (this.closed) throw Error("Laplace is stopping.");
+		workspace =
+			provider === "slack" || provider === "slack-tethered" ? slackWorkspace(workspace) : workspace;
 		const owner = saved ??
 			(authorize && owners.get(authorize)) ?? {
 				clientId: "desktop",
@@ -301,6 +302,21 @@ export class BrowserApprovals {
 		await this.call(r.serverId, "focus", { profileId });
 		return r.view;
 	}
+	async cancelByServer(serverId: string, clientId: string) {
+		for (const r of this.requests.values())
+			if (
+				r.serverId === serverId &&
+				!r.terminal &&
+				(clientId === "desktop" || r.clientId === clientId)
+			)
+				await this.cancel(r.id, clientId);
+		await this.store.mutate((state) => {
+			state.grants = state.grants.filter(
+				(grant) =>
+					grant.serverId !== serverId || (clientId !== "desktop" && grant.clientId !== clientId),
+			);
+		});
+	}
 	async cancel(id: string, clientId: string, revoke = true) {
 		const r = this.requests.get(id);
 		if (!r || (clientId !== "desktop" && clientId !== r.clientId))
@@ -328,6 +344,23 @@ export class BrowserApprovals {
 								this.allowed(r, r.serverId);
 							} catch {
 								await this.cancel(r.id, "desktop");
+								return;
+							}
+							// Standalone clients can coexist. A disconnect in any process must
+							// revoke passive access in every process before its next check.
+							if (
+								r.consent &&
+								!(await this.store.read()).grants.some(
+									(g) =>
+										g.serverId === r.serverId &&
+										g.clientId === r.clientId &&
+										g.scopeRevision === r.consent!.scopeRevision &&
+										g.candidate.profileId === r.consent!.candidate.profileId &&
+										identityKey(g.candidate.identity) ===
+											identityKey(r.consent!.candidate.identity),
+								)
+							) {
+								await this.cancel(r.id, "desktop", false);
 								return;
 							}
 							const status = await this.call(r.serverId, "status");

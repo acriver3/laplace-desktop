@@ -9,7 +9,15 @@ export { browserAuthorizer } from "@repo/browser-runtime/browser-approvals";
 export class BrowserApprovals extends SharedBrowserApprovals {
 	constructor(manager: DesktopManager) {
 		super(
-			manager,
+			{
+				root: manager.root,
+				getServerConfig: (id) => manager.browserSetupConfig(id),
+				client: (id) => manager.client(id),
+				clientToolAllowed: (id, tool) => manager.clientToolAllowed(id, tool),
+				changed: () => manager.changed(),
+				catalogSetupCall: (id, tool, args, signal) =>
+					manager.catalogSetupCall(id, tool, args, signal),
+			},
 			new EncryptedStore(
 				manager.root,
 				"browser-consent",

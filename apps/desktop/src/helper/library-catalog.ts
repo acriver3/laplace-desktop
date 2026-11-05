@@ -1,9 +1,12 @@
-import { localConnectorMetadata } from "@repo/project-protocol/local-mcp-setup";
+import outlookArtifact from "@repo/browser-runtime/assets/outlook.json";
+import slackArtifact from "@repo/browser-runtime/assets/slack.json";
+import { browserEnabled } from "@repo/local-mcp-core/browser-catalog";
 import {
 	bundleEntrySchema,
 	bundleArtifactSchema,
 	bundleAvailable as acceptedBundle,
 } from "@repo/project-protocol/local-mcp-bundles";
+import { localConnectorMetadata } from "@repo/project-protocol/local-mcp-setup";
 import { z } from "zod";
 
 import { browserConnectionsEnabled } from "../shared/browser-feature";
@@ -46,7 +49,7 @@ const entrySchema = bundleEntrySchema
 	.strip();
 export type BundleCatalogEntry = z.infer<typeof entrySchema>;
 export type BundleArtifact = z.infer<typeof artifactSchema>;
-export const bundleCatalog = snapshot.map((item) =>
+const legacyCatalogEntry = (item: (typeof snapshot)[number], browserPreview: boolean) =>
 	entrySchema.parse({
 		...item,
 		...localConnectorMetadata(item.id),
@@ -63,7 +66,7 @@ export const bundleCatalog = snapshot.map((item) =>
 					],
 				}
 			: {}),
-		...(browserConnectionsEnabled() && item.recipe === "slack-ready"
+		...(browserPreview && item.recipe === "slack-ready"
 			? {
 					...localConnectorMetadata(item.id, true),
 					description:
@@ -88,17 +91,19 @@ export const bundleCatalog = snapshot.map((item) =>
 				}
 			: {}),
 		repository:
-			browserConnectionsEnabled() && item.recipe === "slack-ready"
+			browserPreview && item.recipe === "slack-ready"
 				? "https://github.com/acriver3/Laplace"
 				: "https://github.com/acriver3/laplace-mcp-library",
-	}),
+	});
+export const legacyBundleCatalog = snapshot.map((item) =>
+	legacyCatalogEntry(item, browserConnectionsEnabled()),
 );
 export function bundleAvailable(artifact: BundleArtifact) {
 	return acceptedBundle(artifact) || (artifact.published && artifact.candidate === true);
 }
 
 // Desktop-shipped demonstration adapter. There is no hosted YC runtime or remote bundle download.
-bundleCatalog.push(
+legacyBundleCatalog.push(
 	entrySchema.parse({
 		id: "ycombinator-demo",
 		...localConnectorMetadata("ycombinator-demo"),
@@ -134,3 +139,53 @@ bundleCatalog.push(
 		artifacts: [],
 	}),
 );
+
+// Historical entries remain resolvable for existing installations when defaults change.
+export const tetheredBundleCatalog = [outlookArtifact, slackArtifact].map((artifact) => {
+	const entry = legacyBundleCatalog.find((entry) => entry.id === artifact.catalogId)!;
+	return entrySchema.parse({
+		...entry,
+		...localConnectorMetadata(entry.id, true),
+		version: artifact.version,
+		browserMode: "tethered",
+		artifacts: [],
+		repository: "https://github.com/acriver3/laplace-mcp-library",
+		...(artifact.provider === "slack-tethered"
+			? {
+					capabilities: [
+						"Read channels, messages, users, groups, saved items and attachments",
+						"Send messages and change reactions, channel membership, read state, groups and saved items with existing permission controls",
+					],
+				}
+			: {}),
+		description:
+			artifact.provider === "outlook"
+				? "Use the selected account in your existing Chrome tab for mail, calendar, contacts, directory and attachments."
+				: "Use your existing Chrome session for Slack conversations, messaging, channels, users, groups, saved items and attachments.",
+		prerequisites: [
+			"Signed-in account in existing Chrome",
+			"Laplace Browser Connection extension 0.7.0 or newer",
+		],
+		authentication: [
+			"Use Authenticate and approve the account, profile and full connector access. Keep the existing tab open.",
+		],
+	});
+});
+export const allBundleCatalog = [
+	...new Map(
+		[
+			...snapshot.map((item) => legacyCatalogEntry(item, false)),
+			...legacyBundleCatalog,
+			...tetheredBundleCatalog,
+		].map((entry) => [`${entry.id}@${entry.version}`, entry]),
+	).values(),
+];
+export const bundleCatalog = legacyBundleCatalog.map((entry) =>
+	browserEnabled()
+		? (tetheredBundleCatalog.find((candidate) => candidate.id === entry.id) ?? entry)
+		: entry,
+);
+export const tetheredEntry = (entry: BundleCatalogEntry) =>
+	tetheredBundleCatalog.some(
+		(candidate) => candidate.id === entry.id && candidate.version === entry.version,
+	);

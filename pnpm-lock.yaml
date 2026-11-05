@@ -217,6 +217,15 @@ importers:
 
   packages/browser-runtime:
     dependencies:
+      '@modelcontextprotocol/client':
+        specifier: 2.4.0
+        version: 2.4.0
+      '@modelcontextprotocol/core':
+        specifier: 2.4.0
+        version: 2.4.0
+      '@modelcontextprotocol/server':
+        specifier: 2.4.0
+        version: 2.4.0
       zod:
         specifier: 'catalog:'
         version: 4.3.6
@@ -224,6 +233,9 @@ importers:
 
   packages/local-mcp-core:
     dependencies:
+      '@repo/browser-runtime':
+        specifier: workspace:*
+        version: link:../browser-runtime
       '@cfworker/json-schema':
         specifier: 4.1.1
         version: 4.1.1

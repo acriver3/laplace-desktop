@@ -1,9 +1,46 @@
+import { outlookAction } from "./outlook.js";
+import { slackFullAction } from "./slack-full.js";
 import { slackRead } from "./slack.js";
 import { ycAction } from "./ycombinator.js";
 
 // Reviewed, bundled adapters only. Desktop cannot supply code, domains, or
 // arbitrary actions. New providers share discovery, consent, and session state.
 export const providers = {
+	outlook: {
+		origins: [
+			"https://outlook.cloud.microsoft/*",
+			"https://outlook.office.com/*",
+			"https://outlook.office365.com/*",
+		],
+		matches: (url) =>
+			/^https:\/\/outlook\.(?:cloud\.microsoft|office\.com|office365\.com)\//.test(url),
+		openUrl: (workspace) =>
+			workspace === "https://outlook.cloud.microsoft" ? workspace + "/mail/" : null,
+		label: "Outlook",
+		scopes: [
+			"Read mail, calendars, contacts, directory, and attachments",
+			"Send and change mail, calendar events, contacts, and mailbox settings when requested",
+		],
+		identify: "account.identify",
+		methods: [
+			"owa.get",
+			"owa.cloudSettings",
+			"owa.post",
+			"owa.patch",
+			"owa.delete",
+			"graph.getPath",
+			"graph.binary",
+			"account.status",
+		],
+		read: outlookAction,
+		failures: {
+			not_outlook_tab: "Open Outlook in this Chrome profile.",
+			sign_in_required: "Finish signing in to the intended account in Outlook, then review again.",
+			identity_mismatch:
+				"The Outlook account changed. Review and approve the intended account again.",
+			request_failed: "Outlook is unavailable. Check the selected tab.",
+		},
+	},
 	ycombinator: {
 		origins: ["https://apply.ycombinator.com/*"],
 		matches: (url) => new URL(url).origin === "https://apply.ycombinator.com",
@@ -65,6 +102,57 @@ export const providers = {
 		],
 		read: slackRead,
 	},
+};
+providers["slack-tethered"] = {
+	...providers.slack,
+	identify: "account.identify",
+	scopes: [
+		"Read channels, conversations, users, groups, saved items and attachments",
+		"Send messages, change reactions, channel membership, read state, user groups and saved items when requested",
+	],
+	methods: [
+		"api.auth.test",
+		"api.users.list",
+		"api.users.info",
+		"api.conversations.list",
+		"api.conversations.info",
+		"api.conversations.members",
+		"api.conversations.history",
+		"api.conversations.replies",
+		"api.conversations.genericInfo",
+		"api.users.conversations",
+		"api.search.all",
+		"api.search.messages",
+		"api.files.info",
+		"api.client.userBoot",
+		"api.client.counts",
+		"api.client.dms",
+		"api.im.list",
+		"api.users.prefs.get",
+		"api.search.modules.channels",
+		"api.usergroups.list",
+		"api.usergroups.users.list",
+		"api.saved.list",
+		"api.chat.postMessage",
+		"api.reactions.add",
+		"api.reactions.remove",
+		"api.conversations.mark",
+		"api.conversations.leave",
+		"api.conversations.join",
+		"api.conversations.open",
+		"api.conversations.view",
+		"api.usergroups.create",
+		"api.usergroups.update",
+		"api.usergroups.users.update",
+		"api.saved.update",
+		"api.saved.clearCompleted",
+		"edge.users/info",
+		"edge.users/list",
+		"edge.users/search",
+		"edge.channels/membership",
+		"files.download",
+	],
+	read: slackFullAction,
 };
 export function provider(id) {
 	if (!Object.hasOwn(providers, id))

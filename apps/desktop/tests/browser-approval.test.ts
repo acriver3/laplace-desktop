@@ -38,6 +38,7 @@ async function fixture() {
 			setPassword: (value: string) => keys.set(key, value),
 		}),
 		getServerConfig: () => ({ enabled: true }),
+		browserSetupConfig: () => ({ enabled: true }),
 		client: () => {
 			if (!permitted) throw Error("revoked");
 		},
@@ -333,4 +334,35 @@ it("opens a browser only on an explicit one-shot request and discards stale focu
 			).json()
 		).focus,
 	).toBe(false);
+});
+
+it("clears persisted consent before migration even when no request exists in this process", async () => {
+	const f = await fixture();
+	await f.report();
+	await f.tick();
+	await f.broker.approve(
+		f.requestId,
+		f.clientId,
+		f.broker.review(f.requestId, f.clientId).capabilities[f.candidate.id]!,
+	);
+	await f.pair();
+	await f.tick();
+	await f.broker.close();
+	const restored = new BrowserApprovals(f.manager);
+	cleanup.push(() => restored.close());
+	await restored.cancelByServer("slack", f.clientId);
+	await restored.initialize();
+	expect(restored.list()).toHaveLength(0);
+	const requestId = randomUUID();
+	await restored.begin(
+		requestId,
+		"slack",
+		"slack",
+		identity.workspace,
+		browserAuthorizer(() => {}, f.clientId, "local_connectors_authenticate"),
+	);
+	await f.renew();
+	await f.report();
+	await (restored as any).tick();
+	expect(restored.view(requestId, f.clientId).state).toBe("approval_required");
 });

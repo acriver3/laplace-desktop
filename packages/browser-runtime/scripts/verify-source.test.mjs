@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -10,8 +10,9 @@ const source = fileURLToPath(new URL("..", import.meta.url));
 test("a consumer accepts the pinned source and rejects changed or injected executable files", async () => {
 	const root = await mkdtemp(join(tmpdir(), "laplace-browser-pin-"));
 	try {
-		await cp(source, root, { recursive: true });
-		assert.equal((await verifyBrowserRuntime(root)).files, 22);
+		await cp(source, root, { recursive: true, filter: (path) => !path.includes("node_modules") });
+		const lock = JSON.parse(await readFile(join(source, "source-lock.json"), "utf8"));
+		assert.equal((await verifyBrowserRuntime(root)).files, Object.keys(lock.files).length);
 		await writeFile(join(root, "src", "browser-requests.ts"), "changed");
 		await assert.rejects(verifyBrowserRuntime(root), /source mismatch/);
 		await cp(join(source, "src", "browser-requests.ts"), join(root, "src", "browser-requests.ts"));

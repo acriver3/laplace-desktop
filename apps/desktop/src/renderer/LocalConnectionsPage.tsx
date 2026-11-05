@@ -148,7 +148,7 @@ export function LocalConnectionsPage({
 													key={server.id}
 													className="desktop-connection"
 													title={server.name}
-													subtitle={`${installedCatalog.has(server.id) ? "Catalog" : "Custom"} · ${server.tools.length} tools`}
+													subtitle={`${installedCatalog.has(server.id) ? (installedCatalog.get(server.id)?.installedBrowserMode === "tethered" ? "Tethered" : "Background Browser") : "Custom"} · ${server.tools.length} tools`}
 													onDetails={() => details(server)}
 													statusLabel={
 														installedCatalog.get(server.id)?.demoOnly

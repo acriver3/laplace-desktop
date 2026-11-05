@@ -20,6 +20,7 @@ export async function verifyBrowserRuntime(root = fileURLToPath(new URL("..", im
 	}
 	await walk("src");
 	await walk("extension");
+	await walk("assets");
 	if (JSON.stringify(paths.sort()) !== JSON.stringify(Object.keys(lock.files).sort()))
 		throw Error("Browser runtime file inventory changed");
 	for (const path of paths) {

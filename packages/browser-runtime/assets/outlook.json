@@ -1,0 +1,9 @@
+{
+	"catalogId": "msoutlook-mcp",
+	"provider": "outlook",
+	"version": "0.6.0-candidate.1",
+	"serverId": "outlook",
+	"workspace": "https://outlook.cloud.microsoft",
+	"file": "helper/outlook-browser.cjs",
+	"sha256": "4e3919548633ca6f5a3f00a9890d4f97c9ea5e57aafc587edef8e92dd95d1ab0"
+}
