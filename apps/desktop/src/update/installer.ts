@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { cp, lstat, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+
+import { cp, lstat, rename, rm } from "./filesystem";
 
 import { z } from "zod";
 

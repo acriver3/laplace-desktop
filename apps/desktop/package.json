@@ -1,6 +1,6 @@
 {
 	"name": "@repo/desktop",
-	"version": "0.1.23",
+	"version": "0.1.24",
 	"private": true,
 	"description": "Laplace desktop and local MCP manager",
 	"license": "Apache-2.0",
@@ -23,6 +23,7 @@
 		"make": "node scripts/package.mjs --make",
 		"source:install": "node scripts/source-install.mjs",
 		"source:release": "node scripts/source-install.mjs --release",
+		"test:update-filesystem": "node scripts/update-filesystem-smoke.mjs",
 		"test:source-update": "node scripts/source-update-smoke.mjs"
 	},
 	"dependencies": {

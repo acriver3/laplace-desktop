@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { cp, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+
+import { cp, mkdir, rm } from "./filesystem";
 
 import packageJson from "../../package.json";
 import type { DesktopUpdateState } from "../shared/update-contracts";

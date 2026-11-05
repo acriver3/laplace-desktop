@@ -65,6 +65,8 @@ Attach `update-manifest.json`, `update-manifest.sig`, and the exact validated as
 
 Evidence must contain the exact `commit`, `version`, `localValidation: "passed"`, and a `platforms` object with `darwin-arm64`, `darwin-x64`, and `win32-x64` entries. Each entry requires `packaged`, `update`, and `recovery` to be `"passed"`, and `execution` to be `"native"`. Record actual runner results; do not mark unavailable platforms as passed. Rosetta is not a physical Intel acceptance result. Save detailed check logs alongside the evidence.
 
+Run `pnpm --filter @repo/desktop test:update-filesystem` to verify physical ASAR copying, digest parity, tamper detection, and cleanup in both Node and Electron. The updater uses Electron’s `original-fs` for physical package access and the standard filesystem in standalone Node.
+
 Run `pnpm --filter @repo/desktop check:source`, existing Desktop packaged/native checks, and `pnpm --filter @repo/desktop test:source-update` on each target. The source update smoke test uses temporary source tags, an isolated Git home, and isolated app profiles; it never publishes a tag or replaces the user's app. Unit tests cover failed startup recovery, interrupted replacements, source selection, cancellation, and IPC restrictions. Native acceptance must also verify existing keychain credentials, assistant registration paths, and Windows file-lock recovery.
 
 The release protocol currently requires Node 24, pnpm 10.28.2, and `sourceUpdateProtocol: 1`. A future toolchain/protocol change must preserve compatibility or instruct users to rerun bootstrap. Existing builds without the updater need the one-time setup above.

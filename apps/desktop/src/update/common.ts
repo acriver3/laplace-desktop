@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { homedir, userInfo } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+
 import {
 	access,
 	lstat,
@@ -12,9 +15,7 @@ import {
 	rename,
 	rm,
 	statfs,
-} from "node:fs/promises";
-import { homedir, userInfo } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+} from "./filesystem";
 
 import { z } from "zod";
 

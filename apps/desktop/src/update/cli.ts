@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { cp, mkdir, realpath } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
+
+import { cp, mkdir, realpath } from "./filesystem";
 
 import { z } from "zod";
 
