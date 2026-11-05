@@ -1,9 +1,9 @@
-import { localConnectorMetadata } from "./local-mcp-setup";
 import { z } from "zod";
 
 import { connectorOriginSchema } from "./local-mcp";
 import { localMcpArtifacts } from "./local-mcp-artifacts";
 import catalogData from "./local-mcp-bundles.json" with { type: "json" };
+import { localConnectorMetadata } from "./local-mcp-setup";
 
 const identifier = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
