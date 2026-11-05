@@ -29,7 +29,7 @@ describe("local MCP bundle catalog", () => {
 	it("identifies pinned sources and does not claim unrecorded platform acceptance", () => {
 		expect(bundleCatalog.map((entry) => entry.name)).toEqual([
 			"Canvas [Background Browser]",
-			"LinkedIn",
+			"LinkedIn [Background Browser]",
 			"Yale SOM EMS [Background Browser]",
 			"Outlook",
 		]);
