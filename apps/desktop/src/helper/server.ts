@@ -211,6 +211,8 @@ export async function startMcpServer(
 			});
 			server.setRequestHandler("tools/call", async (request, ctx) => {
 				if (
+					manager.supervisor.maintenanceActive ||
+					manager.updateMaintenance?.() ||
 					calls.size >= 128 ||
 					[...calls.values()].filter((call) => call.clientId === clientId).length >= 32
 				) {

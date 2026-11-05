@@ -48,6 +48,46 @@ interface Runtime {
 }
 export class Supervisor {
 	private closed = false;
+	private maintenance = false;
+	get maintenanceActive() {
+		return this.maintenance;
+	}
+	private connectorMaintenance = new Set<string>();
+	tryConnectorMaintenance(id: string) {
+		const runtime = this.server(id);
+		if (
+			this.maintenance ||
+			this.connectorMaintenance.has(id) ||
+			runtime.starting ||
+			runtime.manualRestartRequired ||
+			runtime.queue.activity.active ||
+			runtime.queue.activity.queued
+		)
+			return;
+		this.connectorMaintenance.add(id);
+		return () => {
+			this.connectorMaintenance.delete(id);
+		};
+	}
+
+	activity() {
+		return [...this.servers.values()].some(
+			(r) =>
+				r.starting || r.queue.activity.active || r.queue.activity.queued || r.manualRestartRequired,
+		);
+	}
+	tryMaintenance() {
+		if (this.maintenance || this.connectorMaintenance.size || this.activity()) return;
+		this.maintenance = true;
+		let released = false;
+		return () => {
+			if (!released) {
+				released = true;
+				this.maintenance = false;
+			}
+		};
+	}
+
 	private browserSetup = new WeakSet<Invocation>();
 	private servers = new Map<string, Runtime>();
 	private sessionSecrets = new Map<string, string[]>();
@@ -120,6 +160,7 @@ export class Supervisor {
 	}
 	async start(id: string, manual = false): Promise<void> {
 		const runtime = this.server(id);
+		if (this.maintenance) throw new Error("Update maintenance in progress");
 		if (this.closed) throw new Error("Supervisor stopped");
 		if (!runtime.config.enabled) throw new Error("Server disabled");
 		if (runtime.starting) return runtime.starting;
@@ -343,6 +384,10 @@ export class Supervisor {
 	}
 
 	call(invocation: Invocation, expiresAt: number, controller: AbortController) {
+		if (this.maintenance || this.connectorMaintenance.has(invocation.localId))
+			return Promise.reject(
+				new Error("Tool call was not started: update maintenance; retry later"),
+			);
 		const runtime = this.server(invocation.localId);
 		return runtime.queue.add(async () => {
 			this.validate(invocation);

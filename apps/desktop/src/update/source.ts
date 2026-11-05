@@ -3,10 +3,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { cp, mkdir, rm } from "./filesystem";
-
 import packageJson from "../../package.json";
 import type { DesktopUpdateState } from "../shared/update-contracts";
+import { adoptDownloadedApp, prepareBinary } from "./binary";
 import {
 	executable,
 	exists,
@@ -27,8 +26,10 @@ import {
 	type Installation,
 	type Release,
 } from "./common";
+import { cp, mkdir, rm } from "./filesystem";
 import { stagedPackage, validatePending, type PendingUpdate } from "./installer";
-import { checkPublicRelease } from "./release-manifest";
+import type { ReleaseManifest } from "./release-manifest";
+import { checkReleaseIndex } from "./release-manifest";
 
 const { releaseSigningPublicKey } = packageJson as typeof packageJson & {
 	releaseSigningPublicKey?: string;
@@ -109,7 +110,12 @@ export async function probePackage(
 }
 
 /** Only keys in this updater-created isolated profile are removed. */
-export async function cleanupProbeCredentials(path: string, target: string, profile: string, home?: string) {
+export async function cleanupProbeCredentials(
+	path: string,
+	target: string,
+	profile: string,
+	home?: string,
+) {
 	const ownedProfile = join(profile, "profiles", "hosted");
 	// A read-only startup normally creates no credentials. In particular, do not
 	// require an unlocked keychain merely to discard an empty verification profile.
@@ -171,7 +177,7 @@ export async function prepareSource(
 			"--no-tags",
 			"--",
 			repository,
-			`refs/tags/desktop-v${release.version}`,
+			`refs/tags/${release.tag ?? `desktop-v${release.version}`}`,
 		]);
 		if ((await git(["rev-parse", "FETCH_HEAD^{commit}"])) !== release.commit)
 			throw new UpdateError("invalid", "The release tag changed. Check for updates again.");
@@ -235,7 +241,19 @@ export async function prepareSource(
 export class SourceUpdater {
 	state: DesktopUpdateState;
 	private installation?: Installation;
-	private available?: Release;
+	private available?: Release | ReleaseManifest;
+	get automaticQualified() {
+		return !!(
+			this.installation &&
+			this.available &&
+			"qualified" in this.available &&
+			this.available.qualified?.some(
+				(q) =>
+					q.target === this.installation!.target &&
+					q.distribution === (this.installation!.distribution ?? "source"),
+			)
+		);
+	}
 	private controller?: AbortController;
 	private operation?: Promise<void>;
 	private timers: ReturnType<typeof setTimeout>[] = [];
@@ -258,8 +276,15 @@ export class SourceUpdater {
 	}
 	async initialize() {
 		if (!(await exists(join(this.root, "installation.json")))) {
-			this.publish(this.state);
-			return;
+			try {
+				await adoptDownloadedApp(this.currentExecutable, this.version, this.root);
+			} catch {
+				this.set({
+					message:
+						"Move Laplace to Applications (Mac) or %LOCALAPPDATA%\\Laplace\\app (Windows) in a writable location to enable updates.",
+				});
+				return;
+			}
 		}
 		try {
 			// Let the detached installer finish committing the startup receipt before
@@ -326,7 +351,8 @@ export class SourceUpdater {
 			} catch (error) {
 				this.set({
 					phase:
-						controller.signal.aborted || (error instanceof UpdateError && error.code === "cancelled")
+						controller.signal.aborted ||
+						(error instanceof UpdateError && error.code === "cancelled")
 							? this.available
 								? "available"
 								: "idle"
@@ -350,16 +376,27 @@ export class SourceUpdater {
 		await this.operation;
 	}
 	async check() {
-		if (this.state.phase === "ready") return;
+		const prepared = this.state.phase === "ready" ? this.available : undefined;
 		await this.single(async (signal) => {
 			this.set({ phase: "checking", message: undefined });
 			if (!releaseSigningPublicKey)
 				throw new UpdateError("invalid", "This build has no trusted public update channel.");
-			const available = await checkPublicRelease(this.version, releaseSigningPublicKey, signal);
+			const available = await checkReleaseIndex(
+				this.version,
+				releaseSigningPublicKey,
+				signal,
+				this.installation!.target,
+				this.root,
+				this.installation!.distribution ?? "source",
+			);
 			if (signal.aborted) throw new UpdateError("cancelled", "Update cancelled.");
-			this.available = available;
+			this.available = available ?? prepared;
+			const retained =
+				prepared &&
+				this.available?.version === prepared.version &&
+				this.available?.commit === prepared.commit;
 			this.set({
-				phase: this.available ? "available" : "idle",
+				phase: retained ? "ready" : this.available ? "available" : "idle",
 				availableVersion: this.available?.version,
 				checkedAt: new Date().toISOString(),
 				message: this.available ? undefined : "You’re up to date.",
@@ -370,13 +407,27 @@ export class SourceUpdater {
 		if (!this.available || this.state.phase === "ready") return;
 		await this.single(async (signal) => {
 			this.set({ message: undefined });
-			await prepareSource(
-				this.installation!,
-				this.available!,
-				this.root,
-				(phase) => this.set({ phase }),
-				signal,
-			);
+			if (
+				this.installation?.distribution === "zip" ||
+				this.installation?.distribution === "squirrel"
+			) {
+				if (!("assets" in this.available!))
+					throw Error("Signed binary release metadata is missing");
+				await prepareBinary(
+					this.installation,
+					this.available as ReleaseManifest,
+					this.root,
+					(phase) => this.set({ phase }),
+					signal,
+				);
+			} else
+				await prepareSource(
+					this.installation!,
+					this.available!,
+					this.root,
+					(phase) => this.set({ phase }),
+					signal,
+				);
 			this.set({
 				phase: "ready",
 				message: "Update built and verified. Restart when you’re ready.",

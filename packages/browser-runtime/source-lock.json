@@ -50,6 +50,7 @@
 		"assets/slack-engine-linux-x64.gz": "7633609319c00a969cf884f06049630e3a3e4f1295bdc811be7fb1b294d42e28",
 		"assets/slack-engine-win32-arm64.gz": "80aa972dc1097aa4d4e7508ab3301afcd9506b0a35e0a44527fa9ca61f17a3e4",
 		"assets/slack-engine-win32-x64.gz": "93dd0175c7435e977fb9d962ad70b2ab01a264b276f15db2f1592d1534e73fe6",
-		"assets/slack.json": "5723b762e1ff0c3b2451b4d6bdf01e53ee5954556da218ed3e8130417f76628a"
+		"assets/slack.json": "5723b762e1ff0c3b2451b4d6bdf01e53ee5954556da218ed3e8130417f76628a",
+		"src/update-coordination.ts": "9a4f79ddee3d3b3a0c68acfae4c9be9f65b5687cb457745a50f811c34d9a3760"
 	}
 }

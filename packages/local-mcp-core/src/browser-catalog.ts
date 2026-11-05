@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { join, resolve } from "node:path";
 
 import { browserProviders, type BrowserProviderId } from "@repo/browser-runtime/browser-approval";
@@ -11,6 +12,9 @@ import {
 import { z } from "zod";
 
 import { serverConfig, type ServerConfig } from "./config";
+import { verifyConnectorIndex } from "./connector-releases";
+import { connectorSigningKey } from "./connector-releases";
+import { readRetainedRuntime } from "./retained-runtime";
 export const slackSettings = [
 	"SLACK_MCP_ADD_MESSAGE_TOOL",
 	"SLACK_MCP_REACTION_TOOL",
@@ -99,6 +103,76 @@ export async function verifyBrowserConfiguration(resources: string, config: Serv
 	if (!receipt || config.transport !== "stdio")
 		throw Error("Explicit managed migration is required for this imported connection.");
 	const expected = await browserConfiguration(resources, receipt.catalogId, receipt.workspace);
+	if (
+		expected.transport === "stdio" &&
+		JSON.stringify(config.args) !== JSON.stringify(expected.args)
+	) {
+		// Independently released tethered entries carry the signed catalog, never a remote launch command.
+		const entryPath = config.args[0];
+		if (!entryPath || config.args.length !== 1) throw Error("Invalid managed connector entry");
+		const directory = dirname(entryPath);
+		let retained;
+		try {
+			retained = await readRetainedRuntime(entryPath);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		}
+		if (retained) {
+			if (
+				retained.catalogId !== receipt.catalogId ||
+				retained.provider !== receipt.provider ||
+				retained.version !== receipt.runtimeVersion ||
+				retained.artifactSha256 !== receipt.artifactSha256
+			)
+				throw Error("Retained connector receipt mismatch");
+			expected.args = [entryPath];
+			expected.identity = `${receipt.catalogId}@${receipt.runtimeVersion}`;
+			expected.managedBrowser = {
+				...expected.managedBrowser!,
+				runtimeVersion: receipt.runtimeVersion,
+				artifactSha256: receipt.artifactSha256,
+			};
+		} else {
+			const proof = JSON.parse(await readFile(join(directory, ".laplace-release.json"), "utf8"));
+			const index = verifyConnectorIndex(
+				Buffer.from(proof.payload, "base64"),
+				Buffer.from(proof.signature, "base64"),
+				connectorSigningKey,
+			);
+			const release = index.releases.find(
+				(r) =>
+					r.id === receipt.catalogId &&
+					r.version === receipt.runtimeVersion &&
+					r.mode === "tethered" &&
+					r.platforms.includes(`${process.platform}-${process.arch}` as never),
+			);
+			if (
+				!release ||
+				release.permissionRevision !==
+					browserProviders[receipt.provider as BrowserProviderId]?.revision.toString()
+			)
+				throw Error("Connector permission revision requires approval");
+			const entry = release.files.find((file) => join(directory, file.path) === entryPath);
+			if (!entry || entry.sha256 !== receipt.artifactSha256)
+				throw Error("Managed connector receipt mismatch");
+			for (const file of release.files) {
+				const bytes = await readFile(join(directory, file.path));
+				if (
+					bytes.length !== file.size ||
+					createHash("sha256").update(bytes).digest("hex") !== file.sha256
+				)
+					throw Error("Managed connector artifact changed");
+			}
+			expected.args = [entryPath];
+			expected.identity = `${receipt.catalogId}@${release.version}`;
+			expected.managedBrowser = {
+				...expected.managedBrowser!,
+				runtimeVersion: release.version,
+				artifactSha256: entry.sha256,
+			};
+		}
+	}
+
 	if (
 		expected.transport !== "stdio" ||
 		config.command !== expected.command ||

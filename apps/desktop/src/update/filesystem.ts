@@ -9,6 +9,8 @@ const filesystem: typeof nodeFs = process.versions.electron
 
 export const {
 	access,
+	copyFile,
+	writeFile,
 	cp,
 	lstat,
 	mkdir,

@@ -13,7 +13,13 @@
 		"./leases": "./src/leases.ts",
 		"./mcp-lifecycle": "./src/mcp-lifecycle.ts",
 		"./browser-catalog": "./src/browser-catalog.ts",
-		"./browser-migration": "./src/browser-migration.ts"
+		"./browser-migration": "./src/browser-migration.ts",
+		"./update-policy": "./src/update-policy.ts",
+		"./connector-releases": "./src/connector-releases.ts",
+		"./connector-updates": "./src/connector-updates.ts",
+		"./update-idle": "./src/update-idle.ts",
+		"./update-coordination": "./src/update-coordination.ts",
+		"./retained-runtime": "./src/retained-runtime.ts"
 	},
 	"scripts": {
 		"type-check": "tsc --noEmit"

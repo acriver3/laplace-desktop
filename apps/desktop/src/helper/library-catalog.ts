@@ -40,6 +40,7 @@ const artifactSchema = bundleArtifactSchema
 	.strip();
 const entrySchema = bundleEntrySchema
 	.extend({
+		managedUpdate: z.boolean().optional(),
 		recipe: z.enum(["canvas", "linkedin", "yale-som-ems", "outlook", "slack-ready", "yc-demo"]),
 		demoOnly: z.boolean().optional(),
 		setupUrl: z.string().url(),
@@ -186,6 +187,9 @@ export const bundleCatalog = legacyBundleCatalog.map((entry) =>
 		: entry,
 );
 export const tetheredEntry = (entry: BundleCatalogEntry) =>
+	(entry.managedUpdate === true &&
+		entry.browserMode === "tethered" &&
+		["outlook", "slack-ready"].includes(entry.recipe)) ||
 	tetheredBundleCatalog.some(
 		(candidate) => candidate.id === entry.id && candidate.version === entry.version,
 	);

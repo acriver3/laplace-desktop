@@ -2,7 +2,7 @@
 // the user's installation, Git configuration, profile, or published release tags.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash, generateKeyPairSync, sign } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir, userInfo, homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -46,7 +46,7 @@ try {
 	await build({
 		stdin: {
 			contents:
-				'export * from "./apps/desktop/src/update/common"; export * from "./apps/desktop/src/update/source"; export * from "./apps/desktop/src/update/installer";',
+				'export * from "./apps/desktop/src/update/common"; export * from "./apps/desktop/src/update/source"; export * from "./apps/desktop/src/update/installer"; export * from "./apps/desktop/src/update/binary"; export * from "./apps/desktop/src/update/release-manifest";',
 			resolveDir: repositoryRoot,
 		},
 		outfile: bundled,
@@ -139,7 +139,8 @@ try {
 		probeOptions,
 	);
 	const isolatedProfile = join(scratch, "user-profile");
-	cleanupProfile = () => api.cleanupProbeCredentials(originalPackage, target, isolatedProfile, keychainHome);
+	cleanupProfile = () =>
+		api.cleanupProbeCredentials(originalPackage, target, isolatedProfile, keychainHome);
 	await mkdir(isolatedProfile);
 	await writeFile(join(isolatedProfile, "preserved.txt"), "User settings remain unchanged");
 	const host = {
@@ -149,12 +150,12 @@ try {
 				api.executable(path, platform),
 				nonce ? [`--laplace-update-accept=${nonce}`] : [],
 				{
-				env: {
-					...api.toolEnvironment(),
-					...(keychainHome ? { HOME: keychainHome } : {}),
-					LAPLACE_DESKTOP_TEST_ROOT: isolatedProfile,
-					LAPLACE_DESKTOP_TEST_UPDATE_ROOT: root,
-				},
+					env: {
+						...api.toolEnvironment(),
+						...(keychainHome ? { HOME: keychainHome } : {}),
+						LAPLACE_DESKTOP_TEST_ROOT: isolatedProfile,
+						LAPLACE_DESKTOP_TEST_UPDATE_ROOT: root,
+					},
 					stdio: "ignore",
 				},
 			);
@@ -210,6 +211,69 @@ try {
 	console.log(
 		`PASS: packaged ${target} ${baselineVersion} → ${pkg.version}; startup receipt, native rollback and profile preservation verified.`,
 	);
+
+	if (process.platform === "darwin") {
+		for (const child of children) child.kill();
+		await delay(2000);
+		const archive = join(scratch, "update.zip");
+		execFileSync("/usr/bin/ditto", ["-c", "-k", "--keepParent", destination, archive]);
+		const bytes = await readFile(archive);
+		const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+		const payload = Buffer.from(
+			JSON.stringify({
+				schemaVersion: 1,
+				version: pkg.version,
+				commit: after,
+				assets: [
+					{
+						target,
+						distribution: "zip",
+						name: "Laplace.zip",
+						size: bytes.length,
+						sha256: createHash("sha256").update(bytes).digest("hex"),
+					},
+				],
+			}),
+		);
+		const manifest = api.verifyReleaseManifest(
+			payload,
+			sign(null, payload, privateKey),
+			publicKey.export({ type: "spki", format: "pem" }),
+		);
+		await rm(destination, { recursive: true });
+		await cp(originalPackage, destination, { recursive: true, verbatimSymlinks: true });
+		const downloaded = {
+			...installation,
+			distribution: "zip",
+			git: "/missing/git",
+			pnpm: "/missing/pnpm",
+			node: "/missing/node",
+		};
+		await api.writeJson(join(root, "installation.json"), downloaded);
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = async () => new Response(bytes);
+		try {
+			await api.prepareBinary(
+				downloaded,
+				manifest,
+				root,
+				(phase) => console.log(`ZIP: ${phase}`),
+				new AbortController().signal,
+				probeOptions,
+			);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+		await api.installPrepared(root, downloaded, host);
+		assert.equal((await api.readJson(join(root, "installation.json"))).version, pkg.version);
+		assert.equal(
+			await readFile(join(isolatedProfile, "preserved.txt"), "utf8"),
+			"User settings remain unchanged",
+		);
+		console.log(
+			`PASS: verified ${target} ZIP ${baselineVersion} → ${pkg.version} without Git/Node/pnpm tools; native startup and profile preservation verified.`,
+		);
+	}
 	success = true;
 } finally {
 	for (const child of children) child.kill();

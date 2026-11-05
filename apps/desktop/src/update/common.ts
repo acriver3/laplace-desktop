@@ -3,6 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { homedir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 
+import { z } from "zod";
+
 import {
 	access,
 	lstat,
@@ -17,8 +19,6 @@ import {
 	statfs,
 } from "./filesystem";
 
-import { z } from "zod";
-
 export const repository = "https://github.com/acriver3/laplace-desktop.git";
 const legacyRepository = "https://github.com/acriver3/Laplace.git";
 export const protocolVersion = 1;
@@ -28,6 +28,7 @@ export const targetSchema = z.enum(["darwin-arm64", "darwin-x64", "win32-x64"]);
 export const installationSchema = z
 	.object({
 		protocol: z.literal(protocolVersion),
+		distribution: z.enum(["source", "zip", "squirrel"]).optional(),
 		id: z.string().uuid(),
 		owner: z.string().min(1),
 		// The previous installer preserves its metadata when it accepts an update.
@@ -36,7 +37,7 @@ export const installationSchema = z
 		target: targetSchema,
 		path: z.string().refine(isAbsolute),
 		version: versionSchema,
-		commit: revisionSchema,
+		commit: z.union([revisionSchema, z.literal("unknown")]),
 		git: z.string().refine(isAbsolute),
 		node: z.string().refine(isAbsolute),
 		pnpm: z.string().refine(isAbsolute),
@@ -45,6 +46,7 @@ export const installationSchema = z
 	.strict();
 export type Installation = z.infer<typeof installationSchema>;
 export interface Release {
+	tag?: string;
 	version: string;
 	commit: string;
 }
@@ -67,10 +69,24 @@ export const runtimePath = (path: string, target: string) =>
 			: ["resources", "runtime"]),
 	);
 
+export function squirrelDestination(path: string) {
+	return (
+		process.platform === "win32" &&
+		dirname(path) ===
+			join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "Laplace") &&
+		/^app-\d+\.\d+\.\d+$/.test(basename(path))
+	);
+}
 export function assertDestination(path: string) {
 	if (
 		path !== defaultDestination() &&
-		!(process.platform === "darwin" && path === "/Applications/Laplace.app")
+		!squirrelDestination(path) &&
+		!(process.platform === "darwin" && path === "/Applications/Laplace.app") &&
+		!(
+			process.platform === "win32" &&
+			path ===
+				join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "Laplace", "app")
+		)
 	)
 		throw new Error(
 			"Use the managed installation location, or explicitly adopt /Applications/Laplace.app.",

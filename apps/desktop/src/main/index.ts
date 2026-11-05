@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve, isAbsolute, extname } from "node:path";
 
+import { UpdatePolicyStore, automaticUpdatesEnabled } from "@repo/local-mcp-core/update-policy";
 import {
 	app,
 	clipboard,
@@ -10,6 +11,7 @@ import {
 	Menu,
 	Tray,
 	nativeImage,
+	Notification,
 	ipcMain,
 	protocol,
 	powerMonitor,
@@ -35,6 +37,7 @@ import {
 	type Profile,
 	type ShellState,
 } from "../shared/shell-contracts";
+import { AutomaticUpdates } from "../update/automatic";
 import { acknowledgeUpdate } from "../update/installer";
 import { SourceUpdater } from "../update/source";
 import { registerBrowserNativeHost } from "./browser-native-host";
@@ -79,7 +82,50 @@ const updateAcceptance = process.argv
 	.find((value) => /^--laplace-update-accept=[0-9a-f-]{36}$/.test(value))
 	?.split("=")[1];
 let updater: SourceUpdater | undefined;
+const updatePreferences = new UpdatePolicyStore();
+let automaticUpdates: AutomaticUpdates | undefined;
+let automaticTimer: ReturnType<typeof setInterval> | undefined;
+let automaticTickBusy = false;
+let automaticInstalling = false;
+async function publishUpdatePreferences() {
+	let policy;
+	try {
+		policy = await updatePreferences.read();
+	} catch {
+		automaticUpdates?.setEnabled(false);
+		state.updates = {
+			...(updater?.state ?? { phase: "unmanaged", installedVersion: app.getVersion() }),
+			automaticEnabled: false,
+			message: "Update preferences need repair. Automatic updates are disabled.",
+		};
+		publish();
+		return;
+	}
+	state.updates = {
+		...(updater?.state ?? { phase: "unmanaged" as const, installedVersion: app.getVersion() }),
+		policy,
+		automaticEnabled: automaticUpdatesEnabled(),
+		restartAt: state.updates?.restartAt,
+	};
+	automaticUpdates?.setEnabled(policy.desktop);
+	automaticUpdates?.postpone(policy.deferredUntil);
+	publish();
+}
+
 let point: PointController | undefined;
+let wakeDeferUntil = 0;
+function deviceUpdateBusy() {
+	return (
+		Date.now() < wakeDeferUntil ||
+		!authenticationStable() ||
+		!!signIn ||
+		startingSignIn ||
+		popups.size > 0 ||
+		!!point?.state.capture ||
+		(point?.state.phase !== undefined && point.state.phase !== "idle")
+	);
+}
+
 const installerInvocation = handleSquirrelEvents();
 const profileArgument = process.argv
 	.find((value) => value.startsWith("--laplace-profile="))
@@ -846,6 +892,7 @@ async function handleShell(raw: unknown) {
 			return point.configure(request.input);
 		case "shell.point.capture":
 			if (!point) throw new Error("Point is still starting.");
+			await helper?.request("updates.deviceActivity", { busy: true });
 			void point.capture();
 			return;
 		case "shell.point.retry":
@@ -856,6 +903,17 @@ async function handleShell(raw: unknown) {
 			return point?.clear();
 		case "shell.point.permissions":
 			return point?.requestPermissions();
+		case "shell.updatePreferences":
+			await updatePreferences.mutate((policy) => Object.assign(policy, request.input));
+			if (request.input.connectors === false) await helper?.request("updates.cancelConnector", {});
+			await publishUpdatePreferences();
+			return;
+		case "shell.updatePostpone":
+			await updatePreferences.mutate((policy) => {
+				policy.deferredUntil = Date.now() + 86_400_000;
+			});
+			await publishUpdatePreferences();
+			return;
 		case "shell.updateChanges":
 			if (updater?.state.availableVersion) {
 				await openExternal(
@@ -874,6 +932,7 @@ async function handleShell(raw: unknown) {
 			return;
 		case "shell.updateInstall": {
 			if (!updater) throw new Error("Source updates are not configured.");
+			if (!automaticInstalling) await helper?.request("updates.retain", {});
 			await updater.handoff();
 			clearTimeout(saveTimer);
 			await writeFile(
@@ -882,6 +941,7 @@ async function handleShell(raw: unknown) {
 					profile: state.profile,
 					bounds: window.getNormalBounds(),
 					maximized: window.isMaximized(),
+					updateHidden: !window.isVisible(),
 				}),
 				{ mode: 0o600 },
 			);
@@ -1133,7 +1193,12 @@ async function handleShell(raw: unknown) {
 }
 
 async function createWindow() {
-	let saved: { profile?: Profile; bounds?: Electron.Rectangle; maximized?: boolean } = {};
+	let saved: {
+		profile?: Profile;
+		bounds?: Electron.Rectangle;
+		maximized?: boolean;
+		updateHidden?: boolean;
+	} = {};
 	try {
 		saved = JSON.parse(await readFile(settingsPath(), "utf8"));
 	} catch {}
@@ -1190,7 +1255,7 @@ async function createWindow() {
 	});
 	await window.loadURL(uiUrl);
 	if (saved.maximized) window.maximize();
-	if (!updateProbe) window.show();
+	if (!updateProbe && !(updateAcceptance && saved.updateHidden)) window.show();
 	await startHelper();
 	if (updateProbe) {
 		if (state.helperError) throw new Error(`Update probe helper failed: ${state.helperError}`);
@@ -1250,7 +1315,13 @@ function quitLaplace(exitCode = 0) {
 	quitting = true;
 	signIn?.cancel();
 	clearTimeout(saveTimer);
-	void Promise.allSettled([updater?.stop(), helper?.stop(), point?.stop()]).then(() => {
+	clearInterval(automaticTimer);
+	void Promise.allSettled([
+		automaticUpdates?.stop(),
+		updater?.stop(),
+		helper?.stop(),
+		point?.stop(),
+	]).then(() => {
 		tray?.destroy();
 		// Renderer unload handlers must not veto an explicit application quit.
 		app.exit(exitCode);
@@ -1349,7 +1420,12 @@ void app
 			resources,
 			appRoot,
 			uiUrl,
-			changed: (value) => send("point", value),
+			changed: (value) => {
+				send("point", value);
+				void helper
+					?.request("updates.deviceActivity", { busy: deviceUpdateBusy() })
+					.catch(() => {});
+			},
 			attention: () => {
 				showLocal("device");
 				window.show();
@@ -1367,16 +1443,142 @@ void app
 			);
 		if (app.isPackaged && !updateProbe && !process.env.LAPLACE_DESKTOP_TEST_ROOT) {
 			updater = new SourceUpdater(app.getVersion(), process.execPath, (updates) => {
-				state.updates = updates;
+				state.updates = {
+					...updates,
+					policy: state.updates?.policy,
+					automaticEnabled: automaticUpdatesEnabled(),
+					restartAt: state.updates?.restartAt,
+				};
 				publish();
 			});
 			await updater.initialize();
 		}
+		await publishUpdatePreferences();
+		let activityBusy = true;
+		automaticUpdates = new AutomaticUpdates(
+			{
+				check: async (signal) => {
+					const cancel = () => {
+						void updater?.cancel();
+					};
+					signal.addEventListener("abort", cancel, { once: true });
+					try {
+						await updater?.check();
+					} finally {
+						signal.removeEventListener("abort", cancel);
+					}
+				},
+				prepare: async (signal) => {
+					const cancel = () => {
+						void updater?.cancel();
+					};
+					signal.addEventListener("abort", cancel, { once: true });
+					try {
+						await updater?.download();
+					} finally {
+						signal.removeEventListener("abort", cancel);
+					}
+				},
+				ready: () => updater?.state.phase === "ready" && updater.automaticQualified,
+				idleSeconds: () => powerMonitor.getSystemIdleTime(),
+				busy: () =>
+					activityBusy ||
+					!authenticationStable() ||
+					!!signIn ||
+					startingSignIn ||
+					popups.size > 0 ||
+					!!point?.state.capture ||
+					(point?.state.phase !== undefined && point.state.phase !== "idle"),
+				acquireMaintenance: async () => {
+					const owner = helper;
+					if (!owner) return;
+					await owner.request("updates.retain", {});
+					if (!(await owner.request("updates.acquire", {}))) return;
+					return () => {
+						void owner.request("updates.release", {}).catch(() => {});
+					};
+				},
+				apply: async () => {
+					automaticInstalling = true;
+					try {
+						await handleShell({ method: "shell.updateInstall" });
+					} finally {
+						automaticInstalling = false;
+					}
+				},
+				countdown: (restartAt) => {
+					if (state.updates) state.updates.restartAt = restartAt;
+					if (restartAt && Notification.isSupported()) {
+						const notice = new Notification({
+							title: "Laplace update ready",
+							body: "Restarting in 60 seconds if your computer stays idle. Open Updates to postpone for 24 hours.",
+						});
+						notice.on("click", () => {
+							showLocal("updates");
+							window.show();
+							window.focus();
+						});
+						notice.show();
+					}
+					publish();
+				},
+				error: () => {
+					if (state.updates)
+						state.updates.message = "Automatic update deferred. Review Updates to retry.";
+					publish();
+				},
+			},
+			automaticUpdatesEnabled,
+		);
+		await publishUpdatePreferences();
+		let nextConnectorCheck = Date.now() + 15000;
+		automaticTimer = setInterval(() => {
+			void helper?.request("updates.deviceActivity", { busy: deviceUpdateBusy() }).catch(() => {});
+			if (automaticTickBusy) return;
+			automaticTickBusy = true;
+			void (async () => {
+				const policy = await updatePreferences.read();
+				automaticUpdates!.setEnabled(policy.desktop);
+				if (policy.deferredUntil > Date.now()) automaticUpdates!.postpone(policy.deferredUntil);
+				activityBusy =
+					!helper || ((await helper.request("updates.activity", {})) as { busy: boolean }).busy;
+				await automaticUpdates!.tick();
+				if (automaticUpdatesEnabled() && policy.connectors && helper) {
+					if (Date.now() >= nextConnectorCheck) {
+						nextConnectorCheck = Date.now() + 21600000;
+						await helper.request("updates.checkConnectors", {});
+						await helper.request("updates.prepareConnectors", {});
+					}
+					if (
+						!activityBusy &&
+						powerMonitor.getSystemIdleTime() >= 900 &&
+						policy.deferredUntil <= Date.now() &&
+						!point?.state.capture &&
+						authenticationStable()
+					)
+						await helper.request("updates.automaticConnectors", {});
+				}
+			})()
+				.catch(() => {
+					automaticUpdates?.setEnabled(false);
+				})
+				.finally(() => {
+					automaticTickBusy = false;
+				});
+		}, 1000);
 		const lockCredentials = () => {
 			point?.suspend();
 			void helper?.request("credentials.lock", {}).catch(() => {});
 		};
-		powerMonitor.on("suspend", lockCredentials);
+		powerMonitor.on("suspend", () => {
+			automaticUpdates?.resume();
+			lockCredentials();
+		});
+		powerMonitor.on("resume", () => {
+			wakeDeferUntil = Date.now() + 60000;
+			automaticUpdates?.resume();
+			void helper?.request("updates.deviceActivity", { busy: true }).catch(() => {});
+		});
 		powerMonitor.on("lock-screen", lockCredentials);
 		const icon = nativeImage.createFromPath(join(resources, "icon.png"));
 		tray = new Tray(icon.resize({ width: 18, height: 18 }));
@@ -1386,7 +1588,10 @@ void app
 				{
 					label: "Capture with Point",
 					click: () => {
-						void point?.capture();
+						void (async () => {
+							await helper?.request("updates.deviceActivity", { busy: true });
+							await point?.capture();
+						})().catch(() => {});
 					},
 				},
 				{
