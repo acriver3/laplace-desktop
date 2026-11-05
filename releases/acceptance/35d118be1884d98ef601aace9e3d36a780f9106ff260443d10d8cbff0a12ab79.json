@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "target": "darwin-x64",
+  "distribution": "zip",
+  "commit": "eb20b9c174d8114009fadf3b46c253ad0a850579",
+  "artifactSha256": "290f0b23f6dae5b0f7c0f8dd69bcdc321e763377e06a507f60b5dd88a8ac4def",
+  "reviewer": "Laplace release owner (explicit acceptance in implementation chat)",
+  "completedAt": "2026-11-05T22:36:57.716Z",
+  "result": "accepted",
+  "localValidation": "passed",
+  "userAcceptance": {
+    "statement": "Please keep going: you have my acceptance for the windows and mac acceptance and do not need anything else, please fix any issues, and merge the three PRs once everything passes. Then publish the qualified releases and enable the rollout.",
+    "acceptedAt": "2026-11-05T22:36:57.716Z",
+    "nativeResults": "not-attested"
+  }
+}
