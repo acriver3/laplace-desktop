@@ -313,6 +313,7 @@ export async function startHelper() {
 			return;
 		}
 	};
+	const enrollmentProblems = new Map<string, string>();
 	const connectorStatus = async () => {
 		const rows: ConnectorUpdateStatus[] = await connectorUpdates.status();
 		const policy = await new UpdatePolicyStore().read();
@@ -327,7 +328,9 @@ export async function startHelper() {
 					name: config.name,
 					version: enrollment.version,
 					pinned: !!policy.pins[updateInstanceKey(root, config.id)],
-					message: "Check the connector catalog to verify update eligibility.",
+					message:
+						enrollmentProblems.get(config.id) ??
+						"Check the connector catalog to verify update eligibility.",
 				});
 			} catch {
 				/* Imports remain unmanaged. */
@@ -399,8 +402,14 @@ export async function startHelper() {
 							try {
 								const e = await catalog.updateEnrollment(entry.serverId);
 								await connectorUpdates.enroll(e.id, e.directory, e.catalogId, e.version, e.mode);
-							} catch {
-								/* Unverifiable legacy entries remain unmanaged. */
+								enrollmentProblems.delete(entry.serverId);
+							} catch (error) {
+								enrollmentProblems.set(
+									entry.serverId,
+									error instanceof Error
+										? error.message
+										: "Connector enrollment requires manual review.",
+								);
 							}
 						}
 						result = await connectorStatus();

@@ -1,8 +1,8 @@
-import { gzipSync } from "node:zlib";
 import { generateKeyPairSync, sign, createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -28,6 +28,7 @@ async function fixture(retain = false) {
 	const directory = join(root, "old");
 	await mkdir(directory);
 	await writeFile(join(directory, "server.mjs"), "old");
+	await writeFile(join(directory, ".laplace-bundle.json"), JSON.stringify({ version: "0.1.0" }));
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 	const key = publicKey.export({ type: "spki", format: "pem" }).toString();
 	const release = (version: string, sequence: number, bytes: string) => ({
@@ -77,7 +78,11 @@ async function fixture(retain = false) {
 					},
 				}
 			: {}),
-		env: { SESSION_DIR: join(root, "session"), TOKEN: "fixture-secret" },
+		env: {
+			SESSION_DIR: join(root, "session"),
+			LEGACY_PROFILE: join(directory, "profile"),
+			TOKEN: "fixture-secret",
+		},
 	});
 	const secrets = new Map<string, string>();
 	const entries = async (name: string) => ({

@@ -278,7 +278,9 @@ export class ConnectorUpdates {
 				if (entry.isDirectory()) await walk(path);
 				else if (
 					!expected.has(path) &&
-					![".laplace-release.json", ".laplace-retained.json"].includes(path)
+					![".laplace-release.json", ".laplace-retained.json", ".laplace-bundle.json"].includes(
+						path,
+					)
 				)
 					throw Error(
 						"Connector bundle contains unverified files; enrollment requires an exact published artifact.",
@@ -496,7 +498,17 @@ export class ConnectorUpdates {
 		config.command = replace(config.command);
 		config.args = config.args.map(replace);
 		if (config.cwd) config.cwd = replace(config.cwd);
-		config.env = Object.fromEntries(Object.entries(config.env).map(([k, v]) => [k, replace(v)]));
+		// Only rebase environment references to verified artifact files. Profile,
+		// credential and other mutable data paths must retain their original location.
+		const artifactPaths = new Set(
+			installed.release.files.map((file) => join(installed.directory, file.path)),
+		);
+		config.env = Object.fromEntries(
+			Object.entries(config.env).map(([key, value]) => [
+				key,
+				artifactPaths.has(value) ? replace(value) : value,
+			]),
+		);
 		config.identity = `${release.id}@${release.version}`;
 		config.generation = randomUUID();
 		// Tethered releases must preserve the single self-contained entry's name.
