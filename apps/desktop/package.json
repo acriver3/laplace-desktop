@@ -13,7 +13,7 @@
 		"build:point-native": "node scripts/point-native.mjs",
 		"check:source": "node scripts/source-check.mjs",
 		"runtimes": "node scripts/runtimes.mjs",
-		"test": "node ../../packages/project-protocol/scripts/build-mcp-ui.mjs && vitest run",
+		"test": "node scripts/build.mjs && vitest run",
 		"test:electron": "node scripts/smoke.mjs",
 		"test:cookie": "node scripts/cookie-smoke.mjs",
 		"test:native": "node scripts/native-smoke.mjs",
