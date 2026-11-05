@@ -192,6 +192,7 @@ async function smoke(app: string, resources: string, bridge: string, distributio
 		return value as { pid: number; childPid: number };
 	};
 	try {
+		console.log("Native smoke: start helper and verify real keychain storage");
 		const first = await start();
 		const a = await connect(first.clientId);
 		const setupTools = (await a.listTools()).tools;
@@ -257,13 +258,17 @@ async function smoke(app: string, resources: string, bridge: string, distributio
 		await launched.close();
 		await baseline(first.child);
 		// Abandon the first eight OS processes. The ninth and every subsequent bridge must work.
+		console.log("Native smoke: exercise 100 sequential bridge processes");
 		for (let attempt = 0; attempt < 100; attempt++) {
 			const reconnected = await connect(first.clientId, attempt % 2 === 0);
 			assert.equal((await read(reconnected)).pid, initial.pid);
 			if (attempt < 8) process.kill(transports.get(reconnected)!.pid!, "SIGKILL");
 			else await reconnected.close();
+			if ((attempt + 1) % 25 === 0)
+				console.log(`Native smoke: ${attempt + 1}/100 reconnects passed`);
 		}
 		await baseline(first.child);
+		console.log("Native smoke: exercise 32 concurrent bridge processes");
 		const parallel = await Promise.all(
 			Array.from({ length: 32 }, (_, i) => connect(first.clientId, i % 2 === 0)),
 		);
@@ -288,6 +293,7 @@ async function smoke(app: string, resources: string, bridge: string, distributio
 			}),
 		);
 		await baseline(first.child);
+		console.log("Native smoke: verify helper restart and exactly-once effects");
 		const survivor = await connect(first.clientId, true);
 		await read(survivor);
 		let refreshed = 0;
