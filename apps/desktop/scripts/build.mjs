@@ -36,7 +36,12 @@ await build({
 	logLevel: "info",
 });
 await build({
-	entryPoints: ["src/helper/main.ts", "src/helper/bridge.ts", "src/helper/slack-browser.ts"],
+	entryPoints: [
+		"src/helper/main.ts",
+		"src/helper/service.ts",
+		"src/helper/bridge.ts",
+		"src/helper/slack-browser.ts",
+	],
 	outdir: "dist/helper",
 	outExtension: { ".js": ".cjs" },
 	platform: "node",

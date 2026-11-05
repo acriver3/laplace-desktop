@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
@@ -38,6 +38,15 @@ import type { DesktopManager } from "./manager";
 import { desktopYcView, ycConnections, ycInvocationTools } from "./yc-ui";
 
 const MAX_BODY = 1_048_576;
+export const CONTROL_PATH = "/control/v1/";
+/** Management channel for Desktop and the CLI; never offered to AI clients or web content. */
+export type ControlServer = {
+	token: string;
+	protocol: number;
+	request(method: string, input: unknown): Promise<unknown>;
+	subscribe(listener: (event: unknown) => void): () => void;
+};
+const digest = (value: string) => createHash("sha256").update(value).digest();
 type Exchange = {
 	clientId: string;
 	controller: AbortController;
@@ -59,6 +68,7 @@ export async function startMcpServer(
 	credentials?: CredentialBroker,
 	connectors?: ConnectorManagement,
 	openDesktop?: (section: DesktopSection) => void,
+	control?: ControlServer,
 ) {
 	const principal = (clientId: string): CredentialPrincipal => ({
 		id: `local:${clientId}`,
@@ -378,13 +388,75 @@ export async function startMcpServer(
 	http.requestTimeout = 190_000;
 	http.headersTimeout = 10_000;
 	http.maxHeadersCount = 32;
+	async function handleControl(
+		control: ControlServer,
+		request: IncomingMessage,
+		response: ServerResponse,
+	) {
+		const authorization = request.headers.authorization ?? "";
+		if (
+			!authorization.startsWith("Bearer ") ||
+			authorization.length > 200 ||
+			!timingSafeEqual(digest(authorization.slice(7)), digest(control.token))
+		) {
+			response.writeHead(401).end();
+			return;
+		}
+		if (request.headers["laplace-runtime-protocol"] !== String(control.protocol)) {
+			response
+				.writeHead(409, { "Content-Type": "application/json" })
+				.end(JSON.stringify({ error: "protocol", protocol: control.protocol }));
+			return;
+		}
+		if (closing) {
+			response.writeHead(503).end();
+			return;
+		}
+		const path = request.url!.slice(CONTROL_PATH.length);
+		if (path === "events" && request.method === "GET") {
+			response.writeHead(200, { "Content-Type": "text/event-stream", Connection: "keep-alive" });
+			const unsubscribe = control.subscribe((event) =>
+				response.write(`data: ${JSON.stringify(event)}\n\n`),
+			);
+			response.once("close", unsubscribe);
+			return;
+		}
+		if (path !== "request" || request.method !== "POST") {
+			response.writeHead(404).end();
+			return;
+		}
+		const chunks: Buffer[] = [];
+		let size = 0;
+		for await (const chunk of request as AsyncIterable<Buffer>) {
+			size += chunk.length;
+			if (size > MAX_BODY) {
+				response.writeHead(413).end();
+				return;
+			}
+			chunks.push(chunk);
+		}
+		const body = z
+			.object({ method: z.string().min(1).max(100), input: z.unknown().default({}) })
+			.strict()
+			.safeParse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+		if (!body.success) {
+			response.writeHead(400).end();
+			return;
+		}
+		const reply = await control.request(body.data.method, body.data.input);
+		response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(reply));
+	}
 	async function handle(request: IncomingMessage & { auth?: AuthInfo }, response: ServerResponse) {
 		response.setHeader("Cache-Control", "no-store");
-		if (
-			request.headers.host !== new URL(endpoint).host ||
-			request.headers.origin ||
-			request.url !== "/mcp"
-		) {
+		if (request.headers.host !== new URL(endpoint).host || request.headers.origin) {
+			response.writeHead(403).end();
+			return;
+		}
+		if (control && request.url?.startsWith(CONTROL_PATH)) {
+			await handleControl(control, request, response);
+			return;
+		}
+		if (request.url !== "/mcp") {
 			response.writeHead(403).end();
 			return;
 		}

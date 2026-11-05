@@ -37,6 +37,7 @@ import {
 	type Profile,
 	type ShellState,
 } from "../shared/shell-contracts";
+import { unifiedRuntimeEnabled } from "../shared/unified-runtime-feature";
 import { AutomaticUpdates } from "../update/automatic";
 import { acknowledgeUpdate } from "../update/installer";
 import { SourceUpdater } from "../update/source";
@@ -48,6 +49,7 @@ import {
 	restorePersistedAccount,
 } from "./feature-access";
 import { HelperClient } from "./helper-client";
+import { RuntimeClient } from "./runtime-client";
 import {
 	agentHandoffUrl,
 	connectClipboardWrite,
@@ -158,7 +160,7 @@ let contentLayout:
 	| { x: number; y: number; width: number; height: number; blocked: boolean }
 	| undefined;
 let tray: Tray;
-let helper: HelperClient | undefined;
+let helper: HelperClient | RuntimeClient | undefined;
 let signIn: BrowserSignIn | undefined;
 let startingSignIn = false;
 const popups = new Set<BrowserWindow>();
@@ -789,7 +791,7 @@ async function startHelper() {
 		}),
 		{ mode: 0o600 },
 	);
-	const next = new HelperClient(
+	const next = new (unifiedRuntimeEnabled() ? RuntimeClient : HelperClient)(
 		(event) => {
 			if (event.event === "desktop-open") {
 				showLocal(event.section);
@@ -856,7 +858,7 @@ async function selectProfile(profile: Profile) {
 		signIn?.cancel();
 		signIn = undefined;
 		showLocal(undefined, true);
-		await helper?.stop();
+		await (helper instanceof RuntimeClient ? helper.shutdown() : helper?.stop());
 		state = { ...initialState(profile), section: "device" };
 		await startHelper();
 		restoreAccount();

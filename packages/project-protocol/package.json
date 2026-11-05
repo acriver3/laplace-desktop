@@ -28,6 +28,7 @@
 		"./signing": "./src/signing.ts",
 		"./runtime-domains": "./src/runtime-domains.ts",
 		"./local-mcp": "./src/local-mcp.ts",
+		"./local-runtime": "./src/local-runtime.ts",
 		"./portable-connectors": "./src/portable-connectors.ts",
 		"./local-mcp-artifacts": "./src/local-mcp-artifacts.ts",
 		"./local-mcp-bundles": "./src/local-mcp-bundles.ts",

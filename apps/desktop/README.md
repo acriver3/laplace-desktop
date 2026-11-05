@@ -118,6 +118,8 @@ The Electron main process owns the window, the Connect view and its navigation b
 
 Closing a window hides it. Reopen it through the tray/menu-bar icon or app activation. Quitting stops the helper and managed stdio process trees; externally owned HTTP servers remain running. There is no installed system service or login-item autostart. If the helper exits unexpectedly, restart Laplace; in-flight calls are not retried.
 
+`LAPLACE_UNIFIED_RUNTIME_V1=true` (disabled by default, under development) instead runs the same manager as the background **Laplace Runtime** (`helper/service.cjs`). Desktop connects to an already running runtime for the profile, or starts one detached. It talks to the runtime over the authenticated loopback control API (`/control/v1/`, management token in the 0600 `runtime.json`; AI-client tokens are not accepted there, and browser origins are rejected). Quitting Desktop leaves the runtime and its connectors running for AI clients. Switching profiles stops the previous profile's runtime. There is still no login-item autostart yet.
+
 ## Build and test
 
 The existing **Cloudflare Workers Builds** connector validation path also runs desktop type checks, unit tests, and the source build. Those checks use synthetic fixtures and need no provider or system-keychain credentials. Run them locally after installing workspace dependencies:
