@@ -4,6 +4,12 @@ import { homedir } from "node:os";
 import { join, resolve, isAbsolute, dirname, delimiter, sep, basename } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { browserProviders } from "@repo/browser-runtime/browser-approval";
+import { browserConfiguration } from "@repo/local-mcp-core/browser-catalog";
+import {
+	prepareBrowserMigration,
+	type BrowserMigration,
+} from "@repo/local-mcp-core/browser-migration";
 import { serverConfig, minimalEnvironment, type ServerConfig } from "@repo/local-mcp-core/config";
 import { acquireResourceLeases } from "@repo/local-mcp-core/leases";
 import { spawnLocal, stopTree } from "@repo/local-mcp-core/process";
@@ -19,6 +25,8 @@ import { ycWorkspace } from "../shared/yc-browser";
 import type { BrowserApprovals } from "./browser-approvals";
 import {
 	bundleCatalog,
+	allBundleCatalog,
+	tetheredEntry,
 	bundleAvailable,
 	type BundleCatalogEntry,
 	type BundleArtifact,
@@ -28,16 +36,21 @@ import { ycBrowserConfig } from "./yc-browser-config";
 const browserSlack = (entry: BundleCatalogEntry) =>
 	entry.recipe === "slack-ready" && entry.version === slackBrowserVersion;
 const browserEntry = (entry: BundleCatalogEntry) =>
-	browserSlack(entry) || entry.recipe === "yc-demo";
-const browserConfig = (
+	tetheredEntry(entry) || browserSlack(entry) || entry.recipe === "yc-demo";
+const browserConfig = async (
 	entry: BundleCatalogEntry,
 	configuration: Record<string, string>,
 	resources: string,
 	nodePath: string,
 ) =>
-	entry.recipe === "yc-demo"
-		? ycBrowserConfig(resources, nodePath)
-		: slackBrowserConfig(configuration.workspace!, resources, nodePath);
+	tetheredEntry(entry)
+		? {
+				...(await browserConfiguration(resources, entry.id, configuration.workspace)),
+				enabled: false,
+			}
+		: entry.recipe === "yc-demo"
+			? ycBrowserConfig(resources, nodePath)
+			: slackBrowserConfig(configuration.workspace!, resources, nodePath);
 
 interface CatalogManager {
 	addServers(
@@ -45,6 +58,10 @@ interface CatalogManager {
 		migrated?: boolean,
 		options?: { authorize?: () => void; localOnly?: boolean },
 	): Promise<unknown>;
+	browserMigrationRecords?(): Promise<BrowserMigration[]>;
+	prepareBrowserMigration?(record: BrowserMigration): Promise<void>;
+	completeBrowserMigration?(id: string): Promise<void>;
+	rollbackBrowserMigration?(id: string): Promise<void>;
 	getServerConfig(id: string): ServerConfig;
 	setEnabled(id: string, enabled: boolean): Promise<unknown>;
 	restartServer(id: string): Promise<unknown>;
@@ -279,7 +296,8 @@ export async function downloadBundle(
 }
 
 function inputFields(entry: BundleCatalogEntry, root: string) {
-	if (entry.recipe === "yc-demo") return [];
+	if (entry.recipe === "yc-demo" || (tetheredEntry(entry) && entry.recipe !== "slack-ready"))
+		return [];
 	const session = join(root, "sessions", serverIds[entry.id]!);
 	if (entry.recipe === "canvas")
 		return [
@@ -312,7 +330,7 @@ function inputFields(entry: BundleCatalogEntry, root: string) {
 				default: "chrome",
 			},
 		];
-	if (browserSlack(entry))
+	if (browserSlack(entry) || (tetheredEntry(entry) && entry.recipe === "slack-ready"))
 		return [
 			{ key: "workspace", label: "Slack workspace URL", type: "url", required: true, default: "" },
 		];
@@ -507,17 +525,17 @@ export class CatalogInstaller {
 			);
 			if (Array.isArray(saved))
 				for (const item of saved) {
-					const entry = bundleCatalog.find(
+					const entry = allBundleCatalog.find(
 						(entry) => entry.id === item?.catalogId && entry.version === item.version,
 					);
 					if (
 						entry &&
-						(item.serverId === serverIds[entry.id] || /^pc_[a-f0-9-]{36}$/.test(item.serverId)) &&
+						/^[A-Za-z0-9_-]{1,80}$/.test(item.serverId) &&
 						item.directory ===
 							join(
 								this.options.root,
 								"connectors",
-								item.serverId.startsWith("pc_") ? item.serverId : entry.id,
+								item.serverId === serverIds[entry.id] ? entry.id : item.serverId,
 								entry.version,
 							)
 					) {
@@ -537,6 +555,15 @@ export class CatalogInstaller {
 				throw new Error(
 					"Catalog installation metadata is unreadable. Existing imported connections were preserved.",
 				);
+		}
+		for (const record of (await this.manager.browserMigrationRecords?.()) ?? []) {
+			if (record.state !== "complete") continue;
+			const active = this.manager.getServerConfig(record.serverId);
+			if (
+				active.identity === record.candidate.identity &&
+				active.managedBrowser?.artifactSha256 === record.candidate.managedBrowser?.artifactSha256
+			)
+				this.recordMigratedInstallation(record);
 		}
 		try {
 			const jobs = JSON.parse(await readFile(join(this.options.root, "catalog-jobs.json"), "utf8"));
@@ -604,6 +631,8 @@ export class CatalogInstaller {
 			...bundleCatalog.map((entry) => ({
 				id: entry.id,
 				name: entry.name,
+				setupUrl: entry.setupUrl,
+				browserMode: entry.browserMode,
 				description: entry.description,
 				version: entry.version,
 				demoOnly: entry.demoOnly === true,
@@ -617,6 +646,12 @@ export class CatalogInstaller {
 					),
 				serverId: this.attachedId(entry) ?? serverIds[entry.id],
 				installed: this.isAttached(entry),
+				installedVersion: this.installations.get(this.attachedId(entry) ?? "")?.version,
+				installedBrowserMode: allBundleCatalog.find(
+					(installed) =>
+						installed.id === entry.id &&
+						installed.version === this.installations.get(this.attachedId(entry) ?? "")?.version,
+				)?.browserMode,
 				fields: inputFields(entry, this.options.root),
 				authentication: entry.authentication,
 				capabilities: entry.capabilities,
@@ -626,7 +661,12 @@ export class CatalogInstaller {
 	private attachedId(entry: BundleCatalogEntry) {
 		return [...this.installations.keys()].find((id) => {
 			try {
-				return this.manager.getServerConfig(id).identity === `${entry.id}@${entry.version}`;
+				const installation = this.installations.get(id)!;
+				return (
+					installation.catalogId === entry.id &&
+					this.manager.getServerConfig(id).identity ===
+						`${installation.catalogId}@${installation.version}`
+				);
 			} catch {
 				return false;
 			}
@@ -796,12 +836,12 @@ export class CatalogInstaller {
 					await this.manager.addServers(
 						[
 							{
-								...browserConfig(
+								...(await browserConfig(
 									entry,
 									configuration,
 									this.options.resources,
 									this.options.nodePath,
-								),
+								)),
 								id: serverId,
 							},
 						],
@@ -936,7 +976,7 @@ export class CatalogInstaller {
 	private async installed(id: string) {
 		await this.initialize();
 		const installation = this.installations.get(id);
-		const entry = bundleCatalog.find(
+		const entry = allBundleCatalog.find(
 			(candidate) =>
 				candidate.id === installation?.catalogId && candidate.version === installation.version,
 		);
@@ -952,6 +992,8 @@ export class CatalogInstaller {
 	}
 	async configure(id: string, values: Record<string, string>, authorize: () => void) {
 		const { installation, entry } = await this.installed(id);
+		if (tetheredEntry(entry))
+			return this.migrate(id, entry, { ...installation.configuration, ...values }, authorize);
 		const configuration = catalogConfiguration(
 			entry,
 			{ ...installation.configuration, ...values },
@@ -962,7 +1004,12 @@ export class CatalogInstaller {
 			authorize();
 			if (!this.manager.updateServer) throw new Error("Desktop update required");
 			await this.manager.updateServer(id, {
-				...browserConfig(entry, configuration, this.options.resources, this.options.nodePath),
+				...(await browserConfig(
+					entry,
+					configuration,
+					this.options.resources,
+					this.options.nodePath,
+				)),
 				id,
 			});
 			installation.configuration = configuration;
@@ -984,6 +1031,33 @@ export class CatalogInstaller {
 		await this.save();
 	}
 	async repair(id: string, authorize: () => void) {
+		const pending = ((await this.manager.browserMigrationRecords?.()) ?? []).find(
+			(record) => record.serverId === id && ["prepared", "committing"].includes(record.state),
+		);
+		if (pending) {
+			authorize();
+			const recoveryEntry = allBundleCatalog.find(
+				(entry) => pending.previous.identity === `${entry.id}@${entry.version}`,
+			);
+			if (!recoveryEntry)
+				throw Error("Previous catalog version is unavailable; its files are preserved.");
+			return this.start(
+				recoveryEntry,
+				"verify",
+				async (job) => {
+					authorize();
+					await this.options.browserApprovals?.cancelByServer(id, "desktop");
+					if (!this.manager.rollbackBrowserMigration) throw Error("Desktop update required.");
+					await this.manager.rollbackBrowserMigration(pending.id);
+					this.update(
+						job,
+						"restored",
+						"Restored the previous connector. Its session files were preserved.",
+					);
+				},
+				id,
+			);
+		}
 		const { installation, entry } = await this.installed(id);
 		if (browserEntry(entry)) {
 			authorize();
@@ -1037,9 +1111,177 @@ export class CatalogInstaller {
 		const { entry } = await this.installed(id);
 		return browserEntry(entry);
 	}
+	async migrateImported(
+		input: { id: string; catalogId: string; configuration: Record<string, string>; confirm: true },
+		authorize: () => void,
+	) {
+		await this.initialize();
+		authorize();
+		if (input.confirm !== true)
+			throw Error("Explicit migration is required for imported configurations.");
+		const entry = bundleCatalog.find(
+			(entry) => entry.id === input.catalogId && tetheredEntry(entry),
+		);
+		if (!entry) throw Error("No activated tethered artifact is available for this catalog entry.");
+		return this.migrate(input.id, entry, input.configuration, authorize);
+	}
+	async rollbackMigration(id: string, authorize: () => void) {
+		await this.initialize();
+		authorize();
+		const record = [...((await this.manager.browserMigrationRecords?.()) ?? [])]
+			.reverse()
+			.find((record) => record.serverId === id && record.state !== "cancelled");
+		if (!record || !this.manager.rollbackBrowserMigration)
+			throw Error("No migration recovery record is available.");
+		const entry = allBundleCatalog.find(
+			(entry) => `${entry.id}@${entry.version}` === record.candidate.identity,
+		)!;
+		return this.start(
+			entry,
+			"verify",
+			async (job) => {
+				authorize();
+				await this.options.browserApprovals?.cancelByServer(id, "desktop");
+				await this.manager.rollbackBrowserMigration!(record.id);
+				if (record.previousInstallation)
+					this.installations.set(id, record.previousInstallation as unknown as Installation);
+				else this.installations.delete(id);
+				await this.save();
+				this.update(
+					job,
+					"restored",
+					"Restored the previous configuration. Session files were preserved.",
+				);
+			},
+			id,
+		);
+	}
+
+	private recordMigratedInstallation(record: BrowserMigration) {
+		const entry = allBundleCatalog.find(
+			(entry) =>
+				entry.id === record.catalogId &&
+				`${entry.id}@${entry.version}` === record.candidate.identity,
+		);
+		if (!entry || !record.candidate.managedBrowser)
+			throw Error("Migration artifact is unavailable.");
+		const directory = join(
+			this.options.root,
+			"connectors",
+			record.serverId === serverIds[entry.id] ? entry.id : record.serverId,
+			entry.version,
+		);
+		const configuration: Record<string, string> =
+			entry.recipe === "slack-ready"
+				? { workspace: record.candidate.managedBrowser.workspace }
+				: {};
+		this.installations.set(record.serverId, {
+			catalogId: entry.id,
+			version: entry.version,
+			serverId: record.serverId,
+			directory,
+			configuration,
+		});
+	}
+	private async migrate(
+		id: string,
+		entry: BundleCatalogEntry,
+		values: Record<string, string>,
+		authorize?: () => void,
+	) {
+		if (
+			!this.manager.prepareBrowserMigration ||
+			!this.manager.completeBrowserMigration ||
+			!this.manager.rollbackBrowserMigration
+		)
+			throw Error("Desktop update required for migration.");
+		const configuration = catalogConfiguration(
+			entry,
+			Object.fromEntries(
+				Object.entries(values).filter(([key]) =>
+					inputFields(entry, this.options.root).some((field) => field.key === key),
+				),
+			),
+			this.options.root,
+			join(this.options.root, "connectors", entry.id, entry.version),
+		);
+		const record = prepareBrowserMigration(
+			this.manager.getServerConfig(id),
+			await browserConfiguration(this.options.resources, entry.id, configuration.workspace),
+		);
+		const previous = this.installations.get(id);
+		if (previous) record.previousInstallation = { ...previous };
+		authorize?.();
+		return this.start(
+			entry,
+			"authenticate",
+			async (job, signal) => {
+				const approvals = this.options.browserApprovals;
+				if (!approvals) throw Error("Browser approval is unavailable.");
+				await this.manager.prepareBrowserMigration!(record);
+				try {
+					await approvals.cancelByServer(id, "desktop");
+					const receipt = record.candidate.managedBrowser!;
+					await approvals.begin(
+						job.id,
+						id,
+						receipt.provider as "outlook" | "slack-tethered",
+						receipt.workspace,
+						authorize,
+					);
+					job.browserApproval = {
+						requestId: job.id,
+						workspace: receipt.workspace,
+						expiresAt: new Date(Date.now() + 600000).toISOString(),
+						extensionDirectory: join(this.options.resources, "browser-extension"),
+					};
+					while (true) {
+						assertActive(signal);
+						authorize?.();
+						const view = approvals.view(job.id, "desktop");
+						this.update(job, view.state, view.message);
+						if (view.state === "connected") break;
+						if (["cancelled", "expired", "disconnected"].includes(view.state))
+							throw Error(view.message);
+						await delay(500, undefined, { signal });
+					}
+					assertActive(signal);
+					authorize?.();
+					await this.manager.completeBrowserMigration!(record.id);
+					this.recordMigratedInstallation(record);
+					await this.save();
+					this.update(
+						job,
+						"migrated",
+						"Verified the browser connection. Previous configuration and session files are retained for recovery.",
+					);
+				} catch (error) {
+					const saved = ((await this.manager.browserMigrationRecords?.()) ?? []).find(
+						(value) => value.id === record.id,
+					);
+					if (saved?.state === "prepared") {
+						await approvals.cancelByServer(id, "desktop");
+						await this.manager.rollbackBrowserMigration!(record.id);
+					}
+					throw error;
+				} finally {
+					delete job.browserApproval;
+				}
+			},
+			id,
+		);
+	}
+
 	async authenticate(id: string, authorize?: () => void) {
 		const { installation, entry } = await this.installed(id);
 		authorize?.();
+		const running = [...this.work.values()].find(
+			(job) => job.serverId === id && job.kind === "authenticate" && job.status === "running",
+		);
+		if (running) return { ...running };
+		const selected = bundleCatalog.find((candidate) => candidate.id === entry.id);
+		if (selected && tetheredEntry(selected) && selected.version !== entry.version)
+			return this.migrate(id, selected, installation.configuration, authorize);
 		return this.start(
 			entry,
 			"authenticate",
@@ -1051,11 +1293,22 @@ export class CatalogInstaller {
 					if (!approvals) throw Error("Update Desktop to approve browser connections in chat.");
 					await this.manager.setEnabled(id, true);
 					const workspace =
-						entry.recipe === "yc-demo" ? ycWorkspace : installation.configuration.workspace!;
+						entry.recipe === "yc-demo"
+							? ycWorkspace
+							: entry.recipe === "outlook"
+								? "https://outlook.cloud.microsoft"
+								: installation.configuration.workspace!;
 					await approvals.begin(
 						job.id,
 						id,
-						entry.recipe === "yc-demo" ? "ycombinator" : "slack",
+						(this.manager.getServerConfig(id).managedBrowser?.provider as
+							| "slack-tethered"
+							| "outlook") ??
+							(entry.recipe === "yc-demo"
+								? "ycombinator"
+								: entry.recipe === "outlook"
+									? "outlook"
+									: "slack"),
 						workspace,
 						authorize,
 					);
@@ -1236,7 +1489,12 @@ export class CatalogInstaller {
 		this.update(job, "verifying", "Checking MCP discovery and an authenticated read…");
 		if (!this.manager.getServerConfig(job.serverId).enabled)
 			await this.manager.setEnabled(job.serverId, true);
-		for (const tool of checks[entry.recipe]!) {
+		const receipt = this.manager.getServerConfig(job.serverId).managedBrowser;
+		const verify =
+			receipt && Object.hasOwn(browserProviders, receipt.provider)
+				? [browserProviders[receipt.provider as keyof typeof browserProviders].verify]
+				: checks[entry.recipe]!;
+		for (const tool of verify) {
 			assertActive(signal);
 			this.assertToolResult(await this.manager.catalogSetupCall(job.serverId, tool, {}, signal));
 		}

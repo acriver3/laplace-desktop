@@ -11,7 +11,9 @@
 		"./api": "./src/api.ts",
 		"./encrypted-store": "./src/encrypted-store.ts",
 		"./leases": "./src/leases.ts",
-		"./mcp-lifecycle": "./src/mcp-lifecycle.ts"
+		"./mcp-lifecycle": "./src/mcp-lifecycle.ts",
+		"./browser-catalog": "./src/browser-catalog.ts",
+		"./browser-migration": "./src/browser-migration.ts"
 	},
 	"scripts": {
 		"type-check": "tsc --noEmit"
@@ -21,6 +23,7 @@
 		"@modelcontextprotocol/client": "2.4.0",
 		"@modelcontextprotocol/core": "2.4.0",
 		"@napi-rs/keyring": "2.1.0",
+		"@repo/browser-runtime": "workspace:*",
 		"@repo/project-protocol": "workspace:*",
 		"ws": "8.21.0",
 		"zod": "catalog:"

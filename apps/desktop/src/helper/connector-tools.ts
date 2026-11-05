@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import type { Tool } from "@modelcontextprotocol/server";
+import { browserEnabled } from "@repo/local-mcp-core/browser-catalog";
 import { serverConfig } from "@repo/local-mcp-core/config";
+import {
+	browserChatApprovalSchemas,
+	browserChatApprovalDescriptions,
+} from "@repo/project-protocol/mcp/local-tools";
 import { localManagementRequest } from "@repo/project-protocol/portable-connectors";
 import { z } from "zod";
 
@@ -16,6 +21,29 @@ const id = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
 const empty = z.object({}).strict();
 const custom = z.object({ config: serverConfig }).strict();
 const definitions = {
+	local_connectors_browser_prompt: [
+		browserChatApprovalSchemas.local_connectors_browser_prompt,
+		browserChatApprovalDescriptions.local_connectors_browser_prompt,
+	],
+	local_connectors_browser_confirm: [
+		browserChatApprovalSchemas.local_connectors_browser_confirm,
+		browserChatApprovalDescriptions.local_connectors_browser_confirm,
+	],
+	local_connectors_migrate: [
+		z
+			.object({
+				id,
+				catalogId: id,
+				configuration: z.record(z.string(), z.string()).default({}),
+				confirm: z.literal(true),
+			})
+			.strict(),
+		"Explicitly migrate a chosen existing or imported connection to an activated tethered catalog connector. Preserve its ID, name and permissions. Returns an approval job; the user must approve the account and profile in local_connectors_browser_show. Previous configuration and sessions are retained.",
+	],
+	local_connectors_migration_rollback: [
+		z.object({ id, confirm: z.literal(true) }).strict(),
+		"Explicitly restore the previous configuration from a browser migration recovery record. Revokes the new browser approval and preserves all session files. Never call this as an automatic fallback.",
+	],
 	local_connectors_browser_show: [
 		z.object({ requestId: z.string().uuid() }).strict(),
 		"Show the browser connection approval card for an authentication job. The user approves the detected account in the card; never approve on their behalf.",
@@ -60,7 +88,7 @@ const definitions = {
 	],
 	local_connectors_authenticate: [
 		z.object({ id }).strict(),
-		"Start connector sign-in and verification. Poll the job; for browserApproval call local_connectors_browser_show with requestId to let the user approve in chat. For hosts without MCP Apps use local_connectors_browser_desktop.",
+		"Start connector sign-in and verification. For browserApproval call local_connectors_browser_show in MCP Apps hosts. Without MCP Apps, use local_connectors_browser_prompt, show the account/profile/scopes and wait for the user's explicit approve reply before local_connectors_browser_confirm. Give signInUrl when signed out. Desktop approval is an optional fallback.",
 	],
 	local_connectors_verify: [
 		z.object({ id }).strict(),
@@ -84,15 +112,26 @@ const definitions = {
 	],
 } as const;
 export type ConnectorToolName = keyof typeof definitions;
-export const connectorManagementTools: Tool[] = Object.entries(definitions).map(
-	([name, [schema, description]]) => ({
+export const connectorManagementTools: Tool[] = Object.entries(definitions)
+	.filter(
+		([name]) =>
+			browserEnabled() ||
+			!["local_connectors_migrate", "local_connectors_migration_rollback"].includes(name),
+	)
+	.map(([name, [schema, description]]) => ({
 		name,
 		...(name.startsWith("local_connectors_browser_")
 			? {
 					_meta: {
 						ui: {
 							...(name.endsWith("_show") ? { resourceUri: BROWSER_APPROVAL_URI } : {}),
-							visibility: [name.endsWith("_show") || name.endsWith("_desktop") ? "model" : "app"],
+							visibility: [
+								name.endsWith("_show") ||
+								name.endsWith("_desktop") ||
+								name in browserChatApprovalSchemas
+									? "model"
+									: "app",
+							],
 						},
 					},
 				}
@@ -107,6 +146,7 @@ export const connectorManagementTools: Tool[] = Object.entries(definitions).map(
 			readOnlyHint: [
 				"local_connectors_browser_show",
 				"local_connectors_browser_review",
+				"local_connectors_browser_prompt",
 				"local_connectors_list",
 				"local_connectors_status",
 				"local_connectors_preview_custom",
@@ -114,8 +154,7 @@ export const connectorManagementTools: Tool[] = Object.entries(definitions).map(
 			destructiveHint: name === "local_connectors_manage",
 			openWorldHint: true,
 		},
-	}),
-);
+	}));
 export const isConnectorManagementTool = (name: string): name is ConnectorToolName =>
 	Object.hasOwn(definitions, name);
 
@@ -141,7 +180,7 @@ function jobSummary(job: CatalogJob) {
 					browserApproval: {
 						...job.browserApproval,
 						renderTool: "local_connectors_browser_show",
-						fallbackTool: "local_connectors_browser_desktop",
+						fallbackTool: "local_connectors_browser_prompt",
 					},
 				}
 			: {}),
@@ -162,7 +201,8 @@ export class ConnectorManagement {
 		private installer: Pick<
 			CatalogInstaller,
 			"list" | "jobs" | "install" | "authenticate" | "verify" | "cancel"
-		>,
+		> &
+			Partial<Pick<CatalogInstaller, "migrateImported" | "rollbackMigration">>,
 		private portable?: PortableConnectors,
 		readonly browserApprovals?: BrowserApprovals,
 		private openBrowserApproval?: (requestId: string) => void,
@@ -170,7 +210,8 @@ export class ConnectorManagement {
 	canCall(clientId: string, tool: string) {
 		return tool.startsWith("local_connectors_browser_")
 			? this.manager.clientToolAllowed(clientId, "local_connectors_authenticate") ||
-					this.manager.clientToolAllowed(clientId, "local_connectors_manage")
+					this.manager.clientToolAllowed(clientId, "local_connectors_manage") ||
+					this.manager.clientToolAllowed(clientId, "local_connectors_migrate")
 			: this.manager.clientToolAllowed(clientId, tool);
 	}
 	private authorize(clientId: string, tool: string) {
@@ -210,6 +251,30 @@ export class ConnectorManagement {
 			if (!this.browserApprovals) throw Error("Update Desktop to approve browser connections.");
 			const requestId = (args as { requestId: string }).requestId;
 			this.browserApprovals.view(requestId, clientId);
+			if (name.endsWith("_prompt")) {
+				const result = this.browserApprovals.reviewChat(
+					requestId,
+					clientId,
+					(args as { candidateId?: string }).candidateId,
+				);
+				return {
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
+					structuredContent: result,
+				};
+			}
+			if (name.endsWith("_confirm")) {
+				const value = args as { reviewId: string; confirmed: true };
+				const view = await this.browserApprovals.confirmChat(
+					requestId,
+					clientId,
+					value.reviewId,
+					value.confirmed,
+				);
+				return {
+					content: [{ type: "text" as const, text: JSON.stringify(view) }],
+					structuredContent: view,
+				};
+			}
 			if (name.endsWith("_approve"))
 				await this.browserApprovals.approve(
 					requestId,
@@ -233,7 +298,26 @@ export class ConnectorManagement {
 		}
 		const authorize = browserAuthorizer(() => this.authorize(clientId, name), clientId, name);
 		let result: unknown;
-		if (name === "local_connectors_manage") {
+		if (name === "local_connectors_migrate" || name === "local_connectors_migration_rollback") {
+			if (!browserEnabled()) throw Error("Tethered browser migration is not activated.");
+			if (!this.installer.migrateImported || !this.installer.rollbackMigration)
+				throw Error("Desktop update required for browser migration.");
+			const job =
+				name === "local_connectors_migrate"
+					? await this.installer.migrateImported(
+							args as {
+								id: string;
+								catalogId: string;
+								configuration: Record<string, string>;
+								confirm: true;
+							},
+							authorize,
+						)
+					: await this.installer.rollbackMigration((args as { id: string }).id, authorize);
+			this.owners.set(job.id, { clientId, tool: name });
+			this.permissionsChanged();
+			result = jobSummary(job);
+		} else if (name === "local_connectors_manage") {
 			if (!this.portable) throw new Error("Update Desktop to manage portable connectors");
 			result = await this.portable.manage(args, authorize);
 		} else if (name === "local_connectors_install" && this.portable) {

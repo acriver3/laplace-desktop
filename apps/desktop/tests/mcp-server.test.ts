@@ -564,157 +564,186 @@ async function slackFixture(f: Awaited<ReturnType<typeof fixture>>) {
 	};
 }
 
-it("installs Slack over MCP, recovers jobs after reconnect, authenticates and discovers verified tools", async () => {
-	const f = await fixture(undefined, {}),
-		a = await f.connect("Slack setup");
-	const input = await slackFixture(f);
-	const job = await setupCall(a.client, "install", input);
-	await a.client.close();
-	const reconnect = new Client({ name: "Reconnected", version: "1" }, { capabilities: {} });
-	await reconnect.connect(
-		new StreamableHTTPClientTransport(new URL(f.server.endpoint), {
-			requestInit: { headers: { Authorization: `Bearer ${a.token}` } },
-		}),
-	);
-	cleanup.push(() => reconnect.close());
-	await vi.waitFor(async () =>
-		expect((await setupCall(reconnect, "status", { jobId: job.id })).jobs[0]).toMatchObject({
-			status: "completed",
-			state: "authentication_required",
-		}),
-	);
-	expect(f.manager.getServerConfig("slack").enabled).toBe(false);
-	expect(
-		(await reconnect.callTool({ name: "local_connectors_install", arguments: input })).isError,
-	).toBe(true);
-	const auth = await setupCall(reconnect, "authenticate", { id: "slack" });
-	let approval: any;
-	await vi.waitFor(
-		async () => {
-			approval = (await setupCall(reconnect, "status", { jobId: auth.id })).jobs[0].browserApproval;
-			expect(
-				approval,
-				JSON.stringify({ jobs: f.installer.jobs(), servers: f.manager.listServers() }),
-			).toBeTruthy();
-		},
-		{ timeout: 5000 },
-	);
-	expect(approval.pairingUrl).toBeUndefined();
-	const pendingRequest = (await listBrowserRequests()).find(
-		(item) => item.id === approval.requestId,
-	)!;
-	const url = new URL(pendingRequest.pairingUrl);
-	const post = async (path: string, body: unknown, token?: string) =>
-		(
-			await fetch(url.origin + path, {
-				method: "POST",
-				headers: {
-					Origin: `chrome-extension://${browserExtensionId}`,
-					"Content-Type": "application/json",
-					...(token ? { Authorization: `Bearer ${token}` } : {}),
-				},
-				body: JSON.stringify(body),
-			})
-		).json();
-
-	const code = url.hash.slice(1),
-		candidate = {
-			id: randomUUID(),
-			revision: randomUUID(),
-			profileId: randomUUID(),
-			profileLabel: "Chrome fixture",
-			identity: { workspace: "https://fixture.slack.com", teamId: "T123456", userId: "U123456" },
-		};
-	await post("/review", {
-		code,
-		profileId: candidate.profileId,
-		profileLabel: candidate.profileLabel,
-		candidates: [candidate],
-		hint: "discovering",
-	});
-	let card: any;
-	await vi.waitFor(
-		async () => {
-			card = await reconnect.callTool({
-				name: "local_connectors_browser_show",
-				arguments: { requestId: approval.requestId },
-			});
-			expect(card.structuredContent?.state).toBe("approval_required");
-		},
-		{ timeout: 5000 },
-	);
-	expect(card._meta.browserApprovalCapabilities[candidate.id]).toBeTruthy();
-	expect(JSON.stringify(card.content)).not.toContain(
-		card._meta.browserApprovalCapabilities[candidate.id],
-	);
-	const accepted = await reconnect.callTool({
-		name: "local_connectors_browser_approve",
-		arguments: {
-			requestId: approval.requestId,
-			capability: card._meta.browserApprovalCapabilities[candidate.id],
-		},
-	});
-	expect(accepted.isError, JSON.stringify(accepted)).not.toBe(true);
-	const decision = await post("/decision", { code, profileId: candidate.profileId });
-	const { token } = await post("/pair", {
-		code,
-		candidateId: candidate.id,
-		authorization: decision.authorization,
-		identity: candidate.identity,
-	});
-	expect(token).toBeTruthy();
-
-	let pumping = true;
-	const pump = (async () => {
-		while (pumping) {
-			const { request } = await post("/next", {}, token);
-			if (request)
-				await post("/result", { id: request.id, ok: true, result: { channels: [] } }, token);
-			await new Promise((r) => setTimeout(r, 20));
-		}
-	})().catch(() => {});
-	cleanup.push(async () => {
-		pumping = false;
-		await pump;
-	});
-	await vi.waitFor(
-		async () =>
-			expect((await setupCall(reconnect, "status", { jobId: auth.id })).jobs[0]).toMatchObject({
-				status: "completed",
-				state: "verified",
+it.each(["app", "chat"])(
+	"installs Slack over MCP and verifies tools with %s approval",
+	async (approvalMode) => {
+		const f = await fixture(undefined, {}),
+			a = await f.connect("Slack setup");
+		const input = await slackFixture(f);
+		const job = await setupCall(a.client, "install", input);
+		await a.client.close();
+		const reconnect = new Client({ name: "Reconnected", version: "1" }, { capabilities: {} });
+		await reconnect.connect(
+			new StreamableHTTPClientTransport(new URL(f.server.endpoint), {
+				requestInit: { headers: { Authorization: `Bearer ${a.token}` } },
 			}),
-		{ timeout: 5000 },
-	);
-	expect(
-		(await reconnect.listTools()).tools.some((t) => t.title?.endsWith(": channels_list")),
-	).toBe(true);
-	const verify = await setupCall(reconnect, "verify", { id: "slack" });
-	await vi.waitFor(async () =>
-		expect((await setupCall(reconnect, "status", { jobId: verify.id })).jobs[0].state).toBe(
-			"verified",
-		),
-	);
-	const read = vi.spyOn(f.manager, "catalogSetupCall").mockResolvedValue({
-		isError: true,
-		content: [{ type: "text", text: "private-provider-error" }],
-	});
-	try {
-		const failed = await setupCall(reconnect, "verify", { id: "slack" });
-		await vi.waitFor(
-			async () =>
-				expect((await setupCall(reconnect, "status", { jobId: failed.id })).jobs[0].state).toBe(
-					"failed",
-				),
-			{ timeout: 5000 },
+		);
+		cleanup.push(() => reconnect.close());
+		await vi.waitFor(async () =>
+			expect((await setupCall(reconnect, "status", { jobId: job.id })).jobs[0]).toMatchObject({
+				status: "completed",
+				state: "authentication_required",
+			}),
 		);
 		expect(f.manager.getServerConfig("slack").enabled).toBe(false);
-		expect(JSON.stringify(await setupCall(reconnect, "status"))).not.toContain(
-			"private-provider-error",
+		expect(
+			(await reconnect.callTool({ name: "local_connectors_install", arguments: input })).isError,
+		).toBe(true);
+		const auth = await setupCall(reconnect, "authenticate", { id: "slack" });
+		let approval: any;
+		await vi.waitFor(
+			async () => {
+				approval = (await setupCall(reconnect, "status", { jobId: auth.id })).jobs[0]
+					.browserApproval;
+				expect(
+					approval,
+					JSON.stringify({ jobs: f.installer.jobs(), servers: f.manager.listServers() }),
+				).toBeTruthy();
+			},
+			{ timeout: 5000 },
 		);
-	} finally {
-		read.mockRestore();
-	}
-});
+		expect(approval.pairingUrl).toBeUndefined();
+		const pendingRequest = (await listBrowserRequests()).find(
+			(item) => item.id === approval.requestId,
+		)!;
+		const url = new URL(pendingRequest.pairingUrl);
+		const post = async (path: string, body: unknown, token?: string) =>
+			(
+				await fetch(url.origin + path, {
+					method: "POST",
+					headers: {
+						Origin: `chrome-extension://${browserExtensionId}`,
+						"Content-Type": "application/json",
+						...(token ? { Authorization: `Bearer ${token}` } : {}),
+					},
+					body: JSON.stringify(body),
+				})
+			).json();
+
+		const code = url.hash.slice(1),
+			candidate = {
+				id: randomUUID(),
+				revision: randomUUID(),
+				profileId: randomUUID(),
+				profileLabel: "Chrome fixture",
+				identity: { workspace: "https://fixture.slack.com", teamId: "T123456", userId: "U123456" },
+			};
+		await post("/review", {
+			code,
+			profileId: candidate.profileId,
+			profileLabel: candidate.profileLabel,
+			candidates: [candidate],
+			hint: "discovering",
+		});
+		let card: any;
+		await vi.waitFor(
+			async () => {
+				card = await reconnect.callTool({
+					name: "local_connectors_browser_show",
+					arguments: { requestId: approval.requestId },
+				});
+				expect(card.structuredContent?.state).toBe("approval_required");
+			},
+			{ timeout: 5000 },
+		);
+		expect(card._meta.browserApprovalCapabilities[candidate.id]).toBeTruthy();
+		expect(JSON.stringify(card.content)).not.toContain(
+			card._meta.browserApprovalCapabilities[candidate.id],
+		);
+		const chatReview =
+			approvalMode === "chat"
+				? await reconnect.callTool({
+						name: "local_connectors_browser_prompt",
+						arguments: { requestId: approval.requestId },
+					})
+				: undefined;
+		if (chatReview) {
+			expect(chatReview._meta).toBeUndefined();
+			expect(chatReview.structuredContent).toMatchObject({
+				profile: candidate.profileLabel,
+				account: candidate.identity,
+			});
+		}
+		const accepted = await reconnect.callTool(
+			approvalMode === "chat"
+				? {
+						name: "local_connectors_browser_confirm",
+						arguments: {
+							requestId: approval.requestId,
+							reviewId: (chatReview!.structuredContent as any).reviewId,
+							confirmed: true,
+						},
+					}
+				: {
+						name: "local_connectors_browser_approve",
+						arguments: {
+							requestId: approval.requestId,
+							capability: card._meta.browserApprovalCapabilities[candidate.id],
+						},
+					},
+		);
+		expect(accepted.isError, JSON.stringify(accepted)).not.toBe(true);
+		const decision = await post("/decision", { code, profileId: candidate.profileId });
+		const { token } = await post("/pair", {
+			code,
+			candidateId: candidate.id,
+			authorization: decision.authorization,
+			identity: candidate.identity,
+		});
+		expect(token).toBeTruthy();
+
+		let pumping = true;
+		const pump = (async () => {
+			while (pumping) {
+				const { request } = await post("/next", {}, token);
+				if (request)
+					await post("/result", { id: request.id, ok: true, result: { channels: [] } }, token);
+				await new Promise((r) => setTimeout(r, 20));
+			}
+		})().catch(() => {});
+		cleanup.push(async () => {
+			pumping = false;
+			await pump;
+		});
+		await vi.waitFor(
+			async () =>
+				expect((await setupCall(reconnect, "status", { jobId: auth.id })).jobs[0]).toMatchObject({
+					status: "completed",
+					state: "verified",
+				}),
+			{ timeout: 5000 },
+		);
+		expect(
+			(await reconnect.listTools()).tools.some((t) => t.title?.endsWith(": channels_list")),
+		).toBe(true);
+		const verify = await setupCall(reconnect, "verify", { id: "slack" });
+		await vi.waitFor(async () =>
+			expect((await setupCall(reconnect, "status", { jobId: verify.id })).jobs[0].state).toBe(
+				"verified",
+			),
+		);
+		const read = vi.spyOn(f.manager, "catalogSetupCall").mockResolvedValue({
+			isError: true,
+			content: [{ type: "text", text: "private-provider-error" }],
+		});
+		try {
+			const failed = await setupCall(reconnect, "verify", { id: "slack" });
+			await vi.waitFor(
+				async () =>
+					expect((await setupCall(reconnect, "status", { jobId: failed.id })).jobs[0].state).toBe(
+						"failed",
+					),
+				{ timeout: 5000 },
+			);
+			expect(f.manager.getServerConfig("slack").enabled).toBe(false);
+			expect(JSON.stringify(await setupCall(reconnect, "status"))).not.toContain(
+				"private-provider-error",
+			);
+		} finally {
+			read.mockRestore();
+		}
+	},
+);
 
 it.each(["cancel", "permission", "revoke"])(
 	"ends browser approval when setup is cancelled by %s",

@@ -4,7 +4,10 @@ import { runInNewContext } from "node:vm";
 import { expect, it, vi } from "vitest";
 
 const source = (
-	await readFile(new URL("../browser-extension/slack.js", import.meta.url), "utf8")
+	await readFile(
+		new URL("../../../packages/browser-runtime/extension/slack.js", import.meta.url),
+		"utf8",
+	)
 ).replace("export async function", "async function");
 const workspace = "https://fixture.slack.com";
 const originalIdentity = { workspace, teamId: "T123456", userId: "U123456" };

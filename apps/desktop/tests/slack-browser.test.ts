@@ -147,7 +147,10 @@ it("expires pairing and approval and rejects late/replayed results", async () =>
 });
 it("keeps extension identity stable and never requests cookie or debugger access", async () => {
 	const manifest = JSON.parse(
-		await readFile(new URL("../browser-extension/manifest.json", import.meta.url), "utf8"),
+		await readFile(
+			new URL("../../../packages/browser-runtime/extension/manifest.json", import.meta.url),
+			"utf8",
+		),
 	);
 	const id = createHash("sha256")
 		.update(Buffer.from(manifest.key, "base64"))
@@ -162,6 +165,9 @@ it("keeps extension identity stable and never requests cookie or debugger access
 		"https://*.slack.com/*",
 		"https://*.slack-gov.com/*",
 		"https://apply.ycombinator.com/*",
+		"https://outlook.cloud.microsoft/*",
+		"https://outlook.office.com/*",
+		"https://outlook.office365.com/*",
 	]);
 	expect(manifest.externally_connectable).toBeUndefined();
 	expect(
@@ -296,7 +302,7 @@ it("does not convert existing catalog metadata to the opt-in browser adapter", a
 		resources: "/resources",
 		nodePath: "/node",
 	});
-	expect((await installer.list()).find((c) => c.id === "slack-mcp-server")?.installed).toBe(false);
+	expect((await installer.list()).find((c) => c.id === "slack-mcp-server")?.installed).toBe(true);
 	expect(JSON.parse(await readFile(join(root, "catalog-installs.json"), "utf8"))[0].version).toBe(
 		"1.1.0-laplace.1",
 	);

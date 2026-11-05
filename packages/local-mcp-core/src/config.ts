@@ -15,6 +15,17 @@ export const loopbackUrl = z
 		);
 	}, "Use an explicit loopback HTTP address (127.0.0.1 or [::1])");
 const common = {
+	// Only managed installation writes this receipt; arbitrary imports cannot claim it.
+	managedBrowser: z
+		.object({
+			catalogId: z.string().min(1).max(100),
+			provider: z.enum(["outlook", "slack", "slack-tethered", "linkedin", "ycombinator"]),
+			workspace: z.string().url().max(2048),
+			artifactSha256: z.string().regex(/^[a-f0-9]{64}$/),
+			runtimeVersion: z.string().min(1).max(100),
+		})
+		.strict()
+		.optional(),
 	// Omission preserves existing connector startup and never probes a second process.
 	protocolVersion: z.literal("2026-07-28").optional(),
 	generation: z

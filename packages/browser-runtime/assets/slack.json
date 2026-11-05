@@ -1,0 +1,40 @@
+{
+	"catalogId": "slack-mcp-server",
+	"provider": "slack-tethered",
+	"version": "1.2.0-candidate.1",
+	"serverId": "slack",
+	"workspace": "https://workspace.slack.com",
+	"file": "helper/slack-full-browser.cjs",
+	"engines": {
+		"darwin-arm64": {
+			"file": "slack-engine-darwin-arm64.gz",
+			"sha256": "09520ceb7a878c18dd8ad70083f7ebe88161fef1723339e47d25369e434b860c",
+			"compressedSha256": "c67b693e016ff55c03d0397503be4a62abd8eed0e6ff1005f999e99ef573953f"
+		},
+		"darwin-x64": {
+			"file": "slack-engine-darwin-x64.gz",
+			"sha256": "30a3a5e141bc478fc8c6ca62750f4f0c733e1df79416164357feb657229bca40",
+			"compressedSha256": "cdb1dc33f1e3dd5536aa571531c37a100e7a288542afc98594c95ac16071a41a"
+		},
+		"linux-arm64": {
+			"file": "slack-engine-linux-arm64.gz",
+			"sha256": "fec02b72dda3cbe0d99365ab3e0f4a0b13e6089747eda1161cd1dae640f65694",
+			"compressedSha256": "62e4990d3ab1baaf0bfc786468c58450a19c9851bbe6810d23f9318d8bd4d08d"
+		},
+		"linux-x64": {
+			"file": "slack-engine-linux-x64.gz",
+			"sha256": "2c97d3707399a5660d6be95b375fb3974f7161cd0654b968f9668376685c9e18",
+			"compressedSha256": "7633609319c00a969cf884f06049630e3a3e4f1295bdc811be7fb1b294d42e28"
+		},
+		"win32-arm64": {
+			"file": "slack-engine-win32-arm64.gz",
+			"sha256": "23e1c918ba572c3e4a452f90b5359559ec1bb22fa24e7675d733abffb351e2c1",
+			"compressedSha256": "80aa972dc1097aa4d4e7508ab3301afcd9506b0a35e0a44527fa9ca61f17a3e4"
+		},
+		"win32-x64": {
+			"file": "slack-engine-win32-x64.gz",
+			"sha256": "9b0cc2d99379dcb215539a53656ddf52eb3ea1a144c4630b6cb4ab3db13691bc",
+			"compressedSha256": "93dd0175c7435e977fb9d962ad70b2ab01a264b276f15db2f1592d1534e73fe6"
+		}
+	}
+}

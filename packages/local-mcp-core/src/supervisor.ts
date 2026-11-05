@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { Validator } from "@cfworker/json-schema";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { browserProviders } from "@repo/browser-runtime/browser-approval";
 import {
 	canonicalJson,
 	toolSnapshot,
@@ -14,6 +15,7 @@ import {
 	type Publication,
 } from "@repo/project-protocol/local-mcp";
 
+import { browserSetupTools, verifyBrowserConfiguration } from "./browser-catalog";
 import { runtimeCommand, type ServerConfig } from "./config";
 import { InvocationQueue } from "./invocation-queue";
 import { acquireResourceLeases } from "./leases";
@@ -46,6 +48,7 @@ interface Runtime {
 }
 export class Supervisor {
 	private closed = false;
+	private browserSetup = new WeakSet<Invocation>();
 	private servers = new Map<string, Runtime>();
 	private sessionSecrets = new Map<string, string[]>();
 	private timers = new Set<ReturnType<typeof setTimeout>>();
@@ -310,12 +313,35 @@ export class Supervisor {
 			runtime.state.status !== "online" ||
 			runtime.state.revision !== invocation.revision ||
 			!tool ||
-			(runtime.config.enabledTools && !runtime.config.enabledTools.includes(tool.name))
+			(!this.browserSetup.has(invocation) &&
+				runtime.config.enabledTools &&
+				!runtime.config.enabledTools.includes(tool.name))
 		)
 			throw new Error("Tool changed or is unavailable");
 		if (!new Validator(tool.inputSchema, "2020-12").validate(invocation.input).valid)
 			throw new Error("Invalid tool arguments");
 	}
+	async callBrowserSetup(invocation: Invocation, expiresAt: number, controller: AbortController) {
+		const receipt = await verifyBrowserConfiguration(
+			this.resources,
+			this.server(invocation.localId).config,
+		);
+		if (
+			![...browserSetupTools, browserProviders[receipt.provider].verify].includes(
+				invocation.tool,
+			) ||
+			(Object.keys(invocation.input).length &&
+				!["laplace_browser_authorize", "laplace_browser_focus"].includes(invocation.tool))
+		)
+			throw Error("Only named browser setup checks may bypass the published tool limit.");
+		this.browserSetup.add(invocation);
+		try {
+			return await this.call(invocation, expiresAt, controller);
+		} finally {
+			this.browserSetup.delete(invocation);
+		}
+	}
+
 	call(invocation: Invocation, expiresAt: number, controller: AbortController) {
 		const runtime = this.server(invocation.localId);
 		return runtime.queue.add(async () => {

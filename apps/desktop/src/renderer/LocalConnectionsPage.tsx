@@ -113,6 +113,11 @@ export function LocalConnectionsPage({
 						<Modal title={catalogDetails.name} close={() => setCatalogDetails(undefined)}>
 							<div className="dialog-body stack">
 								<p>{catalogDetails.description}</p>
+								{catalogDetails.setupUrl && (
+									<a href={catalogDetails.setupUrl} target="_blank" rel="noreferrer">
+										Setup instructions
+									</a>
+								)}
 								<BrokerStart
 									entries={[catalogDetails]}
 									label={
@@ -143,7 +148,7 @@ export function LocalConnectionsPage({
 													key={server.id}
 													className="desktop-connection"
 													title={server.name}
-													subtitle={`${installedCatalog.has(server.id) ? "Catalog" : "Custom"} · ${server.tools.length} tools`}
+													subtitle={`${installedCatalog.has(server.id) ? (installedCatalog.get(server.id)?.installedBrowserMode === "tethered" ? "Tethered" : "Background Browser") : "Custom"} · ${server.tools.length} tools`}
 													onDetails={() => details(server)}
 													statusLabel={
 														installedCatalog.get(server.id)?.demoOnly

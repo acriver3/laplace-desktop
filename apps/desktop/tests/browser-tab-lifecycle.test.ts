@@ -6,7 +6,7 @@ import { expect, it, vi } from "vitest";
 
 // Run the shipped worker, including its tab-close handler, with browser I/O isolated.
 // @ts-expect-error The extension is plain JavaScript.
-import { provider } from "../browser-extension/providers.js";
+import { provider } from "../../../packages/browser-runtime/extension/providers.js";
 
 async function fixture(providerId: string, workspace: string, tabUrl: string) {
 	const session: Record<string, any> = {};
@@ -99,13 +99,15 @@ async function fixture(providerId: string, workspace: string, tabUrl: string) {
 		setTimeout() {},
 		clearTimeout() {},
 	});
-	const source = await readFile(new URL("../browser-extension/worker.js", import.meta.url), "utf8");
-	runInContext(
-		source
-			.replace('import { provider } from "./providers.js";', "")
-			.replace('import { connectBroker } from "./broker.js";', ""),
-		context,
-	);
+	const source = await readFile(
+        new URL("../../../packages/browser-runtime/extension/worker.js", import.meta.url),
+        "utf8",
+    );
+    runInContext(
+        source.replace('import { provider } from "./providers.js";', "")
+            .replace('import { connectBroker } from "./broker.js";', ""),
+        context,
+    );
 	const id = randomUUID();
 	const discover = async () => {
 		context.ticket = {

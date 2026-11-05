@@ -3,6 +3,7 @@ import { z } from "zod";
 import { connectorOriginSchema } from "./local-mcp";
 import { localMcpArtifacts } from "./local-mcp-artifacts";
 import catalogData from "./local-mcp-bundles.json" with { type: "json" };
+import { localConnectorMetadata } from "./local-mcp-setup";
 
 const identifier = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
@@ -66,6 +67,8 @@ export const bundleEntrySchema = z
 	.object({
 		id: identifier,
 		name: z.string().min(1),
+		setupUrl: z.string().url().optional(),
+		browserMode: z.enum(["tethered", "background-browser"]).optional(),
 		description: z.string().min(1),
 		capabilities: z.array(z.string().min(1)).min(1),
 		repository: repositoryUrl,
@@ -112,7 +115,9 @@ export const bundleCatalogSchema = z.array(bundleEntrySchema).superRefine((entri
 		}
 	}
 });
-export const bundleCatalog = bundleCatalogSchema.parse(catalogData);
+export const bundleCatalog = bundleCatalogSchema
+	.parse(catalogData)
+	.map((entry) => ({ ...entry, ...localConnectorMetadata(entry.id) }));
 
 export function verifiedBundlePlatforms(artifact: BundleArtifact) {
 	return [

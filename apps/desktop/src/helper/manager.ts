@@ -1,6 +1,15 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
+import { browserProviders } from "@repo/browser-runtime/browser-approval";
 import { LocalApi, LocalApiError } from "@repo/local-mcp-core/api";
+import {
+	verifyBrowserConfiguration,
+	browserSetupTools,
+} from "@repo/local-mcp-core/browser-catalog";
+import {
+	BrowserMigrationStage,
+	type BrowserMigration,
+} from "@repo/local-mcp-core/browser-migration";
 import { serverConfig, type ServerConfig } from "@repo/local-mcp-core/config";
 import { EncryptedStore } from "@repo/local-mcp-core/encrypted-store";
 import { LocalStore, systemEntry, type EntryFactory } from "@repo/local-mcp-core/store";
@@ -30,7 +39,7 @@ import { connectorManagementTools } from "./connector-tools";
 import { desktopManagementTool } from "./desktop-tools";
 import { configurationSummary } from "./imports";
 import { assertLegacyProcessesStopped } from "./legacy-processes";
-import { bundleCatalog } from "./library-catalog";
+import { allBundleCatalog } from "./library-catalog";
 import { slackBrowserIdentity } from "./slack-browser-config";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -110,6 +119,7 @@ export class DesktopManager {
 	hostedStatus: (id: string) => Pick<ClientSnapshot, "hosted" | "error"> = () => ({
 		hosted: "disconnected",
 	});
+	private browserStages = new Map<string, BrowserMigrationStage>();
 	constructor(
 		readonly root: string,
 		readonly resources: string,
@@ -211,6 +221,107 @@ export class DesktopManager {
 		if (!value) throw new Error("Unknown connector");
 		return structuredClone(value);
 	}
+	browserSetupConfig(id: string) {
+		return this.browserStages.get(id)?.config ?? this.getServerConfig(id);
+	}
+	async browserMigrationRecords() {
+		return (await this.store.read()).browserMigrations ?? [];
+	}
+	async prepareBrowserMigration(record: BrowserMigration) {
+		await verifyBrowserConfiguration(this.resources, record.candidate);
+		return this.serialize(async () => {
+			await this.store.mutate((state) => {
+				if (
+					state.browserMigrations?.some(
+						(r) => r.serverId === record.serverId && ["prepared", "committing"].includes(r.state),
+					)
+				)
+					throw Error(
+						"An interrupted migration is pending. Use Repair to restore it before retrying.",
+					);
+				const index = state.servers.findIndex((s) => s.id === record.serverId);
+				if (index < 0 || canonicalJson(state.servers[index]) !== canonicalJson(record.previous))
+					throw Error("Connection changed before migration.");
+				(state.browserMigrations ??= []).push(record);
+				state.servers[index] = { ...record.previous, enabled: false };
+			});
+			this.epoch++;
+			await this.reload();
+			this.browserStages.set(
+				record.serverId,
+				new BrowserMigrationStage(this.root, this.resources, record),
+			);
+			this.changed();
+		});
+	}
+	async completeBrowserMigration(migrationId: string) {
+		return this.serialize(async () => {
+			const record = (await this.browserMigrationRecords()).find((r) => r.id === migrationId);
+			if (!record || record.state !== "prepared" || !this.browserStages.has(record.serverId))
+				throw Error("Migration is not ready.");
+			await this.store.mutate((state) => {
+				const saved = state.browserMigrations?.find((r) => r.id === record.id),
+					current = state.servers.find((s) => s.id === record.serverId);
+				if (
+					!saved ||
+					saved.state !== "prepared" ||
+					canonicalJson(current) !== canonicalJson({ ...record.previous, enabled: false })
+				)
+					throw Error("Connection changed during migration.");
+				saved.state = "committing";
+			});
+			await this.store.mutate((state) => {
+				const saved = state.browserMigrations?.find((r) => r.id === record.id),
+					index = state.servers.findIndex((s) => s.id === record.serverId);
+				if (
+					!saved ||
+					saved.state !== "committing" ||
+					index < 0 ||
+					canonicalJson(state.servers[index]) !==
+						canonicalJson({ ...record.previous, enabled: false })
+				)
+					throw Error("Connection changed during migration.");
+				state.servers[index] = record.candidate;
+				saved.state = "complete";
+			});
+			await this.browserStages.get(record.serverId)?.close();
+			this.browserStages.delete(record.serverId);
+			this.epoch++;
+			await this.reload();
+			if (record.candidate.enabled) await this.supervisor.start(record.serverId);
+			await this.refresh().catch(() => {});
+			this.changed();
+		});
+	}
+	async rollbackBrowserMigration(migrationId: string) {
+		return this.serialize(async () => {
+			const record = (await this.browserMigrationRecords()).find((r) => r.id === migrationId);
+			if (!record || record.state === "cancelled") throw Error("No pending migration.");
+			await this.browserStages.get(record.serverId)?.close();
+			this.browserStages.delete(record.serverId);
+			await this.store.mutate((state) => {
+				const saved = state.browserMigrations?.find((r) => r.id === record.id),
+					index = state.servers.findIndex((s) => s.id === record.serverId);
+				if (
+					!saved ||
+					index < 0 ||
+					![
+						canonicalJson(record.candidate),
+						canonicalJson({ ...record.previous, enabled: false }),
+					].includes(canonicalJson(state.servers[index]))
+				)
+					throw Error("Connection changed; recovery preserved it for manual review.");
+				state.servers[index] = record.previous;
+				saved.state = "cancelled";
+			});
+			this.epoch++;
+			await this.reload();
+			if (record.previous.enabled) await this.supervisor.start(record.serverId);
+			await this.refresh().catch(() => {});
+			this.changed();
+		});
+	}
+
 	listServers(): ServerSnapshot[] {
 		return this.configurations.map((config) => {
 			const runtime = this.supervisor.states().find((s) => s.id === config.id);
@@ -249,7 +360,7 @@ export class DesktopManager {
 					.filter(
 						(tool) =>
 							![slackBrowserIdentity, ycBrowserIdentity].includes(config.identity ?? "") ||
-							!tool.name.startsWith("laplace_browser_"),
+							(!tool.name.startsWith("laplace_browser_") && tool.name !== "laplace_slack_verify"),
 					)
 					.map((tool) => ({
 						name: tool.name,
@@ -336,7 +447,7 @@ export class DesktopManager {
 			.filter(
 				(t) =>
 					![slackBrowserIdentity, ycBrowserIdentity].includes(config.identity ?? "") ||
-					!t.name.startsWith("laplace_browser_"),
+					(!t.name.startsWith("laplace_browser_") && t.name !== "laplace_slack_verify"),
 			)
 			.filter((t) => !config.enabledTools || config.enabledTools.includes(t.name))
 			.map((t) => t.name);
@@ -617,8 +728,15 @@ export class DesktopManager {
 		input: Record<string, unknown>,
 		signal: AbortSignal,
 	) {
+		const stage = this.browserStages.get(id);
+		if (stage) return stage.call(tool, input, signal);
 		const config = this.getServerConfig(id);
-		const entry = bundleCatalog.find((entry) => config.identity === `${entry.id}@${entry.version}`);
+		const entry = allBundleCatalog.find(
+			(entry) => config.identity === `${entry.id}@${entry.version}`,
+		);
+		const managed = config.managedBrowser
+			? await verifyBrowserConfiguration(this.resources, config)
+			: undefined;
 		const safe: Record<string, string[]> = {
 			"yc-demo": [
 				"list_applications",
@@ -644,8 +762,12 @@ export class DesktopManager {
 			],
 		};
 		if (
-			!entry ||
-			!safe[entry.recipe]?.includes(tool) ||
+			(!managed && !entry) ||
+			!(
+				managed
+					? [...browserSetupTools, browserProviders[managed.provider].verify]
+					: (safe[entry!.recipe] ?? [])
+			).includes(tool) ||
 			(Object.keys(input).length &&
 				!["laplace_browser_authorize", "laplace_browser_focus"].includes(tool))
 		)
@@ -660,11 +782,11 @@ export class DesktopManager {
 		signal.addEventListener("abort", abort, { once: true });
 		if (signal.aborted) abort();
 		try {
-			return await this.supervisor.call(
-				invocation,
-				Date.now() + (tool === "outlook_login" ? 15 * 60_000 : 180_000),
-				controller,
-			);
+			return await (
+				managed
+					? this.supervisor.callBrowserSetup.bind(this.supervisor)
+					: this.supervisor.call.bind(this.supervisor)
+			)(invocation, Date.now() + (tool === "outlook_login" ? 15 * 60_000 : 180_000), controller);
 		} finally {
 			signal.removeEventListener("abort", abort);
 		}
@@ -674,6 +796,8 @@ export class DesktopManager {
 		if (this.stopped || epoch !== this.epoch)
 			throw new Error("Permissions changed before dispatch");
 		if (this.setupInvocations.has(invocation)) return;
+		const config = this.getServerConfig(invocation.localId);
+		if (config.managedBrowser) await verifyBrowserConfiguration(this.resources, config);
 		const clientId = this.invocationClients.get(invocation);
 		if (
 			clientId &&
@@ -1027,6 +1151,8 @@ export class DesktopManager {
 	async shutdown() {
 		this.stopped = true;
 		this.epoch++;
+		await Promise.all([...this.browserStages.values()].map((stage) => stage.close()));
+		this.browserStages.clear();
 		await this.supervisor.shutdown();
 	}
 }

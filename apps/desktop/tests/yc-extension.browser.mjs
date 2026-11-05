@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { chromium } from "@playwright/test";
 
-import { ycAction } from "../browser-extension/ycombinator.js";
+import { ycAction } from "../../../packages/browser-runtime/extension/ycombinator.js";
 
 void test(
 	"approved-tab YC flow reads, previews, saves once, verifies persistence and rejects conflicts",
