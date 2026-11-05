@@ -4,29 +4,27 @@ Laplace Desktop uses selected Bitwarden Password Manager logins without returnin
 
 ## Guided setup
 
-Open **Laplace Desktop → Settings → Bitwarden → Connect Bitwarden**. The guided flow is:
+Open **Laplace Desktop → Credentials → Connect Bitwarden**. The guided flow is:
 
 1. **Connect:** choose your Bitwarden region (US or Europe), or your self-hosted HTTPS server. Laplace prepares the official Bitwarden CLI privately; no terminal, global installation, or browser extension is needed.
 2. **Sign in:** enter your email and master password in Laplace, then complete any verification-code prompt. For unsupported second factors or an additional Bitwarden account check, the wizard offers a guided personal API key fallback. A master password is still required. Passkey-only and trusted-device-only accounts are unsupported.
 3. **Choose logins:** search by name or website and select the logins to share, or choose **Select all logins** to add every current login in one step (including logins outside the search). Existing selections and configured actions are preserved. New vault entries are not selected automatically; refresh and select all again to include them. Up to 10,000 selected logins are supported. Selections save automatically and keep the current vault session unlocked. Raw passwords, notes, and vault exports are never shown to an assistant.
 4. **Choose assistants:** select registered local assistants. If an assistant restricts individual tools, selecting it also enables its credential tool. Online assistants are a separate opt-in and require a linked account and deployed relay support.
-5. **Set up a browser**, or choose **Set up browser later**. This step is optional for API/command use.
+5. **Check Chrome extension**, then **Finish setup**. Chrome uses the user’s existing profile. API/command operations do not require Chrome.
 
 The overview provides **Unlock**, **Manage access**, **Lock Bitwarden**, and **Disconnect**. The account stays signed in locally, but the vault locks after at most 15 minutes, on computer lock/sleep, profile switching, or application exit. The master password is never saved. Permission changes cancel outstanding approvals and revoke remembered grants without requiring another unlock; connection changes still lock the vault.
 
 Laplace uses an isolated Bitwarden CLI profile under each desktop profile. Disconnect removes only that isolated CLI session and disables access; saved login selections remain. Existing externally configured CLI connections stay intact and can opt into guided setup. Switching accounts while selections are bound to a known account is refused until those selections are removed. No external Bitwarden application is logged out or modified.
 
-### Browser connection
+### Chrome and connection approvals
 
-**Use an existing browser** discovers compatible Chrome/Edge processes owned by the current user that already expose explicit local debugging configuration. Laplace validates their endpoints and asks you to select a session; it does not scan arbitrary ports or enable debugging on your usual browser.
+The Credentials page reports actual Chrome extension readiness. **Check Chrome extension** pairs the installed Laplace extension in the user's regular Chrome profile. Connection brokering never launches an isolated browser or requires CDP configuration. Local connectors without extension-based login support offer manual authentication.
 
-**Open a compatible browser** launches installed Chrome or Edge using a separate persistent Laplace profile and a dynamic loopback debugging port. Laplace closes its own browser on quit/profile switch; external browsers remain open. Closing or locking the Bitwarden vault does not erase that browser's website sessions. If no supported browser is installed, the wizard links to the official downloads.
+OAuth can continue using an existing Chrome session without unlocking Bitwarden or reviewing unused credentials. When a saved login is needed, the MCP App lets the user choose the match and approve the displayed connection once. **Unlock Bitwarden** opens a focused native Desktop prompt associated with that request. The password stays local; after unlock, the same card refreshes. Clients without MCP Apps retain Desktop review.
 
-“Browser available” means Laplace can reach the browser. Your assistant must also attach its existing browser tools to that session. **Copy instructions for my assistant** helps a local assistant obtain the selected endpoint through the authorized MCP status tool. Hosted agents never receive the endpoint. Cloud-only browsers and tools that cannot attach to local CDP remain incompatible.
+After approval, the card acknowledges immediately and tracks opening Chrome, login, user challenges, verification, and the final outcome. The executor advances eligible username/password steps and checks the connector without needing another assistant message. Chrome extension site permissions, MFA, passkeys, CAPTCHA, and OAuth consent remain user-controlled. Filled values and raw page contents never appear in observations. Origin checks and retained submission receipts prevent stale or uncertain steps from being silently replayed.
 
-Chrome requires a non-default profile for debugging; see the [official guidance](https://developer.chrome.com/blog/remote-debugging-port). The separate Laplace profile meets that requirement.
-
-Browser fills still require an exact origin present in both the selected login and its current Bitwarden HTTPS URLs; “Never” entries are excluded. Only unambiguous visible top-level fields are filled. Cross-origin form actions and frames are refused, and Laplace never submits forms. Other browser tools and the destination website can read filled values.
+Reauthentication targets the existing connection and suggests its previous credential reference. It always needs fresh approval; the failed business action is never replayed. Vault lock, sleep, access changes, expiry, and restart still revoke execution authority. Old direct-fill tools remain compatible through explicit legacy CDP configuration under Advanced.
 
 ### Advanced configuration and runtime maintenance
 
@@ -36,7 +34,7 @@ Manual CDP addresses, existing CLI path overrides, credential IDs, and API/comma
 
 Use a fresh UUID `requestId` per operation. Local clients call `status`, `list`, and `targets`, then `fill`, `http`, or `run`. Large `list` results are paginated; pass `nextCursor` as `cursor` with a new request ID until it is absent. Restart from the first page if selections change. Hosted agents first call `devices` and include its `installationId`, plus `accountId` when multiple accounts are authorized. Hosted operations return immediately; poll `result` with the same request ID. New hosted agents need approval even to list selected credentials or targets.
 
-Review requests in Settings and choose Allow once, Allow this scope for 15 minutes, or Deny. Grants bind the authenticated client, credential/action, and exact parameters; browser grants also bind the tab and fields. Grants never outlive the unlocked session. MCP cannot unlock, approve, change settings, or configure actions. Existing local tool restrictions still apply.
+For legacy direct credential operations, review requests in Credentials and choose Allow once, Allow this scope for 15 minutes, or Deny. Grants bind the authenticated client, credential/action, and exact parameters; browser grants also bind the tab and fields. Grants never outlive the unlocked session. MCP can request the focused local unlock prompt, but cannot take a password, unlock the vault itself, approve, change settings, or configure actions. Existing local tool restrictions still apply.
 
 Requests expire after two minutes. Cancellation cannot undo side effects already performed. Check uncertain outcomes before retrying with a new ID. Identical retries reuse retained results, and changed-input retries are rejected. Local encrypted request tombstones last 24 hours; hosted tombstones last until installation removal. Work is never automatically replayed after restart or relay failure.
 

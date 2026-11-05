@@ -54,5 +54,7 @@ await build({
 execFileSync(runtime, [output, root, resources, bridge, packaged ? "packaged" : "development"], {
 	cwd: root,
 	stdio: "inherit",
-	timeout: 120000,
+	// The stress proof launches 100 sequential and 32 concurrent real bridge processes.
+	// Keep per-operation deadlines in the fixture, with room for slower Intel runners.
+	timeout: 300000,
 });

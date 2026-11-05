@@ -100,10 +100,14 @@ async function fixture(providerId: string, workspace: string, tabUrl: string) {
 		clearTimeout() {},
 	});
 	const source = await readFile(
-		new URL("../../../packages/browser-runtime/extension/worker.js", import.meta.url),
-		"utf8",
-	);
-	runInContext(source.replace('import { provider } from "./providers.js";', ""), context);
+        new URL("../../../packages/browser-runtime/extension/worker.js", import.meta.url),
+        "utf8",
+    );
+    runInContext(
+        source.replace('import { provider } from "./providers.js";', "")
+            .replace('import { connectBroker } from "./broker.js";', ""),
+        context,
+    );
 	const id = randomUUID();
 	const discover = async () => {
 		context.ticket = {

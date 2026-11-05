@@ -159,6 +159,10 @@ const publish = () => {
 	send("shell", state);
 	if (web && !web.webContents.isDestroyed()) {
 		web.webContents.send("laplace:local-state", !!state.localEmbedded);
+		web.webContents.send("laplace:credentials-navigation", {
+			active: !!state.localEmbedded && state.section === "credentials",
+			pending: helper?.snapshot?.credentialRequests ?? 0,
+		});
 		web.webContents.send("laplace:update-available", !!updater?.state.availableVersion);
 	}
 };
@@ -203,7 +207,7 @@ function protectWeb(contents: WebContents) {
 			desktopLocalNavigation(contents === web?.webContents, contents.getURL(), url, state.origin)
 		) {
 			event.preventDefault();
-			showLocal();
+			showLocal(new URL(url).pathname === "/desktop/credentials" ? "credentials" : "servers");
 			return;
 		}
 		navigation(event, url);
@@ -741,10 +745,21 @@ async function startHelper() {
 	);
 	const next = new HelperClient(
 		(event) => {
-			if (event.event === "open-url") void openExternal(event.url).catch(() => {});
+			if (event.event === "desktop-open") {
+				showLocal(event.section);
+				window?.show();
+				window?.focus();
+			} else if (event.event === "open-url") void openExternal(event.url).catch(() => {});
 			else if (event.event === "snapshot") {
 				send("snapshot", event.data);
+				publish();
 				void syncDesktopNotifications();
+			} else if (event.event === "broker-unlock") {
+				showLocal("credentials");
+				window?.show();
+				window?.focus();
+				state.unlockSessionId = event.sessionId;
+				publish();
 			} else if (event.event === "broker-focus") {
 				showLocal("servers");
 				window?.show();
@@ -896,6 +911,33 @@ async function handleShell(raw: unknown) {
 			}
 			return { prompt, opened };
 		}
+		case "shell.brokerSetup": {
+			const current = helper,
+				generation = profileGeneration;
+			if (!current || changingProfile) throw Error("Wait for Desktop to finish starting.");
+			await current.request("broker.stage", {
+				clientId: request.input.clientId,
+				sessionId: request.input.sessionId,
+				targets: request.input.targets,
+			});
+			if (helper !== current || generation !== profileGeneration || changingProfile)
+				throw Error("Desktop profile changed.");
+			const prompt =
+				"Continue my Laplace connection request " +
+				request.input.sessionId +
+				". Use local_credential_broker status with this sessionId to retrieve its targets, then start the same session with those targets to prepare hosted authorization if needed. Show local_credential_broker_show in chat. Use readiness to guide setup; never request secrets. OAuth may continue in existing Chrome without vault access. The user approves credentials in the card; Desktop continues automatically. Do not replay business actions.";
+			const destination = assistantSetupDestination(request.input.target, prompt);
+			let opened = false;
+			if (request.input.action === "open" && destination) {
+				try {
+					await shell.openExternal(destination);
+					opened = true;
+				} catch {
+					/* copy fallback */
+				}
+			}
+			return { prompt, opened };
+		}
 		case "shell.assistantSetup": {
 			const current = helper,
 				generation = profileGeneration;
@@ -921,6 +963,10 @@ async function handleShell(raw: unknown) {
 			}
 			return { prompt, opened };
 		}
+		case "shell.dismissUnlock":
+			state.unlockSessionId = undefined;
+			publish();
+			return;
 		case "shell.status":
 			return state;
 		case "shell.local":
@@ -1236,6 +1282,11 @@ void app
 			)
 				throw new Error("Unauthorized shell presentation request.");
 			const request = webShellRequest.parse(raw);
+			if (request.kind === "credentials-navigation")
+				return {
+					active: !!state.localEmbedded && state.section === "credentials",
+					pending: helper?.snapshot?.credentialRequests ?? 0,
+				};
 			if (request.kind === "status") return !!state.localEmbedded;
 			if (request.kind === "update-status") return !!updater?.state.availableVersion;
 			if (request.kind === "show-updates") {

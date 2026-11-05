@@ -38,6 +38,7 @@ async function fixture(cacheTtlMs = 0) {
 		if (url.pathname === "/.well-known/oauth-authorization-server") {
 			json({
 				issuer: origin,
+				authorization_response_iss_parameter_supported: true,
 				authorization_endpoint: `${origin}/oauth/authorize`,
 				token_endpoint: `${origin}/oauth/token`,
 				registration_endpoint: `${origin}/oauth/register`,
@@ -167,6 +168,9 @@ async function fixture(cacheTtlMs = 0) {
 		callback.searchParams.set("iss", origin);
 		expect((await fetch(callback)).status).toBe(400);
 		callback.searchParams.set("state", authorization.searchParams.get("state")!);
+		callback.searchParams.set("iss", "https://wrong-issuer.example");
+		expect((await fetch(callback)).status).toBe(400);
+		callback.searchParams.set("iss", origin);
 		expect((await fetch(callback)).status).toBe(200);
 		await expect.poll(() => hosted.status(id).hosted, { timeout: 3000 }).toBe("connected");
 	}

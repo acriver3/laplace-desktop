@@ -166,7 +166,13 @@ try {
 	});
 	mark("launch isolated Electron shell");
 	app = await electron.launch({
-		...(packaged ? { executablePath: packaged, args: [] } : { args: [appRoot] }),
+		...(packaged ? { executablePath: packaged } : {}),
+		args: [
+			...(packaged ? [] : [appRoot]),
+			...(process.env.LAPLACE_SMOKE_SCALE
+				? [`--force-device-scale-factor=${Number(process.env.LAPLACE_SMOKE_SCALE)}`]
+				: []),
+		],
 		env: testEnvironment({
 			LAPLACE_DESKTOP_TEST_ROOT: testRoot,
 			LAPLACE_DESKTOP_TEST_ORIGIN: origin,
@@ -271,7 +277,37 @@ try {
 	}
 	const discovered = (await clients[0].listTools()).tools;
 	assert.ok(discovered.some((tool) => tool.name === "local_connectors_install"));
-	const tools = discovered.filter((tool) => !tool.name.startsWith("local_connectors_"));
+	assert.ok(discovered.some((tool) => tool.name === "local_credential_broker"));
+	assert.ok(discovered.some((tool) => tool.name === "local_desktop_manage"));
+	const desktopStatus = await clients[0].callTool({
+		name: "local_desktop_manage",
+		arguments: { action: "status" },
+	});
+	assert.equal(desktopStatus.structuredContent.mode, "local-only");
+	assert.equal(desktopStatus.structuredContent.assistant.hosted, "disconnected");
+	assert.ok(
+		discovered.some(
+			(tool) =>
+				tool.name === "local_credentials" &&
+				tool.inputSchema.properties.action.enum.includes("run_command"),
+		),
+	);
+	const credentialSetup = await clients[0].callTool({
+		name: "local_credentials",
+		arguments: { action: "status", requestId: crypto.randomUUID() },
+	});
+	assert.ok(JSON.stringify(credentialSetup).includes("setupRequired"));
+	const denied = await clients[0].callTool({
+		name: "local_credentials",
+		arguments: { action: "list", requestId: crypto.randomUUID() },
+	});
+	assert.equal(denied.isError, true);
+	const tools = discovered.filter(
+		(tool) =>
+			!tool.name.startsWith("local_connectors_") &&
+			!tool.name.startsWith("local_credential") &&
+			tool.name !== "local_desktop_manage",
+	);
 	assert.equal(tools.length, 4);
 	assert.ok(tools.every((tool) => tool.name.startsWith("local_")));
 	const pids = [];

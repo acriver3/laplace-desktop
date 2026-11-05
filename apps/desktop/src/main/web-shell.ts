@@ -3,6 +3,7 @@ import { z } from "zod";
 // Presentation only: no paths, account data, or privileged local operations.
 export const webShellRequest = z.discriminatedUnion("kind", [
 	z.object({ kind: z.literal("status") }).strict(),
+	z.object({ kind: z.literal("credentials-navigation") }).strict(),
 	z.object({ kind: z.literal("update-status") }).strict(),
 	z.object({ kind: z.literal("show-updates") }).strict(),
 	z.object({ kind: z.literal("web") }).strict(),

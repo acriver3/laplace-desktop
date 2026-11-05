@@ -1,4 +1,4 @@
-import { brokerCommand } from "@repo/project-protocol/credential-broker";
+import { brokerCommand, brokerTarget } from "@repo/project-protocol/credential-broker";
 import {
 	connectorAccess,
 	installRequest,
@@ -29,6 +29,15 @@ const origin = z
 export const helperInputs = {
 	"broker.authorizeAssistant": z.object({ principalId: z.string() }).strict(),
 	"broker.enabled": empty,
+	"broker.stage": z
+		.object({
+			clientId,
+			sessionId: z.string().uuid(),
+			targets: z.array(brokerTarget).min(1).max(50),
+		})
+		.strict(),
+	"credentials.chromeStatus": empty,
+	"credentials.chromeCheck": empty,
 	"broker.list": empty,
 	"broker.call": z
 		.object({ principalId: z.string(), requestId: z.string().uuid(), command: brokerCommand })
@@ -234,7 +243,9 @@ export type DesktopSnapshot = {
 	stayLocalOnly: boolean;
 };
 export type HelperEvent =
+	| { event: "desktop-open"; section: "servers" | "clients" | "device" | "updates" | "credentials" }
 	| { event: "broker-focus" }
+	| { event: "broker-unlock"; sessionId: string }
 	| { event: "browser-approval"; requestId: string }
 	| { event: "ready" }
 	| { event: "snapshot"; data: DesktopSnapshot }
