@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ServerConfig } from "@repo/local-mcp-core/config";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
 
 import {
 	CatalogInstaller,
@@ -323,4 +323,15 @@ it("rejects non-workspace Slack URLs and profiles inside the bundle", () => {
 			"/bundle",
 		),
 	).toThrow("outside");
+});
+
+// Historical bundle/limited-Slack coverage remains explicit after Mac release activation.
+const previousTetheredFlag = vi.hoisted(() => {
+	const previous = process.env.LAPLACE_TETHERED_BROWSER_V1;
+	process.env.LAPLACE_TETHERED_BROWSER_V1 = "false";
+	return previous;
+});
+afterAll(() => {
+	if (previousTetheredFlag === undefined) delete process.env.LAPLACE_TETHERED_BROWSER_V1;
+	else process.env.LAPLACE_TETHERED_BROWSER_V1 = previousTetheredFlag;
 });

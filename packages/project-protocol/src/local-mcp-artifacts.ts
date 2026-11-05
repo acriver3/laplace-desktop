@@ -1,6 +1,6 @@
 export const LOCAL_MCP_RELEASE = "0.1.0";
 // Keep previous immutable downloads usable when the advertised release advances.
-export const LOCAL_MCP_DOWNLOAD_RELEASES = ["0.1.0", "0.1.1", "0.1.2"];
+export const LOCAL_MCP_DOWNLOAD_RELEASES = ["0.1.0", "0.1.1", "0.1.2", "0.1.3"];
 export const LOCAL_MCP_PLATFORMS = [
 	"win32-x64",
 	"darwin-x64",
@@ -8,7 +8,8 @@ export const LOCAL_MCP_PLATFORMS = [
 	"linux-x64",
 ] as const;
 export function localMcpReleaseArtifacts(version: string) {
-	return LOCAL_MCP_PLATFORMS.flatMap((platform) => [
+	const platforms = version === "0.1.3" ? (["darwin-arm64"] as const) : LOCAL_MCP_PLATFORMS;
+	return platforms.flatMap((platform) => [
 		{
 			name: `laplace-local-${version}-${platform}.manifest.json`,
 			version,
@@ -33,4 +34,8 @@ export function localMcpReleaseArtifacts(version: string) {
 				]),
 	]);
 }
-export const localMcpArtifacts = localMcpReleaseArtifacts(LOCAL_MCP_RELEASE);
+// Advance only the platform with native release acceptance; retain historical downloads.
+export const localMcpArtifacts = [
+	...localMcpReleaseArtifacts(LOCAL_MCP_RELEASE).filter((a) => a.platform !== "darwin-arm64"),
+	...localMcpReleaseArtifacts("0.1.3"),
+];

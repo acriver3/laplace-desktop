@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ServerConfig } from "@repo/local-mcp-core/config";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
 
 import { CatalogInstaller } from "../src/helper/catalog";
 import {
@@ -348,4 +348,15 @@ it("persists independent browser adapter instances without catalog ID collisions
 	expect((await restarted.list()).find((c) => c.id === "slack-mcp-server")?.installed).toBe(true);
 	for (const id of ids) expect((await restarted.portableSnapshot(id)).sourceId).toBe(id);
 	expect(options.fetch).not.toHaveBeenCalled();
+});
+
+// Historical bundle/limited-Slack coverage remains explicit after Mac release activation.
+const previousTetheredFlag = vi.hoisted(() => {
+	const previous = process.env.LAPLACE_TETHERED_BROWSER_V1;
+	process.env.LAPLACE_TETHERED_BROWSER_V1 = "false";
+	return previous;
+});
+afterAll(() => {
+	if (previousTetheredFlag === undefined) delete process.env.LAPLACE_TETHERED_BROWSER_V1;
+	else process.env.LAPLACE_TETHERED_BROWSER_V1 = previousTetheredFlag;
 });

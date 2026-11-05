@@ -8,7 +8,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { serverConfig } from "@repo/local-mcp-core/config";
 import type { EntryFactory } from "@repo/local-mcp-core/store";
 import { build } from "esbuild";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
 
 import { BrowserApprovals } from "../src/helper/browser-approvals";
 import { CatalogInstaller } from "../src/helper/catalog";
@@ -1072,4 +1072,15 @@ it("keeps the local broker kill switch and model approval boundary", async () =>
 	} finally {
 		vi.unstubAllEnvs();
 	}
+});
+
+// Historical bundle/limited-Slack coverage remains explicit after Mac release activation.
+const previousTetheredFlag = vi.hoisted(() => {
+	const previous = process.env.LAPLACE_TETHERED_BROWSER_V1;
+	process.env.LAPLACE_TETHERED_BROWSER_V1 = "false";
+	return previous;
+});
+afterAll(() => {
+	if (previousTetheredFlag === undefined) delete process.env.LAPLACE_TETHERED_BROWSER_V1;
+	else process.env.LAPLACE_TETHERED_BROWSER_V1 = previousTetheredFlag;
 });
