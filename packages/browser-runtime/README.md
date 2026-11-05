@@ -2,7 +2,7 @@
 
 This is the canonical source for Laplace's Slack, YC, and candidate Outlook extension connection. Desktop vendors the exact source revision and SHA-256 inventory in `source-lock.json`; its build verifies that inventory before packaging. This candidate is not a complete tethered connector release.
 
-The runtime has no Electron dependency. `BrowserApprovals` receives a host and consent store; Desktop supplies its existing manager and encrypted storage. `openBrowserApprovalPage` provides a request-scoped, CSRF-protected loopback approval UI used by the standalone CLI. Desktop and CLI use the same approval card and serialized consent checks.
+The runtime has no Electron dependency. `BrowserApprovals` receives a host and consent store; Desktop supplies its existing manager and encrypted storage. `openBrowserApprovalPage` provides a request-scoped, CSRF-protected loopback approval UI used by the standalone CLI. Desktop and CLI use the same approval card and serialized consent checks. In chats without MCP Apps, `local_connectors_browser_prompt` presents a selected account, profile and scopes; after the user explicitly replies approve, `local_connectors_browser_confirm` consumes a five-minute, single-use review bound to the initiating client and connection. The agent must obtain that reply; the runtime checks the review binding, expiry and live browser identity. A sign-in link is returned when needed. Native and loopback approval pages remain optional fallbacks.
 
 ## Compatibility
 
@@ -28,11 +28,10 @@ The candidate Outlook adapter retains all original tool registrations and opts a
 ## Release gates still outstanding
 
 - Packaged Desktop and CLI acceptance. Candidate macOS ARM64 live reads passed for Outlook status/folders and Slack identity/channels; see `evidence/2026-11-05-darwin-arm64-live-reads.json`. This records the exact connector artifacts and approval-page source override, not a blanket release acceptance. LinkedIn keeps its original background-browser implementation.
-- Final standalone CLI and Desktop migration/release integration.
 - Real installation migration acceptance. Fixture tests exercise staged artifacts, fresh consent, unchanged IDs/permissions, cancellation, interrupted migration, duplicate prevention, explicit imported-config migration and recovery.
 - Common immutable native/connector release artifacts and checksums for every supported platform.
 - Designated-account write acceptance. Writes have only been exercised against fixtures; the live acceptance checks were read-only.
-- Physical Windows/Linux native registration, upgrades and uninstall checks. Windows registration tests use a registry stub; macOS/Linux path behavior is tested with temporary homes.
+- Windows/Linux are outside the current user-requested macOS acceptance scope and must remain unqualified until native registration, upgrade and uninstall checks run there. Windows registration tests use a registry stub; macOS/Linux path behavior is tested with temporary homes.
 
 Keep catalog selection and new execution disabled until these gates pass. Existing MCPB releases retain their versions and dedicated/background browser behavior.
 

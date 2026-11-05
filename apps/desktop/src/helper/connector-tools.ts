@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import type { Tool } from "@modelcontextprotocol/server";
 import { browserEnabled } from "@repo/local-mcp-core/browser-catalog";
 import { serverConfig } from "@repo/local-mcp-core/config";
+import {
+	browserChatApprovalSchemas,
+	browserChatApprovalDescriptions,
+} from "@repo/project-protocol/mcp/local-tools";
 import { localManagementRequest } from "@repo/project-protocol/portable-connectors";
 import { z } from "zod";
 
@@ -17,6 +21,14 @@ const id = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
 const empty = z.object({}).strict();
 const custom = z.object({ config: serverConfig }).strict();
 const definitions = {
+	local_connectors_browser_prompt: [
+		browserChatApprovalSchemas.local_connectors_browser_prompt,
+		browserChatApprovalDescriptions.local_connectors_browser_prompt,
+	],
+	local_connectors_browser_confirm: [
+		browserChatApprovalSchemas.local_connectors_browser_confirm,
+		browserChatApprovalDescriptions.local_connectors_browser_confirm,
+	],
 	local_connectors_migrate: [
 		z
 			.object({
@@ -76,7 +88,7 @@ const definitions = {
 	],
 	local_connectors_authenticate: [
 		z.object({ id }).strict(),
-		"Start connector sign-in and verification. Poll the job; for browserApproval call local_connectors_browser_show with requestId to let the user approve in chat. For hosts without MCP Apps use local_connectors_browser_desktop.",
+		"Start connector sign-in and verification. For browserApproval call local_connectors_browser_show in MCP Apps hosts. Without MCP Apps, use local_connectors_browser_prompt, show the account/profile/scopes and wait for the user's explicit approve reply before local_connectors_browser_confirm. Give signInUrl when signed out. Desktop approval is an optional fallback.",
 	],
 	local_connectors_verify: [
 		z.object({ id }).strict(),
@@ -113,7 +125,13 @@ export const connectorManagementTools: Tool[] = Object.entries(definitions)
 					_meta: {
 						ui: {
 							...(name.endsWith("_show") ? { resourceUri: BROWSER_APPROVAL_URI } : {}),
-							visibility: [name.endsWith("_show") || name.endsWith("_desktop") ? "model" : "app"],
+							visibility: [
+								name.endsWith("_show") ||
+								name.endsWith("_desktop") ||
+								name in browserChatApprovalSchemas
+									? "model"
+									: "app",
+							],
 						},
 					},
 				}
@@ -128,6 +146,7 @@ export const connectorManagementTools: Tool[] = Object.entries(definitions)
 			readOnlyHint: [
 				"local_connectors_browser_show",
 				"local_connectors_browser_review",
+				"local_connectors_browser_prompt",
 				"local_connectors_list",
 				"local_connectors_status",
 				"local_connectors_preview_custom",
@@ -161,7 +180,7 @@ function jobSummary(job: CatalogJob) {
 					browserApproval: {
 						...job.browserApproval,
 						renderTool: "local_connectors_browser_show",
-						fallbackTool: "local_connectors_browser_desktop",
+						fallbackTool: "local_connectors_browser_prompt",
 					},
 				}
 			: {}),
@@ -232,6 +251,30 @@ export class ConnectorManagement {
 			if (!this.browserApprovals) throw Error("Update Desktop to approve browser connections.");
 			const requestId = (args as { requestId: string }).requestId;
 			this.browserApprovals.view(requestId, clientId);
+			if (name.endsWith("_prompt")) {
+				const result = this.browserApprovals.reviewChat(
+					requestId,
+					clientId,
+					(args as { candidateId?: string }).candidateId,
+				);
+				return {
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
+					structuredContent: result,
+				};
+			}
+			if (name.endsWith("_confirm")) {
+				const value = args as { reviewId: string; confirmed: true };
+				const view = await this.browserApprovals.confirmChat(
+					requestId,
+					clientId,
+					value.reviewId,
+					value.confirmed,
+				);
+				return {
+					content: [{ type: "text" as const, text: JSON.stringify(view) }],
+					structuredContent: view,
+				};
+			}
 			if (name.endsWith("_approve"))
 				await this.browserApprovals.approve(
 					requestId,

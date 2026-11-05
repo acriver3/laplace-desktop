@@ -4,6 +4,7 @@ export interface ApprovalView {
 	requestId: string;
 	provider: string;
 	workspace: string;
+	signInUrl?: string;
 	scopes: readonly string[];
 	state: string;
 	message: string;
@@ -50,11 +51,13 @@ export function ApprovalCard({
 	busy,
 	error,
 	act,
+	openSignIn,
 }: {
 	view: ApprovalView;
 	busy: boolean;
 	error: string;
 	act: (action: string, selection?: string) => void;
+	openSignIn?: (url: string) => void;
 }) {
 	const [chosen, setChosen] = useState("");
 	const selected = view.candidates.some((c) => c.id === chosen) ? chosen : (view.selectedId ?? "");
@@ -97,6 +100,23 @@ export function ApprovalCard({
 			{error && <p role="alert">{error}</p>}
 			{!ended && (
 				<div className="actions">
+					{view.state === "sign_in_required" && view.signInUrl && (
+						<a
+							href={view.signInUrl}
+							target="_blank"
+							rel="noreferrer"
+							onClick={
+								openSignIn
+									? (event) => {
+											event.preventDefault();
+											openSignIn(view.signInUrl!);
+										}
+									: undefined
+							}
+						>
+							Sign in to {view.provider}
+						</a>
+					)}
 					{view.state === "approval_required" && (
 						<button
 							className="primary"

@@ -3,6 +3,7 @@ import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { browserSignInUrl } from "@repo/browser-runtime/browser-approval";
 import {
 	refreshedApprovalCapability,
 	approvalError,
@@ -22,6 +23,72 @@ afterEach(async () => {
 	delete process.env.LAPLACE_DESKTOP_TEST_ROOT;
 });
 const identity = { workspace: "https://fixture.slack.com", teamId: "T123456", userId: "U123456" };
+
+it("keeps text review separate from explicit, scoped, single-use confirmation", async () => {
+	const f = await fixture();
+	await f.report();
+	await f.tick();
+	const review = f.broker.reviewChat(f.requestId, f.clientId);
+	expect(review).toMatchObject({ account: identity, profile: "Chrome · fixture" });
+	expect(review.instructions).toContain("Stop and wait");
+	expect(JSON.stringify(review)).not.toContain("capabilities");
+	expect(f.relay.status().connected).toBe(false);
+	await expect(
+		f.broker.confirmChat(f.requestId, randomUUID(), review.reviewId!, true),
+	).rejects.toThrow("unavailable");
+	await expect(
+		f.broker.confirmChat(f.requestId, f.clientId, review.reviewId!, false),
+	).rejects.toThrow("Explicit approval");
+	await f.broker.confirmChat(f.requestId, f.clientId, review.reviewId!, true);
+	expect((await f.pair()).token).toBeTruthy();
+	await expect(
+		f.broker.confirmChat(f.requestId, f.clientId, review.reviewId!, true),
+	).rejects.toThrow("Explicit approval");
+});
+
+it.each(["account", "profile", "scopes", "expiry", "new-review"])(
+	"rejects text approval after %s changes",
+	async (change) => {
+		const f = await fixture();
+		await f.report();
+		await f.tick();
+		const review = f.broker.reviewChat(f.requestId, f.clientId);
+		if (change === "account" || change === "profile") {
+			await f.report([
+				{
+					...f.candidate,
+					revision: randomUUID(),
+					...(change === "account"
+						? { identity: { ...identity, userId: "U999999" } }
+						: { profileLabel: "Another Chrome profile" }),
+				},
+			]);
+			await f.tick();
+		} else if (change === "scopes")
+			Object.assign(f.broker.view(f.requestId, f.clientId), { scopes: ["Expanded access"] });
+		else if (change === "expiry") vi.spyOn(Date, "now").mockReturnValue(Date.now() + 300_001);
+		else f.broker.reviewChat(f.requestId, f.clientId);
+		await expect(
+			f.broker.confirmChat(f.requestId, f.clientId, review.reviewId!, true),
+		).rejects.toThrow();
+		expect(f.relay.status().connected).toBe(false);
+	},
+);
+
+it("provides fixed provider sign-in links and never grants access on sign-in alone", async () => {
+	expect(browserSignInUrl("outlook", "https://untrusted.example")).toBe(
+		"https://outlook.cloud.microsoft/mail/",
+	);
+	expect(browserSignInUrl("slack-tethered", identity.workspace)).toBe(identity.workspace);
+	expect(() => browserSignInUrl("slack-tethered", "https://evil.example/")).toThrow();
+	const f = await fixture();
+	await f.report([], "sign_in_required");
+	await f.tick();
+	const review = f.broker.reviewChat(f.requestId, f.clientId);
+	expect(review.view.signInUrl).toBe(identity.workspace);
+	expect(review.reviewId).toBeUndefined();
+	expect(f.relay.status().connected).toBe(false);
+});
 async function fixture() {
 	const root = await mkdtemp(join(tmpdir(), "browser-approval-"));
 	cleanup.push(() => rm(root, { recursive: true, force: true }));

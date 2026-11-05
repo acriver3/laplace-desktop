@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
-import { callTool, request, subscribe } from "../bridge";
+import { callTool, openLink, request, subscribe } from "../bridge";
 import {
 	ApprovalCard,
 	approvalError,
@@ -50,7 +50,7 @@ function App() {
 				.then((result) => {
 					if (version === epoch.current) receive(result);
 				})
-				.catch(() => setError("Could not refresh. Check that Laplace Desktop is running."))
+				.catch(() => setError("Could not refresh. Check that your Laplace client is running."))
 				.finally(() => {
 					polling.current = false;
 				});
@@ -95,7 +95,15 @@ function App() {
 		}
 	}
 	return view ? (
-		<ApprovalCard view={view} busy={busy} error={error} act={(a, s) => void act(a, s)} />
+		<ApprovalCard
+			view={view}
+			busy={busy}
+			error={error}
+			act={(a, s) => void act(a, s)}
+			openSignIn={(url) => {
+				void openLink(url).catch((error) => setError(approvalError(error)));
+			}}
+		/>
 	) : (
 		<p role="status">Finding your browser connection…</p>
 	);

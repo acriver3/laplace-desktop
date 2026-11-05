@@ -81,7 +81,13 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 		const destination = new URL(destinations[0]);
 		assert.equal(destination.protocol, "codex:");
 		assert.ok(destination.searchParams.get("prompt").includes(setupEntry.id));
-		assert.ok(destination.searchParams.get("prompt").includes("local_connectors_install"));
+		const prompt = destination.searchParams.get("prompt");
+		const prefix = `Please set up ${setupEntry.name} with Laplace using these instructions: `;
+		assert.ok(prompt.startsWith(prefix));
+		const setupUrl = new URL(prompt.slice(prefix.length));
+		assert.equal(setupUrl.origin + setupUrl.pathname, setupEntry.setupUrl);
+		assert.equal(setupUrl.searchParams.get("version"), setupEntry.version);
+		assert.equal(setupUrl.searchParams.get("environment"), "Local development");
 		const invalid = await page.evaluate(async () => {
 			try {
 				await window.laplaceDesktop.invoke("shell.catalogSetup", {

@@ -92,9 +92,13 @@ export async function openBrowserApprovalPage(
 					form("focus", hidden("profileId", p.profileId), `Finish signing in · ${p.profileLabel}`),
 				)
 				.join("");
+			const signIn =
+				view.state === "sign_in_required" && view.signInUrl
+					? `<p><a href="${escape(view.signInUrl)}" target="_blank" rel="noreferrer">Sign in to ${escape(view.provider)}</a></p>`
+					: "";
 			res.setHeader("Content-Type", "text/html; charset=utf-8");
 			res.end(
-				`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">${refresh}<title>Laplace browser approval</title><style>body{font:16px system-ui;max-width:45rem;margin:3rem auto;padding:1rem}button{padding:.6rem;margin:.5rem 0}li{margin:1rem 0}</style><main><h1>Connect ${escape(view.provider)}</h1><p>${escape(view.workspace)}</p><p>${escape(view.message)}</p><ul>${view.scopes.map((s) => `<li>${escape(s)}</li>`).join("")}</ul><ul>${candidates}</ul>${focus}${form("disconnect", "", "Cancel or disconnect")}<p><a href="${route}">Refresh connection status</a></p></main></html>`,
+				`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">${refresh}<title>Laplace browser approval</title><style>body{font:16px system-ui;max-width:45rem;margin:3rem auto;padding:1rem}button{padding:.6rem;margin:.5rem 0}li{margin:1rem 0}</style><main><h1>Connect ${escape(view.provider)}</h1><p>${escape(view.workspace)}</p><p>${escape(view.message)}</p><ul>${view.scopes.map((s) => `<li>${escape(s)}</li>`).join("")}</ul><ul>${candidates}</ul>${signIn}${focus}${form("disconnect", "", "Cancel or disconnect")}<p><a href="${route}">Refresh connection status</a></p></main></html>`,
 			);
 		})().catch(() => {
 			if (!res.headersSent) res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });

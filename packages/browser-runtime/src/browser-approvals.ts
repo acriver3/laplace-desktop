@@ -7,6 +7,7 @@ import {
 	identityKey,
 	browserCandidate,
 	browserProviders,
+	browserSignInUrl,
 	type BrowserApprovalView,
 	type BrowserCandidate,
 	type BrowserProviderId,
@@ -67,6 +68,17 @@ export class BrowserApprovals {
 	private capabilities = new Map<
 		string,
 		{ requestId: string; clientId: string; candidate: BrowserCandidate; expires: number }
+	>();
+	private chatReviews = new Map<
+		string,
+		{
+			requestId: string;
+			clientId: string;
+			candidate: BrowserCandidate;
+			scopeRevision: string;
+			scopes: string;
+			expires: number;
+		}
 	>();
 	private timer?: ReturnType<typeof setInterval>;
 	private ticking = false;
@@ -177,6 +189,7 @@ export class BrowserApprovals {
 				requestId: id,
 				provider: browserProviders[provider].label,
 				workspace,
+				signInUrl: browserSignInUrl(provider, workspace),
 				scopes: browserProviders[provider].scopes,
 				state: "discovering",
 				candidates: [],
@@ -222,6 +235,67 @@ export class BrowserApprovals {
 	}
 	list() {
 		return [...this.requests.values()].filter((r) => !r.terminal).map((r) => r.view);
+	}
+	/** A model-visible review is distinct from the UI-only capability. The host agent
+	 * must present these details and obtain the user's explicit reply before confirmChat. */
+	reviewChat(id: string, clientId: string, candidateId?: string) {
+		const r = this.get(id, clientId);
+		for (const [key, value] of this.chatReviews)
+			if (value.expires <= Date.now() || (value.requestId === id && value.clientId === clientId))
+				this.chatReviews.delete(key);
+		if (r.view.state !== "approval_required")
+			return {
+				view: r.view,
+				instructions:
+					r.view.state === "sign_in_required"
+						? "Give the user signInUrl to sign in in their existing Chrome profile, then check this request again. Do not approve automatically."
+						: "Wait for account discovery or resolve the displayed status before requesting approval.",
+			};
+		const selection = candidateId ?? r.view.selectedId;
+		const candidate = r.view.candidates.find((item) => item.id === selection);
+		if (!candidate) throw Error("Choose one of the displayed accounts before requesting approval.");
+		const reviewId = crypto.randomUUID();
+		const expires = Math.min(r.expiresAt, Date.now() + 5 * 60_000);
+		this.chatReviews.set(reviewId, {
+			requestId: id,
+			clientId,
+			candidate: structuredClone(candidate),
+			scopeRevision: browserProviders[r.provider].revision,
+			scopes: JSON.stringify(r.view.scopes),
+			expires,
+		});
+		return {
+			view: r.view,
+			reviewId,
+			account: candidate.identity,
+			profile: candidate.profileLabel,
+			expiresAt: new Date(expires).toISOString(),
+			instructions:
+				"Show the selected account, browser profile and every requested scope. Ask the user to reply approve. Stop and wait for that explicit reply before calling local_connectors_browser_confirm with this requestId, reviewId and confirmed:true. A setup request alone is not approval. Never reuse a reply for a different or expired review.",
+		};
+	}
+	async confirmChat(id: string, clientId: string, reviewId: string, confirmed: boolean) {
+		const r = this.get(id, clientId);
+		const review = this.chatReviews.get(reviewId);
+		if (!confirmed || !review || review.requestId !== id || review.clientId !== clientId)
+			throw Error("Explicit approval of this chat review is required.");
+		this.chatReviews.delete(reviewId);
+		if (
+			review.expires <= Date.now() ||
+			r.terminal ||
+			r.view.state !== "approval_required" ||
+			review.scopeRevision !== browserProviders[r.provider].revision ||
+			review.scopes !== JSON.stringify(r.view.scopes) ||
+			!r.view.candidates.some((c) => JSON.stringify(c) === JSON.stringify(review.candidate))
+		)
+			throw Error(
+				"The review expired or the account or access changed. Ask the user to review again.",
+			);
+		// The existing approval path independently rechecks live browser identity,
+		// permissions and expiry before persisting consent or authorizing execution.
+		const capability = this.review(id, clientId).capabilities[review.candidate.id];
+		if (!capability) throw Error("The account is no longer available.");
+		return this.approve(id, clientId, capability);
 	}
 	/** Only UI metadata receives these secrets; model-visible status never does. */
 	review(id: string, clientId: string) {
@@ -432,7 +506,7 @@ export class BrowserApprovals {
 									: review.hint === "permission_required"
 										? "Allow the updated extension’s site permissions in Chrome."
 										: review.hint === "sign_in_required"
-											? "Open your service tab, or choose Finish signing in. Closed tabs stay closed."
+											? "Sign in using the service link in your existing Chrome profile. This request will detect the account; closed tabs stay closed until you open them."
 											: "Looking for the browser extension. Check that it is installed and Chrome is running.",
 							);
 						} catch {

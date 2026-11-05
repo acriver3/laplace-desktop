@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { slackWorkspace } from "./slack-browser";
+
 export const browserIdentity = z
 	.object({ workspace: z.string().url().max(2048), userId: z.string().min(1).max(200) })
 	.passthrough();
@@ -50,10 +52,16 @@ export const browserProviders = {
 	},
 } as const;
 export type BrowserProviderId = keyof typeof browserProviders;
+export function browserSignInUrl(provider: BrowserProviderId, workspace: string) {
+	if (provider === "outlook") return "https://outlook.cloud.microsoft/mail/";
+	if (provider === "ycombinator") return "https://apply.ycombinator.com/";
+	return slackWorkspace(workspace);
+}
 export type BrowserApprovalView = {
 	requestId: string;
 	provider: string;
 	workspace: string;
+	signInUrl?: string;
 	scopes: readonly string[];
 	state:
 		| "discovering"

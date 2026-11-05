@@ -1,12 +1,12 @@
 {
 	"repository": "https://github.com/acriver3/laplace-mcp-library",
-	"revision": "9b423de07946da6733a163c7a3f9d3d8f33e7ab2",
-	"version": "0.4.0",
+	"revision": "9d7725940206bbfc9a63952503c197488ff93a23",
+	"version": "0.4.1",
 	"status": "source-candidate",
 	"files": {
-		"src/approval-page.ts": "f9ef1bfe06a4505182ad6f8a1b798892d3169b61a92c4d05509ad1270fcf256c",
-		"src/browser-approval.ts": "50fbecd1ed2680c1689b81838c2093160dc3fc4025239f9bf3c5f7e4fff42222",
-		"src/browser-approvals.ts": "27572d0a439be880d890f5e681fa11907458e3d1ab45e26d0323c5ba92aba7b0",
+		"src/approval-page.ts": "f839784433c9bed17bbd17a7c84bfbbbd51a1dc3038f8afa14869f59830d4b49",
+		"src/browser-approval.ts": "032dc36679ecfc08f452aeae0b4e617ab65593ac615e625adbadfb78d45eb9dc",
+		"src/browser-approvals.ts": "12f3d1f09e48470129a6df64705d2df9aecf172e41db6593df18f4a3db7e17e6",
 		"src/browser-connection-relay.ts": "51424e4cdcc307810e0fd1d4f05824e0fe62c5f46253a30e07479fda629d5793",
 		"src/browser-extension-id.ts": "da1dfa6f9b15fa6fb29e90b00ca151173a6afcfdb1fd40e72bd5551a3446962a",
 		"src/browser-native-entry.ts": "62aceb0ea4e552917e4a5e9ac1b663ae9b6ecab807c07841a47f995cd7ec504a",
