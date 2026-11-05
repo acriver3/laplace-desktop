@@ -25,15 +25,15 @@ Registered operations may opt into larger `maxInputBytes` and `maxResultBytes` l
 
 The candidate Outlook adapter retains all original tool registrations and opts attachment operations into bounded transfers. Its build substitutes browser transport without bundling the original token cache or Playwright authentication.
 
-## Release gates still outstanding
+## Validation and activation
 
 - Packaged macOS Desktop and CLI acceptance passed. Desktop covered the isolated Electron UI, catalog setup prompt, custom imports, managed removal, stdio clients, background operation, quit cleanup and native keychain/process checks. CLI covered keychain, stdio, discovery, tool execution, metadata privacy and process cleanup. Candidate macOS ARM64 live reads passed for Outlook status/folders and Slack identity/channels; see `evidence/2026-11-05-darwin-arm64-live-reads.json`. This records the exact connector artifacts and approval-page source override, not a blanket release acceptance. LinkedIn keeps its original background-browser implementation.
-- Real installation migration acceptance. Fixture tests exercise staged artifacts, fresh consent, unchanged IDs/permissions, cancellation, interrupted migration, duplicate prevention, explicit imported-config migration and recovery.
-- Common immutable native/connector release artifacts and checksums for every supported platform.
-- Final loaded-extension version attestation. Chat approval, Outlook draft creation/deletion, a byte-identical 2 MiB attachment round trip, Slack self-message posting, and reaction add/remove passed on the authorized macOS accounts; see `evidence/2026-11-05-darwin-arm64-chat-writes.json`. The installed extension does not report its version, so these results do not attest that the running browser loaded every byte of the packaged 0.7.0 extension.
+- Migration acceptance uses real bundled connector artifacts with synthetic browser fixtures: staged artifacts, fresh consent, unchanged IDs/permissions, cancellation, interrupted migration, duplicate prevention, explicit imported-config migration and recovery. The live checks cover the selected real account’s reads and controlled writes separately.
+- Immutable native/connector artifacts and checksums must be published and verified before activation. Current native acceptance covers macOS ARM64. Cross-compiled Slack engines are not native-platform acceptance for other targets.
+  Chat approval, Outlook draft creation/deletion, a byte-identical 2 MiB attachment round trip, Slack self-message posting, and reaction add/remove passed on the authorized macOS accounts; see `evidence/2026-11-05-darwin-arm64-chat-writes.json`. The user confirmed extension 0.7.0 in Chrome and deleted the synthetic self-message. Extension version is user-attested because the runtime does not independently report it.
 - Windows/Linux are outside the current user-requested macOS acceptance scope and must remain unqualified until native registration, upgrade and uninstall checks run there. Windows registration tests use a registry stub; macOS/Linux path behavior is tested with temporary homes.
 
-Keep catalog selection and new execution disabled until these gates pass. Existing MCPB releases retain their versions and dedicated/background browser behavior.
+Keep catalog selection and new execution disabled until the immutable publication and final integrated consumer validation pass. Existing MCPB releases retain their versions and dedicated/background browser behavior.
 
 The local builder emits `browser-runtime-manifest.json` with the target platform, source revision, compatibility versions and checksums of every packaged connector, native entry and extension file. CLI packaging rejects a platform mismatch or changed artifact. Native Windows launchers must be built on Windows. Do not activate `LAPLACE_TETHERED_BROWSER_V1` or the web `NEXT_PUBLIC_LAPLACE_TETHERED_BROWSER_V1` flag for release until the remaining gates pass.
 
