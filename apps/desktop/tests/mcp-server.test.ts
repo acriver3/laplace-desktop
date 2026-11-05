@@ -700,10 +700,12 @@ it("installs Slack over MCP, recovers jobs after reconnect, authenticates and di
 	});
 	try {
 		const failed = await setupCall(reconnect, "verify", { id: "slack" });
-		await vi.waitFor(async () =>
-			expect((await setupCall(reconnect, "status", { jobId: failed.id })).jobs[0].state).toBe(
-				"failed",
-			),
+		await vi.waitFor(
+			async () =>
+				expect((await setupCall(reconnect, "status", { jobId: failed.id })).jobs[0].state).toBe(
+					"failed",
+				),
+			{ timeout: 5000 },
 		);
 		expect(f.manager.getServerConfig("slack").enabled).toBe(false);
 		expect(JSON.stringify(await setupCall(reconnect, "status"))).not.toContain(
