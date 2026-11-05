@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 async function fixture() {
 	const root = await mkdtemp(join(tmpdir(), "laplace-broker-"));
-	cleanup.push(() => rm(root, { recursive: true, force: true }));
+	cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
 	const keys = new Map<string, string>();
 	const entries: EntryFactory = async (key) => ({
 		getPassword: () => keys.get(key) ?? null,
@@ -155,17 +155,28 @@ it("records interrupted execution and never replays it after helper restart", as
 	await f.propose();
 	const r = await f.review();
 	await f.call({ action: "approve", capability: r.capability, itemIds: [f.itemId] });
+	// Approval schedules execution after persisting its receipt. Interrupt only once
+	// the adapter has actually started, rather than racing that durable write.
+	await vi.waitFor(() => expect(f.adapter.execute).toHaveBeenCalledTimes(1));
 	const restarted = new ConnectionBroker(f.root, f.adapter, () => {}, f.entries);
-	await restarted.initialize();
-	const result = await restarted.call(
-		f.principal,
-		{ action: "status", sessionId: f.sessionId },
-		randomUUID(),
-	);
-	expect(result.view.items[0]!.state).toBe("failed");
-	expect(f.adapter.execute).toHaveBeenCalledTimes(1);
-	finish();
-	await new Promise((resolve) => setTimeout(resolve, 20));
+	try {
+		await restarted.initialize();
+		const result = await restarted.call(
+			f.principal,
+			{ action: "status", sessionId: f.sessionId },
+			randomUUID(),
+		);
+		expect(result.view.items[0]!.state).toBe("failed");
+		expect(f.adapter.execute).toHaveBeenCalledTimes(1);
+	} finally {
+		finish();
+		// Drain the original simulated process before removing its temporary store.
+		await vi.waitFor(async () => {
+			const result = await f.call({ action: "status" });
+			expect(result.view.items[0]!.state).toBe("connected");
+		});
+		await restarted.shutdown();
+	}
 });
 it("revokes remaining work without pretending to undo completed connections", async () => {
 	const f = await fixture();
