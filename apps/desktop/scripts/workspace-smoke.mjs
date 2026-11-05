@@ -224,7 +224,7 @@ export async function checkLocalData(page, invoke) {
 	await nav.getByRole("button", { name: "Connections", exact: true }).click();
 	const available = page.getByRole("list", { name: "Available connections" });
 	const local = page.getByRole("list", { name: "Local connections" });
-	const yc = available.getByText("Y Combinator", { exact: true });
+	const yc = available.getByText("Y Combinator · Demo Only", { exact: true });
 	await expect(yc).toBeVisible();
 	await invoke("catalog.install", { catalogId: "ycombinator-demo", configuration: {} });
 	const ycOptions = local.getByRole("button", { name: /^Options for Y Combinator / });

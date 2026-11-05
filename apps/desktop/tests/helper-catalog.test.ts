@@ -271,6 +271,9 @@ it.each(["canvas", "slack-ready"])(
 			expect(installer.jobs().find((job) => job.id === failed.id)?.status).toBe("failed"),
 		);
 		expect(configs.get(id)?.enabled).toBe(false);
+		expect((await installer.list()).find((item) => item.id === entry.id)?.installed).toBe(true);
+		configs.delete(id);
+		expect((await installer.list()).find((item) => item.id === entry.id)?.installed).toBe(false);
 	},
 );
 

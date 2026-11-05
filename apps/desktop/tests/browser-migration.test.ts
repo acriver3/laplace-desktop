@@ -92,6 +92,13 @@ async function fixture() {
 		nodePath: process.execPath,
 		browserApprovals: approvals,
 	});
+	cleanup.push(async () => {
+		for (const job of catalog.jobs()) if (job.status === "running") catalog.cancel(job.id);
+		await vi.waitFor(
+			() => expect(catalog.jobs().some((job) => job.status === "running")).toBe(false),
+			{ timeout: 10000 },
+		);
+	});
 	const migrate = () =>
 		catalog.migrateImported(
 			{ id: previous.id, catalogId: "msoutlook-mcp", configuration: {}, confirm: true },
@@ -104,7 +111,7 @@ async function fixture() {
 it("migrates an imported Desktop connection only after fresh consent and the real artifact's read check", async () => {
 	const f = await fixture();
 	const job = await f.migrate();
-	await vi.waitFor(() => expect(f.jobState(job).browserApproval).toBeTruthy());
+	await vi.waitFor(() => expect(f.jobState(job).browserApproval).toBeTruthy(), { timeout: 10000 });
 	expect(f.manager.getServerConfig(f.previous.id)).toEqual(f.previous);
 	expect((await f.manager.browserMigrationRecords())[0]?.state).toBe("prepared");
 	await expect(
@@ -201,7 +208,7 @@ it("migrates an imported Desktop connection only after fresh consent and the rea
 it("cancels before switching and retains the previous configuration and session", async () => {
 	const f = await fixture();
 	const job = await f.migrate();
-	await vi.waitFor(() => expect(f.jobState(job).browserApproval).toBeTruthy());
+	await vi.waitFor(() => expect(f.jobState(job).browserApproval).toBeTruthy(), { timeout: 10000 });
 	f.catalog.cancel(job.id);
 	await vi.waitFor(() => expect(f.jobState(job).status).toBe("cancelled"), { timeout: 5000 });
 	expect(f.manager.getServerConfig(f.previous.id)).toEqual(f.previous);

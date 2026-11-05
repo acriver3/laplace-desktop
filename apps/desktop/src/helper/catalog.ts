@@ -661,7 +661,12 @@ export class CatalogInstaller {
 	private attachedId(entry: BundleCatalogEntry) {
 		return [...this.installations.keys()].find((id) => {
 			try {
-				return this.installations.get(id)?.catalogId === entry.id;
+				const installation = this.installations.get(id)!;
+				return (
+					installation.catalogId === entry.id &&
+					this.manager.getServerConfig(id).identity ===
+						`${installation.catalogId}@${installation.version}`
+				);
 			} catch {
 				return false;
 			}
