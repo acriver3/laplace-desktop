@@ -540,6 +540,23 @@ export class DesktopManager {
 			return this.listServers();
 		});
 	}
+	/** Internal verified-release replacement; never exposed as an arbitrary IPC operation. */
+	updateMaintenance = () => false;
+	async replaceManagedUpdate(config: ServerConfig, expected?: ServerConfig) {
+		return this.serialize(async () => {
+			this.epoch++;
+			await this.store.mutate((state) => {
+				const current = state.servers.find((c) => c.id === config.id);
+				if (!current) throw Error("Connector removed during update");
+				if (expected && JSON.stringify(current) !== JSON.stringify(expected))
+					throw Error("Connector changed before atomic update switch");
+				state.servers = state.servers.map((c) => (c.id === config.id ? config : c));
+			});
+			await this.reload();
+			if (config.enabled) await this.supervisor.start(config.id);
+			this.changed();
+		});
+	}
 	async updateServer(id: string, value: unknown) {
 		const previous = this.getServerConfig(id);
 		const patch = z.record(z.string(), z.unknown()).parse(value);

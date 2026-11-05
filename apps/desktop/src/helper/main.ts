@@ -4,8 +4,24 @@ import { homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { verifyBrowserConfiguration } from "@repo/local-mcp-core/browser-catalog";
+import {
+	ConnectorUpdates,
+	type ConnectorUpdateStatus,
+} from "@repo/local-mcp-core/connector-updates";
+import { retainRuntime } from "@repo/local-mcp-core/retained-runtime";
+import {
+	UpdateCoordination,
+	sharedBrowserUpdateRoot,
+} from "@repo/local-mcp-core/update-coordination";
+import {
+	automaticUpdatesEnabled,
+	UpdatePolicyStore,
+	updateInstanceKey,
+} from "@repo/local-mcp-core/update-policy";
 import { z } from "zod";
 
+import desktopPackage from "../../package.json";
 import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
 import { credentialMessages } from "../shared/credential-setup";
 import {
@@ -39,6 +55,7 @@ import { previewLegacyMigration, migrateSelectedLegacy } from "./migration";
 import { PortableConnectors } from "./portable";
 import { startPortableRelay } from "./portable-relay";
 import { startMcpServer } from "./server";
+import { stableBridge } from "./stable-bridge";
 
 async function acquireLock(root: string) {
 	await mkdir(root, { recursive: true, mode: 0o700 });
@@ -81,6 +98,11 @@ export async function startHelper() {
 		if (process.connected) process.send?.(message, () => {});
 	};
 	const manager = new DesktopManager(root, resources, origin);
+	const bridgeRegistration = await stableBridge(
+		root,
+		process.execPath,
+		join(dirname(process.argv[1]!), "bridge.cjs"),
+	);
 	const credentials = new CredentialBroker(
 		root,
 		resources,
@@ -207,6 +229,8 @@ export async function startHelper() {
 				try {
 					catalog.cancel(job.id);
 				} catch {}
+		connectorUpdates.cancel();
+		await sharedUpdates.stop();
 		await server.close();
 		await hosted.shutdown();
 		await manager.shutdown();
@@ -226,17 +250,217 @@ export async function startHelper() {
 	process.once("disconnect", () => void stop());
 	process.once("SIGTERM", () => void stop());
 	process.once("SIGINT", () => void stop());
+	let updateRelease: (() => void) | undefined;
+	let activeHelperRequests = 0;
+	let deviceBusy = true;
+	let recoverPending = true;
+	const updateBusy = () =>
+		deviceBusy ||
+		activeHelperRequests > 0 ||
+		(manager.mcpDiagnostics()?.activeCalls ?? 0) > 0 ||
+		manager.supervisor.activity() ||
+		manager.credentialRequests() > 0 ||
+		catalog.jobs().some((job) => job.status === "running") ||
+		browserApprovals
+			.list()
+			.some((item) => !["approved", "cancelled", "expired", "error"].includes(item.state));
+	const sharedUpdates = new UpdateCoordination(
+		sharedBrowserUpdateRoot(),
+		updateBusy,
+		() => manager.supervisor.tryMaintenance(),
+		async () => {},
+	);
+	await sharedUpdates.start();
+	manager.updateMaintenance = () => sharedUpdates.active;
+	const connectorUpdates = new ConnectorUpdates({
+		root,
+		version: desktopPackage.version,
+		kind: "desktop",
+		entries: manager.entries,
+		configurations: async () => (await manager.store.read()).servers,
+		replace: (config, expected) => manager.replaceManagedUpdate(config, expected),
+		verify: async (id) => {
+			if (manager.supervisor.states().find((s) => s.id === id)?.status !== "online")
+				throw Error("Updated connector did not start");
+		},
+		maintenance: async (id) =>
+			sharedUpdates.acquire(() => manager.supervisor.tryConnectorMaintenance(id)),
+		busy: updateBusy,
+		toolNames: (id) =>
+			manager.supervisor
+				.states()
+				.find((s) => s.id === id)
+				?.tools.map((t) => t.name) ?? [],
+	});
+	catalog.updateResolver = async (id) => {
+		const installed = await connectorUpdates.installed(id);
+		if (installed) return installed;
+		try {
+			const config = manager.getServerConfig(id);
+			if (!config.managedBrowser || config.transport !== "stdio") return;
+			const receipt = await verifyBrowserConfiguration(resources, config);
+			return {
+				catalogId: receipt.catalogId,
+				version: receipt.runtimeVersion,
+				mode: "tethered" as const,
+				directory: dirname(config.args[0]!),
+			};
+		} catch {
+			return;
+		}
+	};
+	const connectorStatus = async () => {
+		const rows: ConnectorUpdateStatus[] = await connectorUpdates.status();
+		const policy = await new UpdatePolicyStore().read();
+		for (const entry of await catalog.list()) {
+			if (!entry.installed || !entry.serverId || rows.some((row) => row.id === entry.serverId))
+				continue;
+			try {
+				const enrollment = await catalog.updateEnrollment(entry.serverId);
+				const config = manager.getServerConfig(entry.serverId);
+				rows.push({
+					id: config.id,
+					name: config.name,
+					version: enrollment.version,
+					pinned: !!policy.pins[updateInstanceKey(root, config.id)],
+					message: "Check the connector catalog to verify update eligibility.",
+				});
+			} catch {
+				/* Imports remain unmanaged. */
+			}
+		}
+		return rows;
+	};
+	void connectorUpdates.recover().catch(() => {});
 	process.on("message", (raw: unknown) => {
 		void (async () => {
 			const parsed = helperRequest.safeParse(raw);
 			if (!parsed.success) return;
 			const request = parsed.data;
+			const counted = !request.method.startsWith("updates.") && request.method !== "status";
+			if (counted) activeHelperRequests++;
 			try {
 				const input: any = helperInputs[request.method].parse(request.input);
 				if (closing && request.method !== "shutdown")
 					throw new Error("Laplace Desktop is stopping");
+				if (
+					(updateRelease || sharedUpdates.active) &&
+					![
+						"updates.activity",
+						"updates.deviceActivity",
+						"updates.release",
+						"shutdown",
+						"status",
+					].includes(request.method)
+				)
+					throw new Error("Update maintenance in progress; retry shortly.");
 				let result: unknown;
 				switch (request.method) {
+					case "updates.retain":
+						if (updateBusy())
+							throw Error("Local work is active; retry the update when it finishes.");
+						for (const config of (await manager.store.read()).servers) {
+							if (!config.managedBrowser) continue;
+							const release = manager.supervisor.tryConnectorMaintenance(config.id);
+							if (!release) throw Error("Connector is busy; retry the update shortly.");
+							try {
+								await verifyBrowserConfiguration(resources, config);
+								const retained = await retainRuntime(root, resources, config, manager.entries);
+								if (retained !== config) {
+									await manager.replaceManagedUpdate(retained);
+									await connectorUpdates.relocate(config.id, retained);
+								}
+							} finally {
+								release();
+							}
+						}
+						result = true;
+						break;
+					case "updates.cancelConnector":
+						connectorUpdates.cancel(input.id);
+						result = await connectorStatus();
+						break;
+					case "updates.connectors":
+						result = await connectorStatus();
+						break;
+					case "updates.checkConnectors":
+						result = await connectorUpdates.check();
+						for (const entry of await catalog.list()) {
+							if (
+								!entry.serverId ||
+								!entry.installed ||
+								(await connectorUpdates.status()).some((row) => row.id === entry.serverId)
+							)
+								continue;
+							try {
+								const e = await catalog.updateEnrollment(entry.serverId);
+								await connectorUpdates.enroll(e.id, e.directory, e.catalogId, e.version, e.mode);
+							} catch {
+								/* Unverifiable legacy entries remain unmanaged. */
+							}
+						}
+						result = await connectorStatus();
+						break;
+					case "updates.prepareConnectors":
+						if (automaticUpdatesEnabled())
+							for (const row of await connectorUpdates.status())
+								if (row.availableVersion && !row.pinned && !row.message)
+									await connectorUpdates.prepare(row.id, undefined, true);
+						result = true;
+						break;
+					case "updates.automaticConnectors":
+						if (automaticUpdatesEnabled())
+							for (const row of await connectorUpdates.status())
+								if (row.availableVersion && !row.pinned && !row.message)
+									await connectorUpdates.apply(row.id, true);
+						result = true;
+						break;
+					case "updates.pin":
+						await connectorUpdates.pin(input.id, input.pinned);
+						result = await connectorStatus();
+						break;
+					case "updates.enroll": {
+						const e = await catalog.updateEnrollment(input.id);
+						await connectorUpdates.enroll(e.id, e.directory, e.catalogId, e.version, e.mode);
+						await connectorUpdates.apply(e.id, false, undefined, true);
+						result = await connectorStatus();
+						break;
+					}
+					case "updates.applyConnector":
+						if (input.automatic && !automaticUpdatesEnabled())
+							throw Error("Automatic connector updates are not activated");
+						if (!input.automatic) await connectorUpdates.recover();
+						await connectorUpdates.apply(input.id, input.automatic);
+						result = await connectorStatus();
+						break;
+					case "updates.deviceActivity":
+						if (input.busy && sharedUpdates.active)
+							throw Error(
+								"Update maintenance is active; operation was not started. Retry shortly.",
+							);
+						deviceBusy = input.busy;
+						if (!deviceBusy && recoverPending) {
+							await connectorUpdates.recover();
+							recoverPending = false;
+						}
+						result = true;
+						break;
+					case "updates.activity":
+						result = { busy: updateBusy() };
+						break;
+					case "updates.acquire":
+						if (updateRelease || updateBusy()) {
+							result = false;
+							break;
+						}
+						updateRelease = await sharedUpdates.acquire(() => manager.supervisor.tryMaintenance());
+						result = !!updateRelease;
+						break;
+					case "updates.release":
+						updateRelease?.();
+						updateRelease = undefined;
+						result = true;
+						break;
 					case "broker.authorizeAssistant":
 						result = await connectionBroker.authorizeAssistant(input.principalId, (p) =>
 							credentials.authorizeBrokerAssistant(p),
@@ -477,8 +701,7 @@ export async function startHelper() {
 						manager.client(input.clientId);
 						const registration = {
 							...input,
-							nodePath: process.execPath,
-							bridgePath: join(dirname(process.argv[1]!), "bridge.cjs"),
+							...bridgeRegistration,
 							root,
 						};
 						result =
@@ -551,6 +774,8 @@ export async function startHelper() {
 								? error.message
 								: "Local operation failed",
 				});
+			} finally {
+				if (counted) activeHelperRequests--;
 			}
 		})();
 	});

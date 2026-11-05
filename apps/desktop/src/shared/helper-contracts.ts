@@ -27,6 +27,19 @@ const origin = z
 		);
 	});
 export const helperInputs = {
+	"updates.activity": empty,
+	"updates.deviceActivity": z.object({ busy: z.boolean() }).strict(),
+	"updates.retain": empty,
+	"updates.connectors": empty,
+	"updates.cancelConnector": z.object({ id: id.optional() }).strict(),
+	"updates.checkConnectors": empty,
+	"updates.pin": z.object({ id, pinned: z.boolean() }).strict(),
+	"updates.applyConnector": z.object({ id, automatic: z.boolean().default(false) }).strict(),
+	"updates.enroll": z.object({ id }).strict(),
+	"updates.prepareConnectors": empty,
+	"updates.automaticConnectors": empty,
+	"updates.acquire": empty,
+	"updates.release": empty,
 	"broker.authorizeAssistant": z.object({ principalId: z.string() }).strict(),
 	"broker.enabled": empty,
 	"broker.stage": z
@@ -172,6 +185,13 @@ export const helperInputs = {
 } as const;
 export type HelperMethod = keyof typeof helperInputs;
 export const privateHelperMethods = new Set<HelperMethod>([
+	"updates.retain",
+	"updates.activity",
+	"updates.deviceActivity",
+	"updates.acquire",
+	"updates.release",
+	"updates.prepareConnectors",
+	"updates.automaticConnectors",
 	"catalog.notificationsDelivered",
 	"link.prepare",
 	"link.complete",

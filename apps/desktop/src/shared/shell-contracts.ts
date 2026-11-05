@@ -20,6 +20,15 @@ export const shellRequest = z.discriminatedUnion("method", [
 	...pointRequests,
 	z
 		.object({
+			method: z.literal("shell.updatePreferences"),
+			input: z
+				.object({ desktop: z.boolean().optional(), connectors: z.boolean().optional() })
+				.strict(),
+		})
+		.strict(),
+	z.object({ method: z.literal("shell.updatePostpone") }).strict(),
+	z
+		.object({
 			method: z.literal("shell.brokerSetup"),
 			input: z
 				.object({

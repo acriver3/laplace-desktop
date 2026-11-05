@@ -32,7 +32,7 @@ await build({
 	format: "cjs",
 	target: "node24",
 	bundle: true,
-	external: ["electron"],
+	external: ["electron", "@napi-rs/keyring"],
 	logLevel: "info",
 });
 await build({

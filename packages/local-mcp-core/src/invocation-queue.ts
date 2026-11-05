@@ -1,8 +1,27 @@
 /** One executor per connector. Cancelled queued work is removed without waiting for its predecessor. */
 export class InvocationQueue {
 	private active = false;
+	private maintenance = false;
 	private waiting: Array<() => void> = [];
+	get activity() {
+		return { active: this.active ? 1 : 0, queued: this.waiting.length };
+	}
+	/** Acquisition and admission run synchronously, so a new call cannot race this check. */
+	tryMaintenance(): (() => void) | undefined {
+		if (this.maintenance || this.active || this.waiting.length) return;
+		this.maintenance = true;
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			this.maintenance = false;
+		};
+	}
 	add<T>(work: () => Promise<T>, signal: AbortSignal): Promise<T> {
+		if (this.maintenance)
+			return Promise.reject(
+				new Error("Tool call was not started: update maintenance; retry later"),
+			);
 		return new Promise<T>((resolve, reject) => {
 			const cancel = () => {
 				const index = this.waiting.indexOf(run);

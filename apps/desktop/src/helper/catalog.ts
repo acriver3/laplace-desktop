@@ -517,6 +517,15 @@ export function resolveManifestConfiguration(
 }
 
 export class CatalogInstaller {
+	updateResolver?: (id: string) => Promise<
+		| {
+				catalogId: string;
+				version: string;
+				mode: "tethered" | "background-browser";
+				directory: string;
+		  }
+		| undefined
+	>;
 	private readonly work = new Map<string, CatalogJob>();
 	private readonly controllers = new Map<string, AbortController>();
 	private readonly installations = new Map<string, Installation>();
@@ -535,19 +544,27 @@ export class CatalogInstaller {
 			);
 			if (Array.isArray(saved))
 				for (const item of saved) {
+					const updated =
+						typeof item?.serverId === "string"
+							? await this.updateResolver?.(item.serverId)
+							: undefined;
 					const entry = allBundleCatalog.find(
-						(entry) => entry.id === item?.catalogId && entry.version === item.version,
+						(entry) =>
+							entry.id === item?.catalogId &&
+							(entry.version === item.version ||
+								(updated?.catalogId === item.catalogId && updated?.mode === entry.browserMode)),
 					);
 					if (
 						entry &&
 						/^[A-Za-z0-9_-]{1,80}$/.test(item.serverId) &&
-						item.directory ===
-							join(
-								this.options.root,
-								"connectors",
-								item.serverId === serverIds[entry.id] ? entry.id : item.serverId,
-								entry.version,
-							)
+						(item.directory === updated?.directory ||
+							item.directory ===
+								join(
+									this.options.root,
+									"connectors",
+									item.serverId === serverIds[entry.id] ? entry.id : item.serverId,
+									item.version,
+								))
 					) {
 						const configuration = catalogConfiguration(
 							entry,
@@ -987,9 +1004,36 @@ export class CatalogInstaller {
 		);
 	}
 
+	async updateEnrollment(id: string) {
+		const { installation, entry } = await this.installed(id);
+		const config = this.manager.getServerConfig(id);
+		return {
+			id,
+			directory:
+				config.managedBrowser && config.transport === "stdio"
+					? dirname(config.args[0]!)
+					: installation.directory,
+			catalogId: entry.id,
+			version: installation.version,
+			mode: entry.browserMode,
+		};
+	}
 	private async installed(id: string) {
 		await this.initialize();
 		const installation = this.installations.get(id);
+		const updated = await this.updateResolver?.(id);
+		if (installation && updated && updated.catalogId === installation.catalogId) {
+			installation.version = updated.version;
+			installation.directory = updated.directory;
+			const base = allBundleCatalog.find(
+				(candidate) => candidate.id === updated.catalogId && candidate.browserMode === updated.mode,
+			);
+			if (
+				base &&
+				this.manager.getServerConfig(id).identity === `${updated.catalogId}@${updated.version}`
+			)
+				return { installation, entry: { ...base, version: updated.version, managedUpdate: true } };
+		}
 		const entry = allBundleCatalog.find(
 			(candidate) =>
 				candidate.id === installation?.catalogId && candidate.version === installation.version,

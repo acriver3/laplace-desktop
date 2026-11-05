@@ -167,6 +167,22 @@ it.skipIf(
 									fields: [],
 								},
 							];
+						if (method === "shell.updatePreferences") {
+							test.update({
+								updates: { ...shell.updates, policy: { ...shell.updates?.policy, ...input } },
+							});
+							return shell;
+						}
+						if (method === "updates.connectors" || method === "updates.pin")
+							return [
+								{
+									id: "updates-fixture",
+									name: "Managed update fixture",
+									version: "1.0.0",
+									availableVersion: "1.1.0",
+									pinned: input?.pinned ?? false,
+								},
+							];
 						if (method === "shell.local") {
 							test.update({ mode: "local", section: input.section });
 							return structuredClone(shell);
@@ -326,6 +342,29 @@ it.skipIf(
 			expect((await history()).some((entry: any) => entry.method === "shell.updateDownload")).toBe(
 				false,
 			);
+			await browserExpect(
+				page.getByLabel("Automatically update Laplace Desktop"),
+			).not.toBeChecked();
+			await browserExpect(
+				page.getByLabel("Automatically update managed connectors"),
+			).not.toBeChecked();
+			await page.getByLabel("Automatically update managed connectors").check();
+			expect(
+				(await history()).some(
+					(entry: any) =>
+						entry.method === "shell.updatePreferences" && entry.input.connectors === true,
+				),
+			).toBe(true);
+			await browserExpect(
+				page.getByText("Managed update fixture · Installed 1.0.0 · Available 1.1.0"),
+			).toBeVisible();
+			await page.getByLabel("Keep this version").check();
+			expect(
+				(await history()).some(
+					(entry: any) => entry.method === "updates.pin" && entry.input.pinned === true,
+				),
+			).toBe(true);
+
 			await page.getByRole("button", { name: "View changes in 0.1.10" }).click();
 			expect((await history()).some((entry: any) => entry.method === "shell.updateChanges")).toBe(
 				true,

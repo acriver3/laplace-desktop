@@ -2,8 +2,6 @@ import { spawn } from "node:child_process";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { cp, lstat, rename, rm } from "./filesystem";
-
 import { z } from "zod";
 
 import {
@@ -20,8 +18,11 @@ import {
 	updateRoot,
 	versionSchema,
 	writeJson,
+	run,
+	runtimePath,
 	type Installation,
 } from "./common";
+import { cp, lstat, rename, rm, readdir, mkdir, copyFile, writeFile } from "./filesystem";
 
 export const pendingSchema = z
 	.object({
@@ -42,8 +43,13 @@ const journalSchema = z
 	.strict();
 export const stagedPackage = (root: string, id: string) =>
 	join(root, "staging", z.string().uuid().parse(id), "package");
+const installationDirectory = (installation: Installation) =>
+	installation.distribution === "squirrel" ? dirname(installation.path) : installation.path;
 export const backupPath = (installation: Installation) =>
-	join(dirname(installation.path), `.${basename(installation.path)}.previous-${installation.id}`);
+	join(
+		dirname(installationDirectory(installation)),
+		`.${basename(installationDirectory(installation))}.previous-${installation.id}`,
+	);
 const incomingPath = (installation: Installation, id: string) =>
 	join(dirname(installation.path), `.${basename(installation.path)}.incoming-${id}`);
 export const healthPath = (root: string, id: string) =>
@@ -123,16 +129,21 @@ export async function recoverInstallation(root: string, host: InstallerHost = na
 	if (journal.phase === "accepted") {
 		await writeJson(join(root, "installation.json"), {
 			...old,
+			path:
+				old.distribution === "squirrel"
+					? join(dirname(old.path), `app-${journal.next.version}`)
+					: old.path,
 			version: journal.next.version,
 			commit: journal.next.commit,
 		});
 	} else if (journal.phase !== "rolled-back") {
-		const backup = backupPath(old);
+		const backup = backupPath(old),
+			destination = installationDirectory(old);
 		if (await exists(backup)) {
 			// Retain a failed candidate for diagnosis, but never overwrite the previous app.
-			if (await exists(old.path))
-				await rename(old.path, incomingPath(old, journal.next.id) + ".failed");
-			await rename(backup, old.path);
+			if (await exists(destination))
+				await rename(destination, destination + ".failed-" + journal.next.id);
+			await rename(backup, destination);
 		} else if (!(await exists(old.path)))
 			throw new Error("The previous application is missing. Re-run source installation.");
 		await writeJson(join(root, "installation.json"), old);
@@ -172,6 +183,8 @@ async function replacePrepared(
 	assertDestination(installation.path);
 	if (host === nativeInstallerHost) await requireAppClosed(installation.path, installation.target);
 	const next = await validatePending(root, installation);
+	if (installation.distribution === "squirrel")
+		return installSquirrel(root, installation, next, host);
 	const incoming = incomingPath(installation, next.id),
 		backup = backupPath(installation);
 	if (await exists(join(root, "journal.json")))
@@ -209,6 +222,68 @@ async function replacePrepared(
 	});
 	await rm(join(root, "pending.json"), { force: true });
 	await rm(join(root, "journal.json"), { force: true });
+}
+
+async function installSquirrel(
+	root: string,
+	installation: Installation,
+	next: PendingUpdate,
+	host: InstallerHost,
+) {
+	const directory = dirname(installation.path),
+		backup = backupPath(installation);
+	const destination = join(directory, `app-${next.version}`);
+	assertDestination(destination);
+	if (await exists(join(root, "journal.json"))) throw Error("Recover the interrupted update first");
+	await rm(backup, { recursive: true, force: true });
+	await cp(directory, backup, { recursive: true, verbatimSymlinks: true });
+	const previousDigest = await packageDigest(directory);
+	if ((await packageDigest(backup)) !== previousDigest)
+		throw Error("Squirrel recovery copy failed integrity verification");
+	await writeJson(join(root, "journal.json"), { previous: installation, next, phase: "prepared" });
+	let launched: Awaited<ReturnType<InstallerHost["launch"]>> | undefined;
+	try {
+		await writeJson(join(root, "journal.json"), {
+			previous: installation,
+			next,
+			phase: "replacing",
+		});
+		// Squirrel receives a local feed containing only bytes checked against the signed release.
+		await run(
+			join(directory, "Update.exe"),
+			["--update", join(stagedPackage(root, next.id), ".laplace-squirrel")],
+			{ timeout: 600000 },
+		);
+		await writeJson(join(root, "journal.json"), {
+			previous: installation,
+			next,
+			phase: "launching",
+		});
+		await preserveSquirrelLaunchers(directory, backup, destination);
+		launched = await host.launch(destination, installation.target, next.id);
+		await host.waitForHealth(root, next);
+		await writeJson(join(root, "journal.json"), {
+			previous: installation,
+			next,
+			phase: "accepted",
+		});
+		await writeJson(join(root, "installation.json"), {
+			...installation,
+			path: destination,
+			version: next.version,
+			commit: next.commit,
+		});
+		await writeJson(join(root, "last-result.json"), {
+			ok: true,
+			message: `Updated to ${next.version}.`,
+		});
+		await rm(join(root, "pending.json"), { force: true });
+		await rm(join(root, "journal.json"), { force: true });
+	} catch (error) {
+		await launched?.stop();
+		await recoverInstallation(root, host);
+		throw error;
+	}
 }
 
 export async function applyFromHandoff(parentPid: number, nonce: string) {
@@ -268,4 +343,29 @@ export async function acknowledgeUpdate(nonce: string, version: string, root = u
 	)
 		throw new Error("Unexpected update startup receipt.");
 	await writeJson(healthPath(root, nonce), { version, commit: journal.next.commit });
+}
+
+export async function preserveSquirrelLaunchers(
+	directory: string,
+	backup: string,
+	destination: string,
+) {
+	// Keep historical assistant registrations usable when Squirrel removes app-* directories.
+	// Launch recipes are local constants; signed release metadata supplies no commands.
+	for (const name of await readdir(backup)) {
+		if (!/^app-\d+\.\d+\.\d+$/.test(name) || name === basename(destination)) continue;
+		const oldResources = runtimePath(join(directory, name), "win32-x64");
+		const oldNode = join(oldResources, "runtimes", "node.exe");
+		await mkdir(join(oldResources, "runtimes"), { recursive: true });
+		await mkdir(join(oldResources, "helper"), { recursive: true });
+		if (!(await exists(oldNode)))
+			await copyFile(join(runtimePath(destination, "win32-x64"), "runtimes", "node.exe"), oldNode);
+		const node = join(runtimePath(destination, "win32-x64"), "runtimes", "node.exe");
+		const bridge = join(runtimePath(destination, "win32-x64"), "helper", "bridge.cjs");
+		await writeFile(
+			join(oldResources, "helper", "bridge.cjs"),
+			`const {spawn}=require('node:child_process'); const child=spawn(${JSON.stringify(node)},[${JSON.stringify(bridge)},...process.argv.slice(2)],{stdio:'inherit',windowsHide:true}); child.on('error',()=>process.exit(1)); child.on('exit',code=>process.exit(code??1)); for(const signal of ['SIGINT','SIGTERM']) process.on(signal,()=>child.kill(signal));`,
+			{ mode: 0o600 },
+		);
+	}
 }
