@@ -13,8 +13,8 @@ import {
 	downloadBundle,
 	catalogConfiguration,
 	resolveManifestConfiguration,
-} from "../src/helper/catalog";
-import { bundleCatalog } from "../src/helper/library-catalog";
+} from "@repo/local-runtime/catalog";
+import { bundleCatalog } from "@repo/local-runtime/library-catalog";
 
 const folders: string[] = [];
 afterEach(async () => {

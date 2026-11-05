@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { expect, it } from "vitest";
-import { BrokerChrome } from "../src/helper/broker-chrome";
+import { BrokerChrome } from "@repo/local-runtime/broker-chrome";
 
 it.skipIf(!existsSync(chromium.executablePath()))(
 	"uses a real extension handoff tab and ephemeral relay while preserving unrelated tabs",

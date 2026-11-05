@@ -12,7 +12,7 @@ import {
 } from "@repo/project-protocol/credential-broker";
 import { afterEach, expect, it, vi, type Mock } from "vitest";
 
-import { ConnectionBroker, type ConnectionBrokerAdapter } from "../src/helper/connection-broker";
+import { ConnectionBroker, type ConnectionBrokerAdapter } from "@repo/local-runtime/connection-broker";
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	for (const work of cleanup.splice(0)) await work();

@@ -7,9 +7,9 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import type { EntryFactory } from "@repo/local-mcp-core/store";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { HostedConnections } from "../src/helper/hosted-oauth";
-import { DesktopManager } from "../src/helper/manager";
-import { startMcpServer } from "../src/helper/server";
+import { HostedConnections } from "@repo/local-runtime/hosted-oauth";
+import { DesktopManager } from "@repo/local-runtime/manager";
+import { startMcpServer } from "@repo/local-runtime/server";
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
 	for (const work of cleanup.splice(0).reverse()) await work();

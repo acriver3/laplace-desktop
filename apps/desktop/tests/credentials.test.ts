@@ -7,14 +7,14 @@ import type { EntryFactory } from "@repo/local-mcp-core/store";
 import { credentialInput, credentialSettings } from "@repo/project-protocol/credentials";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { CredentialBroker, type CredentialPrincipal } from "../src/helper/credentials";
-import { cdpOrigin, browserTargets } from "../src/helper/credentials-cdp";
+import { CredentialBroker, type CredentialPrincipal } from "@repo/local-runtime/credentials";
+import { cdpOrigin, browserTargets } from "@repo/local-runtime/credentials-cdp";
 import {
 	executeCommand,
 	publicV4,
 	selectedResult,
 	validateParameters,
-} from "../src/helper/credentials-execution";
+} from "@repo/local-runtime/credentials-execution";
 
 const cleanup: Array<() => Promise<unknown> | void> = [];
 it.skipIf(process.platform === "win32")(

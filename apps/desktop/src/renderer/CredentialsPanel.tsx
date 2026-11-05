@@ -5,7 +5,7 @@ import {
 import { ShieldCheck, LockKeyhole, Check, Globe, ArrowLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import type { CredentialSnapshot } from "../helper/credentials";
+import type { CredentialSnapshot } from "@repo/local-runtime/credentials";
 import { credentialMessages, type BrowserChoice } from "../shared/credential-setup";
 import type { ClientSnapshot } from "../shared/helper-contracts";
 import { invoke } from "./types";

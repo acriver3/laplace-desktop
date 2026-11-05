@@ -105,9 +105,6 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@repo/browser-runtime':
-        specifier: workspace:*
-        version: link:../../packages/browser-runtime
       '@modelcontextprotocol/client':
         specifier: 2.4.0
         version: 2.4.0
@@ -126,9 +123,15 @@ importers:
       '@orpc/client':
         specifier: 'catalog:'
         version: 1.14.0(@opentelemetry/api@1.9.0)
+      '@repo/browser-runtime':
+        specifier: workspace:*
+        version: link:../../packages/browser-runtime
       '@repo/local-mcp-core':
         specifier: workspace:*
         version: link:../../packages/local-mcp-core
+      '@repo/local-runtime':
+        specifier: workspace:*
+        version: link:../../packages/local-runtime
       '@repo/project-protocol':
         specifier: workspace:*
         version: link:../../packages/project-protocol
@@ -230,12 +233,8 @@ importers:
         specifier: 'catalog:'
         version: 4.3.6
 
-
   packages/local-mcp-core:
     dependencies:
-      '@repo/browser-runtime':
-        specifier: workspace:*
-        version: link:../browser-runtime
       '@cfworker/json-schema':
         specifier: 4.1.1
         version: 4.1.1
@@ -248,6 +247,9 @@ importers:
       '@napi-rs/keyring':
         specifier: 2.1.0
         version: 2.1.0
+      '@repo/browser-runtime':
+        specifier: workspace:*
+        version: link:../browser-runtime
       '@repo/project-protocol':
         specifier: workspace:*
         version: link:../project-protocol
@@ -264,6 +266,58 @@ importers:
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
+  packages/local-runtime:
+    dependencies:
+      '@modelcontextprotocol/client':
+        specifier: 2.4.0
+        version: 2.4.0
+      '@modelcontextprotocol/core':
+        specifier: 2.4.0
+        version: 2.4.0
+      '@modelcontextprotocol/node':
+        specifier: 2.1.2
+        version: 2.1.2(@modelcontextprotocol/server@2.4.0)
+      '@modelcontextprotocol/server':
+        specifier: 2.4.0
+        version: 2.4.0
+      '@napi-rs/keyring':
+        specifier: 2.1.0
+        version: 2.1.0
+      '@repo/browser-runtime':
+        specifier: workspace:*
+        version: link:../browser-runtime
+      '@repo/local-mcp-core':
+        specifier: workspace:*
+        version: link:../local-mcp-core
+      '@repo/project-protocol':
+        specifier: workspace:*
+        version: link:../project-protocol
+      semver:
+        specifier: 7.8.5
+        version: 7.8.5
+      toml:
+        specifier: 3.0.0
+        version: 3.0.0
+      yauzl:
+        specifier: 3.2.0
+        version: 3.2.0
+      zod:
+        specifier: 'catalog:'
+        version: 4.3.6
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.6.0
+      '@types/semver':
+        specifier: 7.7.1
+        version: 7.7.1
+      '@types/yauzl':
+        specifier: 3.4.0
+        version: 3.4.0
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -2438,10 +2492,6 @@ packages:
 
   eventemitter3@5.0.4:
     resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
-
-  eventsource-parser@3.0.6:
-    resolution: {integrity: sha512-Vo1ab+QXPzZ4tCa8SwIHJFaSzy4R6SHf7BY79rFBDf0idraZWAkYrDjDj8uWaSm3S2TK+hJ7/t1CEmZ7jXw+pg==}
-    engines: {node: '>=18.0.0'}
 
   eventsource-parser@3.1.1:
     resolution: {integrity: sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ==}
@@ -5449,13 +5499,11 @@ snapshots:
 
   eventemitter3@5.0.4: {}
 
-  eventsource-parser@3.0.6: {}
-
   eventsource-parser@3.1.1: {}
 
   eventsource@3.0.7:
     dependencies:
-      eventsource-parser: 3.0.6
+      eventsource-parser: 3.1.1
 
   expect-type@1.3.0: {}
 

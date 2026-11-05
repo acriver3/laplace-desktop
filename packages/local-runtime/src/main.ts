@@ -2,7 +2,7 @@ import { join, dirname } from "node:path";
 
 import { z } from "zod";
 
-import { helperRequest, type HelperEvent, type HelperReply } from "../shared/helper-contracts";
+import { helperRequest, type HelperEvent, type HelperReply } from "./shared/helper-contracts";
 import { createRuntime } from "./runtime";
 
 /** Legacy host: Electron owns the runtime lifetime through an IPC channel. */

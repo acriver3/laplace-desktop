@@ -9,10 +9,10 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { systemEntry, type EntryFactory } from "@repo/local-mcp-core/store";
 import { isLocalConnectorToolName } from "@repo/project-protocol/mcp/local-tools";
 
-import { CatalogInstaller } from "../src/helper/catalog";
-import { ConnectorManagement } from "../src/helper/connector-tools";
-import { DesktopManager } from "../src/helper/manager";
-import { startMcpServer } from "../src/helper/server";
+import { CatalogInstaller } from "@repo/local-runtime/catalog";
+import { ConnectorManagement } from "@repo/local-runtime/connector-tools";
+import { DesktopManager } from "@repo/local-runtime/manager";
+import { startMcpServer } from "@repo/local-runtime/server";
 
 const sleep = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
 function alive(pid: number) {

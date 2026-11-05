@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 
-import { manageDesktop } from "../src/helper/desktop-tools";
+import { manageDesktop } from "@repo/local-runtime/desktop-tools";
 
 function fixture() {
 	const manager: any = {

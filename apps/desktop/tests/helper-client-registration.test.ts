@@ -10,8 +10,8 @@ import {
 	previewClientRegistration,
 	registerClient,
 	updateCodexConfiguration,
-} from "../src/helper/client-registration";
-import { helperInputs } from "../src/shared/helper-contracts";
+} from "@repo/local-runtime/client-registration";
+import { helperInputs } from "@repo/local-runtime/shared/helper-contracts";
 
 const folders: string[] = [];
 afterEach(async () => {

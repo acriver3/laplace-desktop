@@ -5,7 +5,7 @@ import {
 } from "@repo/project-protocol/credential-broker";
 import { z } from "zod";
 
-import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
+import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
 import { BrokerBrowser } from "./broker-browser";
 import type { CatalogInstaller } from "./catalog";
 import type { ConnectionBrokerAdapter, BrokerExecution } from "./connection-broker";

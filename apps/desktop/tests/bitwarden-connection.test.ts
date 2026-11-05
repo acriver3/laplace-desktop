@@ -12,9 +12,9 @@ import {
 	BitwardenConnectionManager,
 	loginPrompt,
 	BITWARDEN_VERSION,
-} from "../src/helper/bitwarden-connection";
-import { bitwardenError } from "../src/helper/credential-errors";
-import { helperInputs } from "../src/shared/helper-contracts";
+} from "@repo/local-runtime/bitwarden-connection";
+import { bitwardenError } from "@repo/local-runtime/credential-errors";
+import { helperInputs } from "@repo/local-runtime/shared/helper-contracts";
 vi.mock("@repo/local-mcp-core/process", () => ({
 	spawnLocal: vi.fn(),
 	stopTree: vi.fn(async () => {}),

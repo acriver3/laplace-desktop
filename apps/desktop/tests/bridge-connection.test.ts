@@ -1,7 +1,7 @@
 import { closeMcpConnection } from "@repo/local-mcp-core/mcp-lifecycle";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { BridgeConnection } from "../src/helper/bridge-connection";
+import { BridgeConnection } from "@repo/local-runtime/bridge-connection";
 
 afterEach(() => vi.useRealTimers());
 function link() {

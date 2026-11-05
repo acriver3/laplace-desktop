@@ -37,10 +37,10 @@ await build({
 });
 await build({
 	entryPoints: [
-		"src/helper/main.ts",
-		"src/helper/service.ts",
-		"src/helper/bridge.ts",
-		"src/helper/slack-browser.ts",
+		"../../packages/local-runtime/src/main.ts",
+		"../../packages/local-runtime/src/service.ts",
+		"../../packages/local-runtime/src/bridge.ts",
+		"../../packages/local-runtime/src/slack-browser.ts",
 	],
 	outdir: "dist/helper",
 	outExtension: { ".js": ".cjs" },

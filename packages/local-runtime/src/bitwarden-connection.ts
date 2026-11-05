@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { minimalEnvironment } from "@repo/local-mcp-core/config";
 import { spawnLocal, stopTree } from "@repo/local-mcp-core/process";
 
-import type { BitwardenConnection, SignInChallenge } from "../shared/credential-setup";
+import type { BitwardenConnection, SignInChallenge } from "./shared/credential-setup";
 import { bitwardenError, CredentialSetupError } from "./credential-errors";
 import { bitwardenCommand } from "./credentials-execution";
 

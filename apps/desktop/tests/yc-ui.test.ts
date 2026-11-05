@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { scopedToolName } from "@repo/project-protocol/local-mcp";
 import { expect, it, vi } from "vitest";
 
-import { desktopYcView, ycConnections, isBundledYcAdapter } from "../src/helper/yc-ui";
-import { ycBrowserIdentity } from "../src/shared/yc-browser";
+import { desktopYcView, ycConnections, isBundledYcAdapter } from "@repo/local-runtime/yc-ui";
+import { ycBrowserIdentity } from "@repo/local-runtime/shared/yc-browser";
 
 const id = "12345678-1234-4234-8234-123456789abc";
 const snapshot = {

@@ -1,1 +1,1 @@
-export * from "@repo/browser-runtime/browser-extension-id";
+export * from "@repo/local-runtime/shared/browser-extension-id";

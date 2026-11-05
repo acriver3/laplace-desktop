@@ -9,7 +9,7 @@ import {
 	previewImportFile,
 	previewLaunch,
 	previewManualConfiguration,
-} from "../src/helper/imports";
+} from "@repo/local-runtime/imports";
 
 const folders: string[] = [];
 afterEach(async () => {

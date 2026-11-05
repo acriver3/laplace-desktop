@@ -27,7 +27,7 @@ it("offers the bundled tethered Outlook runtime on Windows without an environmen
 	vi.stubGlobal("process", { ...process, platform: "win32", arch: "x64" });
 	vi.resetModules();
 	try {
-		const { bundleCatalog, tetheredEntry } = await import("../src/helper/library-catalog");
+		const { bundleCatalog, tetheredEntry } = await import("@repo/local-runtime/library-catalog");
 		const outlook = bundleCatalog.find((entry) => entry.id === "msoutlook-mcp")!;
 		expect(outlook.name).toBe("Outlook [Tethered]");
 		expect(outlook.browserMode).toBe("tethered");

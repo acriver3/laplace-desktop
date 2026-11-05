@@ -29,8 +29,8 @@ import {
 } from "@repo/project-protocol/setup-notifications";
 import { fromBuffer, type ZipFile, type Entry } from "yauzl";
 
-import { slackBrowserVersion } from "../shared/slack-browser";
-import { ycWorkspace } from "../shared/yc-browser";
+import { slackBrowserVersion } from "./shared/slack-browser";
+import { ycWorkspace } from "./shared/yc-browser";
 import type { BrowserApprovals } from "./browser-approvals";
 import {
 	bundleCatalog,

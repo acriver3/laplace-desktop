@@ -9,7 +9,7 @@ import {
 	type LocalRuntimeDescriptor,
 } from "@repo/project-protocol/local-runtime";
 
-import { helperRequest, type HelperEvent } from "../shared/helper-contracts";
+import { helperRequest, type HelperEvent } from "./shared/helper-contracts";
 import { createRuntime, type Runtime } from "./runtime";
 import type { ControlServer } from "./server";
 

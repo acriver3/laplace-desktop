@@ -9,8 +9,8 @@ import {
 	extractBundle,
 	resolveManifestConfiguration,
 	downloadBundle,
-} from "../src/helper/catalog";
-import { bundleCatalog } from "../src/helper/library-catalog";
+} from "@repo/local-runtime/catalog";
+import { bundleCatalog } from "@repo/local-runtime/library-catalog";
 
 async function verify(directory: string) {
 	const temporary = await mkdtemp(join(tmpdir(), "laplace-catalog-static-"));

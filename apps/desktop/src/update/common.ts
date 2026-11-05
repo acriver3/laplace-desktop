@@ -19,6 +19,10 @@ import {
 	statfs,
 } from "./filesystem";
 
+import { UpdateError, updateLaunchBlocked, updateRoot } from "@repo/local-runtime/update-guard";
+
+export { UpdateError, updateLaunchBlocked, updateRoot };
+
 export const repository = "https://github.com/acriver3/laplace-desktop.git";
 const legacyRepository = "https://github.com/acriver3/Laplace.git";
 export const protocolVersion = 1;
@@ -50,7 +54,6 @@ export interface Release {
 	version: string;
 	commit: string;
 }
-export const updateRoot = () => join(homedir(), ".laplace-desktop-updates");
 export const nativeTarget = () => targetSchema.parse(`${process.platform}-${process.arch}`);
 export const defaultDestination = () =>
 	process.platform === "darwin"
@@ -167,14 +170,6 @@ export function toolEnvironment(authentication = false): NodeJS.ProcessEnv {
 		if (process.env[key]) env[key] = process.env[key];
 	if (authentication && process.env.SSH_AUTH_SOCK) env.SSH_AUTH_SOCK = process.env.SSH_AUTH_SOCK;
 	return { ...env, CI: "true", GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" };
-}
-export class UpdateError extends Error {
-	constructor(
-		public code: "tools" | "network" | "build" | "disk" | "cancelled" | "install" | "invalid",
-		message: string,
-	) {
-		super(message);
-	}
 }
 export async function run(
 	command: string,
@@ -392,16 +387,3 @@ export async function requireAppClosed(path: string, target: string) {
 }
 
 /** Existing AI clients must not race the installer by relaunching the old app. */
-export async function updateLaunchBlocked(application: string, root = updateRoot()) {
-	try {
-		const marker = z
-			.object({ pid: z.number().int().positive(), executable: z.string() })
-			.strict()
-			.parse(await readJson(join(root, "installing.json")));
-		if (marker.executable !== application) return false;
-		process.kill(marker.pid, 0);
-		return true;
-	} catch {
-		return false;
-	}
-}

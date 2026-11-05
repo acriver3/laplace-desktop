@@ -3,7 +3,7 @@ import {
 	type SetupNotificationOwner,
 } from "@repo/project-protocol/setup-notifications";
 
-import type { CatalogJob } from "../helper/catalog";
+import type { CatalogJob } from "@repo/local-runtime/catalog";
 import type { DesktopSnapshot } from "../shared/helper-contracts";
 
 /** The persisted job journal is the outbox; only acknowledged jobs are hidden. */

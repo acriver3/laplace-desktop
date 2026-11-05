@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 
 import { z } from "zod";
 
-import { browserExtensionId } from "../shared/browser-extension-id";
+import { browserExtensionId } from "./shared/browser-extension-id";
 import type { LoginObservation } from "./broker-browser";
 
 const origin = z

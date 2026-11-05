@@ -1,7 +1,7 @@
 import { SdkHttpError, SdkErrorCode } from "@modelcontextprotocol/client";
 import { expect, it } from "vitest";
 
-import { bridgeCallMessage, bridgeConnectionMessage } from "../src/helper/bridge-errors";
+import { bridgeCallMessage, bridgeConnectionMessage } from "@repo/local-runtime/bridge-errors";
 
 it("distinguishes work not started from uncertain execution without exposing transport details", () => {
 	const error = (status: number) =>

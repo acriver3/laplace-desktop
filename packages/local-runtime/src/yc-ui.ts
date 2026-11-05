@@ -15,7 +15,7 @@ import {
 } from "@repo/project-protocol/mcp/yc-schema";
 import { z } from "zod";
 
-import { ycBrowserIdentity } from "../shared/yc-browser";
+import { ycBrowserIdentity } from "./shared/yc-browser";
 import type { DesktopManager } from "./manager";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");

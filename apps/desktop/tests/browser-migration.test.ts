@@ -9,7 +9,7 @@ import { listBrowserRequests } from "@repo/browser-runtime/browser-requests";
 import { serverConfig } from "@repo/local-mcp-core/config";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { CatalogJob } from "../src/helper/catalog";
+import type { CatalogJob } from "@repo/local-runtime/catalog";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
@@ -24,9 +24,9 @@ async function fixture() {
 	vi.stubEnv("LAPLACE_TETHERED_BROWSER_V1", "true");
 	vi.stubEnv("LAPLACE_DESKTOP_TEST_ROOT", root);
 	vi.resetModules();
-	const { DesktopManager } = await import("../src/helper/manager");
-	const { BrowserApprovals } = await import("../src/helper/browser-approvals");
-	const { CatalogInstaller } = await import("../src/helper/catalog");
+	const { DesktopManager } = await import("@repo/local-runtime/manager");
+	const { BrowserApprovals } = await import("@repo/local-runtime/browser-approvals");
+	const { CatalogInstaller } = await import("@repo/local-runtime/catalog");
 	const resources = join(root, "resources");
 	if (process.platform === "win32") {
 		await mkdir(join(resources, "runtimes"), { recursive: true });

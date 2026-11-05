@@ -49,7 +49,7 @@ import {
 	restorePersistedAccount,
 } from "./feature-access";
 import { HelperClient } from "./helper-client";
-import { RuntimeClient } from "./runtime-client";
+import { RuntimeClient } from "@repo/local-runtime/client";
 import {
 	agentHandoffUrl,
 	connectClipboardWrite,

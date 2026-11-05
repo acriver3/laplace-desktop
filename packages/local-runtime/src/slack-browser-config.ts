@@ -7,7 +7,7 @@ import {
 	slackReadNames,
 	slackSetupNames,
 	slackWorkspace,
-} from "../shared/slack-browser";
+} from "./shared/slack-browser";
 
 export const slackBrowserIdentity = `slack-mcp-server@${slackBrowserVersion}`;
 export const legacySlackIdentity = "slack-mcp-server@1.1.0-laplace.1";

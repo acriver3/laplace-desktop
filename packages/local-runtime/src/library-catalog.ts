@@ -10,9 +10,9 @@ import {
 import { localConnectorMetadata } from "@repo/project-protocol/local-mcp-setup";
 import { z } from "zod";
 
-import { browserConnectionsEnabled } from "../shared/browser-feature";
-import { slackBrowserVersion } from "../shared/slack-browser";
-import { ycBrowserVersion } from "../shared/yc-browser";
+import { browserConnectionsEnabled } from "./shared/browser-feature";
+import { slackBrowserVersion } from "./shared/slack-browser";
+import { ycBrowserVersion } from "./shared/yc-browser";
 import snapshot from "./library-catalog.json";
 import recoveryOutlook from "./library-recovery-outlook.json";
 

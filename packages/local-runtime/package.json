@@ -1,0 +1,33 @@
+{
+	"name": "@repo/local-runtime",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./*": "./src/*.ts",
+		"./shared/*": "./src/shared/*.ts"
+	},
+	"scripts": {
+		"type-check": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/client": "2.4.0",
+		"@modelcontextprotocol/core": "2.4.0",
+		"@modelcontextprotocol/node": "2.1.2",
+		"@modelcontextprotocol/server": "2.4.0",
+		"@napi-rs/keyring": "2.1.0",
+		"@repo/browser-runtime": "workspace:*",
+		"@repo/local-mcp-core": "workspace:*",
+		"@repo/project-protocol": "workspace:*",
+		"semver": "7.8.5",
+		"toml": "3.0.0",
+		"yauzl": "3.2.0",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"@types/semver": "7.7.1",
+		"@types/yauzl": "3.4.0",
+		"typescript": "catalog:"
+	}
+}

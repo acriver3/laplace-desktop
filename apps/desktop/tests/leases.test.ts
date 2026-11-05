@@ -6,7 +6,7 @@ import { serverConfig } from "@repo/local-mcp-core/config";
 import { acquireResourceLeases } from "@repo/local-mcp-core/leases";
 import { afterEach, expect, it } from "vitest";
 
-import { assertLegacyProcessesStopped } from "../src/helper/legacy-processes";
+import { assertLegacyProcessesStopped } from "@repo/local-runtime/legacy-processes";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

@@ -35,6 +35,7 @@
 		"@orpc/client": "catalog:",
 		"@repo/browser-runtime": "workspace:*",
 		"@repo/local-mcp-core": "workspace:*",
+		"@repo/local-runtime": "workspace:*",
 		"@repo/project-protocol": "workspace:*",
 		"@repo/ui": "workspace:*",
 		"lucide-react": "catalog:",

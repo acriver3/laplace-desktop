@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { chromium } from "@playwright/test";
 import { expect, it } from "vitest";
 
-import { browserTargets, fillBrowser } from "../src/helper/credentials-cdp";
+import { browserTargets, fillBrowser } from "@repo/local-runtime/credentials-cdp";
 
 it.skipIf(!existsSync(chromium.executablePath()))(
 	"fills synthetic credentials in an isolated real Chromium profile through CDP",

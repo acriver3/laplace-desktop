@@ -1,1 +1,1 @@
-export * from "@repo/browser-runtime/yc-browser";
+export * from "@repo/local-runtime/shared/yc-browser";

@@ -10,8 +10,8 @@ import {
 	previewImportFile,
 	importSelectedFile,
 	normalizeManualConfiguration,
-} from "../src/helper/imports";
-import { previewLegacyMigration, migrateSelectedLegacy } from "../src/helper/migration";
+} from "@repo/local-runtime/imports";
+import { previewLegacyMigration, migrateSelectedLegacy } from "@repo/local-runtime/migration";
 
 const folders: string[] = [];
 afterEach(async () => {

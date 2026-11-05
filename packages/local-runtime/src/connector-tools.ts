@@ -10,7 +10,7 @@ import {
 import { localManagementRequest } from "@repo/project-protocol/portable-connectors";
 import { z } from "zod";
 
-import { BROWSER_APPROVAL_URI } from "../shared/browser-approval";
+import { BROWSER_APPROVAL_URI } from "./shared/browser-approval";
 import { browserAuthorizer, type BrowserApprovals } from "./browser-approvals";
 import type { CatalogInstaller, CatalogJob } from "./catalog";
 import { normalizeManualConfiguration, previewManualConfiguration } from "./imports";

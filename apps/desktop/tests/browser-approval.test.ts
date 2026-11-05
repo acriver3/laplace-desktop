@@ -11,10 +11,10 @@ import {
 } from "@repo/project-protocol/mcp/browser-approval-card";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { BrowserApprovals, browserAuthorizer } from "../src/helper/browser-approvals";
-import type { DesktopManager } from "../src/helper/manager";
-import { SlackBrowserRelay } from "../src/helper/slack-browser-relay";
-import { browserExtensionId } from "../src/shared/browser-extension-id";
+import { BrowserApprovals, browserAuthorizer } from "@repo/local-runtime/browser-approvals";
+import type { DesktopManager } from "@repo/local-runtime/manager";
+import { SlackBrowserRelay } from "@repo/local-runtime/slack-browser-relay";
+import { browserExtensionId } from "@repo/local-runtime/shared/browser-extension-id";
 import { listBrowserRequests } from "../src/shared/browser-requests";
 
 const cleanup: Array<() => Promise<unknown>> = [];

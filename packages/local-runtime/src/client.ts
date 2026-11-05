@@ -10,8 +10,8 @@ import {
 	type LocalRuntimeDescriptor,
 } from "@repo/project-protocol/local-runtime";
 
-import type { DesktopSnapshot, HelperEvent, HelperMethod } from "../shared/helper-contracts";
-import { helperEnvironment } from "./helper-client";
+import type { DesktopSnapshot, HelperEvent, HelperMethod } from "./shared/helper-contracts";
+import { helperEnvironment } from "./environment";
 
 export async function readRuntimeDescriptor(root: string) {
 	try {

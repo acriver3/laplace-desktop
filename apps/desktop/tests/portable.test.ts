@@ -6,9 +6,9 @@ import { join, resolve } from "node:path";
 import type { EntryFactory } from "@repo/local-mcp-core/store";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { CatalogInstaller } from "../src/helper/catalog";
-import { DesktopManager } from "../src/helper/manager";
-import { PortableConnectors } from "../src/helper/portable";
+import { CatalogInstaller } from "@repo/local-runtime/catalog";
+import { DesktopManager } from "@repo/local-runtime/manager";
+import { PortableConnectors } from "@repo/local-runtime/portable";
 import { zip } from "./fixtures/bundle";
 
 const cleanup: Array<() => Promise<unknown>> = [];

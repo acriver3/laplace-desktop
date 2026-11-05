@@ -1,1 +1,1 @@
-export * from "@repo/browser-runtime/slack-browser";
+export * from "@repo/local-runtime/shared/slack-browser";

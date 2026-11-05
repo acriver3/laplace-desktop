@@ -6,10 +6,10 @@ import type { EntryFactory } from "@repo/local-mcp-core/store";
 import { LOCAL_RUNTIME_PROTOCOL } from "@repo/project-protocol/local-runtime";
 import { afterEach, expect, it } from "vitest";
 
-import { DesktopManager } from "../src/helper/manager";
-import { startMcpServer, type ControlServer } from "../src/helper/server";
-import { RuntimeClient } from "../src/main/runtime-client";
-import type { HelperEvent } from "../src/shared/helper-contracts";
+import { DesktopManager } from "@repo/local-runtime/manager";
+import { startMcpServer, type ControlServer } from "@repo/local-runtime/server";
+import { RuntimeClient } from "@repo/local-runtime/client";
+import type { HelperEvent } from "@repo/local-runtime/shared/helper-contracts";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

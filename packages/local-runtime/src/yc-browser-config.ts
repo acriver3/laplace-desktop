@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import { serverConfig } from "@repo/local-mcp-core/config";
 
-import { ycBrowserIdentity, ycToolNames, ycSetupNames } from "../shared/yc-browser";
+import { ycBrowserIdentity, ycToolNames, ycSetupNames } from "./shared/yc-browser";
 
 export function ycBrowserConfig(resources: string, nodePath: string) {
 	return serverConfig.parse({

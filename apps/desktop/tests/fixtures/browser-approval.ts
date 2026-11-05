@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { BrowserConnectionRelay } from "../../src/helper/browser-connection-relay";
+import type { BrowserConnectionRelay } from "@repo/local-runtime/browser-connection-relay";
 /** Exercise the same identity-review/authorization handshake as Desktop and the extension. */
 export async function approveBrowser(
 	relay: BrowserConnectionRelay,

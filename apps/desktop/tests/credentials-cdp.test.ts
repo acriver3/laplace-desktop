@@ -2,7 +2,7 @@ import { runInNewContext } from "node:vm";
 
 import { afterEach, expect, it, vi } from "vitest";
 
-import { fillBrowser } from "../src/helper/credentials-cdp";
+import { fillBrowser } from "@repo/local-runtime/credentials-cdp";
 
 afterEach(() => vi.unstubAllGlobals());
 function browser(origin = "https://example.com", formOrigin = origin, count = 1) {

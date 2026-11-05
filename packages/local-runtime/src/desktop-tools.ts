@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-import { desktopVersion } from "../shared/version";
+import { desktopVersion } from "./shared/version";
 import type { HostedConnections } from "./hosted-oauth";
 import type { DesktopManager } from "./manager";
 

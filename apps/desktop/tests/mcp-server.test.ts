@@ -10,18 +10,18 @@ import type { EntryFactory } from "@repo/local-mcp-core/store";
 import { build } from "esbuild";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 
-import { BrowserApprovals } from "../src/helper/browser-approvals";
-import { CatalogInstaller } from "../src/helper/catalog";
-import { ConnectorManagement, connectorManagementTools } from "../src/helper/connector-tools";
-import { CredentialBroker } from "../src/helper/credentials";
-import { bundleCatalog, bundleAvailable } from "../src/helper/library-catalog";
-import { DesktopManager } from "../src/helper/manager";
-import { startMcpServer } from "../src/helper/server";
-import { browserExtensionId } from "../src/shared/browser-extension-id";
+import { BrowserApprovals } from "@repo/local-runtime/browser-approvals";
+import { CatalogInstaller } from "@repo/local-runtime/catalog";
+import { ConnectorManagement, connectorManagementTools } from "@repo/local-runtime/connector-tools";
+import { CredentialBroker } from "@repo/local-runtime/credentials";
+import { bundleCatalog, bundleAvailable } from "@repo/local-runtime/library-catalog";
+import { DesktopManager } from "@repo/local-runtime/manager";
+import { startMcpServer } from "@repo/local-runtime/server";
+import { browserExtensionId } from "@repo/local-runtime/shared/browser-extension-id";
 import { listBrowserRequests } from "../src/shared/browser-requests";
-import { ycBrowserIdentity } from "../src/shared/yc-browser";
+import { ycBrowserIdentity } from "@repo/local-runtime/shared/yc-browser";
 // This suite exercises the explicitly enabled browser-extension installation path.
-vi.mock("../src/shared/browser-feature", () => ({ browserConnectionsEnabled: () => true }));
+vi.mock("@repo/local-runtime/shared/browser-feature", () => ({ browserConnectionsEnabled: () => true }));
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
 	for (const work of cleanup.splice(0).reverse()) await work();
@@ -552,7 +552,7 @@ async function downloadFixture() {
 async function slackFixture(f: Awaited<ReturnType<typeof fixture>>) {
 	await mkdir(join(f.manager.resources, "helper"), { recursive: true });
 	await build({
-		entryPoints: [resolve("src/helper/slack-browser.ts")],
+		entryPoints: [resolve("../../packages/local-runtime/src/slack-browser.ts")],
 		outfile: join(f.manager.resources, "helper/slack-browser.cjs"),
 		platform: "node",
 		format: "cjs",

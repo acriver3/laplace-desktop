@@ -1,4 +1,4 @@
-import { credentialMessages, type CredentialErrorCode } from "../shared/credential-setup";
+import { credentialMessages, type CredentialErrorCode } from "./shared/credential-setup";
 export class CredentialSetupError extends Error {
 	constructor(readonly code: CredentialErrorCode) {
 		super(credentialMessages[code]);

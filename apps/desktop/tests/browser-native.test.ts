@@ -7,13 +7,13 @@ import { Readable, Writable, PassThrough } from "node:stream";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { BrowserConnectionRelay } from "../src/helper/browser-connection-relay";
+import { BrowserConnectionRelay } from "@repo/local-runtime/browser-connection-relay";
 import {
 	nativeBrowserOrigin,
 	registerBrowserNativeHost,
 	runBrowserNativeHost,
 } from "../src/main/browser-native-host";
-import { browserExtensionId } from "../src/shared/browser-extension-id";
+import { browserExtensionId } from "@repo/local-runtime/shared/browser-extension-id";
 import {
 	browserHostName,
 	listBrowserRequests,

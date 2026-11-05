@@ -10,8 +10,8 @@ import { minimalEnvironment } from "@repo/local-mcp-core/config";
 import { systemEntry } from "@repo/local-mcp-core/store";
 import { z } from "zod";
 
-import { desktopVersion } from "../shared/version";
-import { updateLaunchBlocked, UpdateError } from "../update/common";
+import { desktopVersion } from "./shared/version";
+import { updateLaunchBlocked, UpdateError } from "./update-guard";
 import { BridgeConnection } from "./bridge-connection";
 import { bridgeConnectionMessage, bridgeCallMessage } from "./bridge-errors";
 

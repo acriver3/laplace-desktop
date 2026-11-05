@@ -3,11 +3,11 @@ import { randomUUID } from "node:crypto";
 import type { BrokerSession, BrokerItem } from "@repo/project-protocol/credential-broker";
 import { expect, it, vi } from "vitest";
 
-import { desktopBrokerAdapter } from "../src/helper/broker-adapter";
-import type { CatalogInstaller } from "../src/helper/catalog";
-import type { CredentialBroker } from "../src/helper/credentials";
-import type { DesktopManager } from "../src/helper/manager";
-import type { PortableConnectors } from "../src/helper/portable";
+import { desktopBrokerAdapter } from "@repo/local-runtime/broker-adapter";
+import type { CatalogInstaller } from "@repo/local-runtime/catalog";
+import type { CredentialBroker } from "@repo/local-runtime/credentials";
+import type { DesktopManager } from "@repo/local-runtime/manager";
+import type { PortableConnectors } from "@repo/local-runtime/portable";
 it("redeems local values directly, follows real installation IDs, and requires connector verification", async () => {
 	vi.stubEnv("ENABLE_CREDENTIAL_BROKERING", "true");
 	try {

@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { setupNotificationText } from "@repo/project-protocol/setup-notifications";
 import { expect, it, vi } from "vitest";
 
-import { CatalogInstaller, type CatalogJob } from "../src/helper/catalog";
+import { CatalogInstaller, type CatalogJob } from "@repo/local-runtime/catalog";
 import { syncSetupNotifications } from "../src/main/setup-notifications";
-import type { DesktopSnapshot } from "../src/shared/helper-contracts";
+import type { DesktopSnapshot } from "@repo/local-runtime/shared/helper-contracts";
 const owner = {
 	accountId: "workspace-a",
 	installationId: randomUUID(),

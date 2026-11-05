@@ -1,7 +1,7 @@
 import { credentialInput } from "@repo/project-protocol/credentials";
 import { z } from "zod";
 
-import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
+import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
 import type { CredentialBroker, CredentialPrincipal } from "./credentials";
 import type { DesktopManager } from "./manager";
 

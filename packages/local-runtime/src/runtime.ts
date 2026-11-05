@@ -21,10 +21,10 @@ import {
 } from "@repo/local-mcp-core/update-policy";
 import { z } from "zod";
 
-import desktopPackage from "../../package.json";
-import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
-import { credentialMessages } from "../shared/credential-setup";
-import { helperInputs, type HelperEvent, type HelperMethod } from "../shared/helper-contracts";
+import { desktopVersion } from "./shared/version";
+import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
+import { credentialMessages } from "./shared/credential-setup";
+import { helperInputs, type HelperEvent, type HelperMethod } from "./shared/helper-contracts";
 import { desktopBrokerAdapter } from "./broker-adapter";
 import { BrowserApprovals } from "./browser-approvals";
 import { CatalogInstaller } from "./catalog";
@@ -270,7 +270,7 @@ export async function createRuntime(options: RuntimeOptions) {
 			return retainRuntime(root, resources, config, manager.entries);
 		},
 		root,
-		version: desktopPackage.version,
+		version: desktopVersion,
 		kind: "desktop",
 		entries: manager.entries,
 		configurations: async () => (await manager.store.read()).servers,

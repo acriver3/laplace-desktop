@@ -1,1 +1,1 @@
-export * from "@repo/browser-runtime/browser-approval";
+export * from "@repo/local-runtime/shared/browser-approval";

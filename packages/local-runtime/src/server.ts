@@ -23,9 +23,9 @@ import { ycUiResource } from "@repo/project-protocol/mcp/yc-resource";
 import { ycUiTools, YC_UI_URI } from "@repo/project-protocol/mcp/yc-schema";
 import { z } from "zod";
 
-import { BROWSER_APPROVAL_URI } from "../shared/browser-approval";
-import { credentialBrokeringEnabled } from "../shared/credential-broker-feature";
-import { desktopVersion } from "../shared/version";
+import { BROWSER_APPROVAL_URI } from "./shared/browser-approval";
+import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
+import { desktopVersion } from "./shared/version";
 import {
 	ConnectorManagement,
 	connectorManagementTools,

@@ -10,7 +10,7 @@ import { serverConfig, importMcpConfiguration } from "@repo/local-mcp-core/confi
 import { Supervisor } from "@repo/local-mcp-core/supervisor";
 import { afterEach, expect, it } from "vitest";
 
-import { configurationSummary } from "../src/helper/imports";
+import { configurationSummary } from "@repo/local-runtime/imports";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

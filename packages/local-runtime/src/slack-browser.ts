@@ -4,7 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { recoveryContent } from "@repo/browser-runtime/session-recovery";
 import { z } from "zod";
 
-import { slackBrowserVersion, slackSetupNames } from "../shared/slack-browser";
+import { slackBrowserVersion, slackSetupNames } from "./shared/slack-browser";
 import { SlackBrowserRelay, slackReads } from "./slack-browser-relay";
 
 async function main() {
