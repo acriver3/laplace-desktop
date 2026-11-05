@@ -58,7 +58,7 @@ export async function runLauncher(args = process.argv.slice(2)): Promise<unknown
 	const profile = runtimeProfile.parse(option(args, "--profile") ?? "hosted");
 	const options = launchOptions(profile);
 	switch (command) {
-		case "login":
+		case "autostart":
 			// Login clears an explicit stop; the runtime then serves until stopped again.
 			return startRuntime({ ...options, explicit: true }).then(() => ({ started: true }));
 		case "start":
@@ -106,7 +106,7 @@ export async function runLauncher(args = process.argv.slice(2)): Promise<unknown
 				process.argv[0]!,
 				process.argv[1]!,
 				"--root",
-				resolve(options.root),
+				resolve(option(args, "--root") ?? options.root),
 				"--client-id",
 				option(args, "--client-id") ?? "",
 			];
@@ -116,20 +116,7 @@ export async function runLauncher(args = process.argv.slice(2)): Promise<unknown
 		}
 		default:
 			throw new Error(
-				"Use laplace-runtime start|stop|status|enable|disable|install|bridge [--profile hosted|local]",
+				"Use laplace-runtime start|stop|status|enable|disable|install [--profile hosted|local]",
 			);
 	}
 }
-
-if (process.argv[1]?.endsWith("launcher.cjs") || process.argv[1]?.endsWith("launcher.ts"))
-	void runLauncher().then(
-		(result) => {
-			if (result !== undefined) process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-		},
-		(error) => {
-			process.stderr.write(
-				`${error instanceof Error ? error.message : "Laplace Runtime command failed"}\n`,
-			);
-			process.exitCode = 1;
-		},
-	);

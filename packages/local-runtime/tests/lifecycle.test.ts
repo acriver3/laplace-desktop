@@ -71,10 +71,12 @@ it("registers login starts without keep-alive or respawn", () => {
 	const plist = launchAgent({ launcher: "/Users/a b/bin/laplace-runtime", profile: "hosted" });
 	expect(plist).toContain("<string>com.withlaplace.runtime</string>");
 	expect(plist).toContain("<string>/Users/a b/bin/laplace-runtime</string>");
-	expect(plist).toContain("<string>login</string>");
+	expect(plist).toContain("<string>autostart</string>");
 	expect(plist).not.toContain("KeepAlive");
 	const unit = systemdUnit({ launcher: "/home/a/bin/laplace-runtime", profile: "hosted" });
-	expect(unit).toContain('ExecStart="/home/a/bin/laplace-runtime" "login" "--profile" "hosted"');
+	expect(unit).toContain(
+		'ExecStart="/home/a/bin/laplace-runtime" "autostart" "--profile" "hosted"',
+	);
 	expect(unit).not.toMatch(/Restart=(always|on-)/);
 	expect(
 		windowsRunCommand({
@@ -83,7 +85,7 @@ it("registers login starts without keep-alive or respawn", () => {
 			profile: "hosted",
 		}),
 	).toBe(
-		'"C:\\Users\\a\\bin\\laplace-runtime-hidden.exe" "C:\\Users\\a\\bin\\laplace-runtime.cmd" "login" "--profile" "hosted"',
+		'"C:\\Users\\a\\bin\\laplace-runtime-hidden.exe" "C:\\Users\\a\\bin\\laplace-runtime.cmd" "autostart" "--profile" "hosted"',
 	);
 });
 

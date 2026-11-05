@@ -133,8 +133,8 @@ const runValue = (profile: RuntimeProfile) =>
 const xml = (value: string) =>
 	value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-/** Login entry arguments: `--login` clears an explicit stop, matching "until next login". */
-export const loginArguments = (profile: RuntimeProfile) => ["login", "--profile", profile];
+/** Login entry arguments: `autostart` clears an explicit stop, matching "until next login". */
+export const loginArguments = (profile: RuntimeProfile) => ["autostart", "--profile", profile];
 
 export function launchAgent({ launcher, profile }: Autostart) {
 	const args = [launcher, ...loginArguments(profile)];

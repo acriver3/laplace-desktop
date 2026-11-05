@@ -4,9 +4,8 @@ import { join } from "node:path";
 
 import { serverConfig } from "@repo/local-mcp-core/config";
 import { acquireResourceLeases } from "@repo/local-mcp-core/leases";
-import { afterEach, expect, it } from "vitest";
-
 import { assertLegacyProcessesStopped } from "@repo/local-runtime/legacy-processes";
+import { afterEach, expect, it } from "vitest";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

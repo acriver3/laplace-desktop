@@ -3,12 +3,12 @@ import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { CatalogInstaller, type CatalogJob } from "@repo/local-runtime/catalog";
+import type { DesktopSnapshot } from "@repo/local-runtime/shared/helper-contracts";
 import { setupNotificationText } from "@repo/project-protocol/setup-notifications";
 import { expect, it, vi } from "vitest";
 
-import { CatalogInstaller, type CatalogJob } from "@repo/local-runtime/catalog";
 import { syncSetupNotifications } from "../src/main/setup-notifications";
-import type { DesktopSnapshot } from "@repo/local-runtime/shared/helper-contracts";
 const owner = {
 	accountId: "workspace-a",
 	installationId: randomUUID(),

@@ -22,14 +22,14 @@ Source: `packages/local-runtime`. Builds: `helper/service.cjs` (background servi
 
 ## Lifecycle
 
-| Action | Behavior |
-| --- | --- |
-| Login | macOS LaunchAgent, Windows `HKCU\...\Run` value, or a systemd user unit runs `laplace-runtime login`. Clears an explicit stop. No keep-alive or respawn. |
-| Close Desktop | Desktop disconnects; the runtime keeps serving AI clients. |
-| Stop Laplace Runtime | Stops connectors and relay access, writes `stopped.json`. Lasts until a manual start or the next login. |
-| Terminated externally | Not respawned. Bridges report it stopped until a manual start. |
-| Start | Desktop, `laplace-runtime start`, or login. |
-| Start at login | On by default for installed Desktop; the opt-out is remembered. |
+| Action                | Behavior                                                                                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Login                 | macOS LaunchAgent, Windows `HKCU\...\Run` value, or a systemd user unit runs `laplace-runtime autostart`. Clears an explicit stop. No keep-alive or respawn. |
+| Close Desktop         | Desktop disconnects; the runtime keeps serving AI clients.                                                                                                   |
+| Stop Laplace Runtime  | Stops connectors and relay access, writes `stopped.json`. Lasts until a manual start or the next login.                                                      |
+| Terminated externally | Not respawned. Bridges report it stopped until a manual start.                                                                                               |
+| Start                 | Desktop, `laplace-runtime start`, or login.                                                                                                                  |
+| Start at login        | On by default for installed Desktop; the opt-out is remembered.                                                                                              |
 
 Screen lock and sleep lock credentials and resume browser recovery inside the runtime, so they
 work without Desktop. Keep-awake (off by default) holds an idle-sleep assertion only while

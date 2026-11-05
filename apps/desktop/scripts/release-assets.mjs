@@ -81,6 +81,7 @@ export function requiredArchiveEntries(platform) {
 		`${resources}/app.asar`,
 		`${runtime}/helper/main.cjs`,
 		`${runtime}/helper/service.cjs`,
+		`${runtime}/helper/launcher.cjs`,
 		`${runtime}/helper/bridge.cjs`,
 		`${runtime}/runtimes/node${mac ? "" : ".exe"}`,
 		`${runtime}/runtimes/uv${mac ? "" : ".exe"}`,

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { expect, it } from "vitest";
+
 import { BrokerChrome } from "@repo/local-runtime/broker-chrome";
 import { browserExtensionId } from "@repo/local-runtime/shared/browser-extension-id";
+import { expect, it } from "vitest";
 
 it("pairs only the shipped extension, delivers once, sanitizes results and cancels pending work", async () => {
 	let ticket: any;

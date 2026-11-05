@@ -3,9 +3,10 @@ import { cp, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { chromium } from "@playwright/test";
-import { expect, it } from "vitest";
 import { BrokerChrome } from "@repo/local-runtime/broker-chrome";
+import { expect, it } from "vitest";
 
 it.skipIf(!existsSync(chromium.executablePath()))(
 	"uses a real extension handoff tab and ephemeral relay while preserving unrelated tabs",

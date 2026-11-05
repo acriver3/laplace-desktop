@@ -7,12 +7,11 @@ import { join } from "node:path";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { systemEntry, type EntryFactory } from "@repo/local-mcp-core/store";
-import { isLocalConnectorToolName } from "@repo/project-protocol/mcp/local-tools";
-
 import { CatalogInstaller } from "@repo/local-runtime/catalog";
 import { ConnectorManagement } from "@repo/local-runtime/connector-tools";
 import { DesktopManager } from "@repo/local-runtime/manager";
 import { startMcpServer } from "@repo/local-runtime/server";
+import { isLocalConnectorToolName } from "@repo/project-protocol/mcp/local-tools";
 
 const sleep = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
 function alive(pid: number) {

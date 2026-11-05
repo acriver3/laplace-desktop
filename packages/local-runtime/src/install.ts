@@ -27,7 +27,12 @@ export function stableLaunchers(home = runtimeHome(), platform = process.platfor
 	return {
 		bin,
 		launcher: join(bin, platform === "win32" ? "laplace-runtime.cmd" : "laplace-runtime"),
+		/** CLI compatibility name for existing `laplace-local` users. */
+		compatibility: join(bin, platform === "win32" ? "laplace-local.cmd" : "laplace-local"),
 		hidden: join(bin, "laplace-runtime-hidden.exe"),
+		/** AI-client registrations keep the `node bridge.cjs --root … --client-id …` shape. */
+		node: join(bin, "node"),
+		bridge: join(bin, "bridge.cjs"),
 	};
 }
 
@@ -35,6 +40,20 @@ const shellLauncher = `#!/bin/sh
 home="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 version="$(cat "$home/current")" || exit 1
 exec "$home/versions/$version/runtimes/node" "$home/versions/$version/helper/launcher.cjs" "$@"
+`;
+const shellNode = `#!/bin/sh
+home="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+version="$(cat "$home/current")" || exit 1
+exec "$home/versions/$version/runtimes/node" "$@"
+`;
+const bridgeForwarder = `"use strict";
+// Stable AI-client entry: forwards to the selected runtime version's bridge.
+const { readFileSync } = require("node:fs");
+const { join } = require("node:path");
+const home = join(__dirname, "..");
+const version = readFileSync(join(home, "current"), "utf8").trim();
+if (!/^\\d+\\.\\d+\\.\\d+$/.test(version)) throw new Error("Invalid Laplace Runtime selection");
+require(join(home, "versions", version, "helper", "bridge.cjs"));
 `;
 const cmdLauncher = `@echo off\r
 setlocal\r
@@ -108,13 +127,21 @@ export async function installRuntime(
 			if (!(await exists(join(target, ".complete")))) throw error;
 		}
 	}
-	const { bin, launcher, hidden } = stableLaunchers(home, platform);
+	const stable = stableLaunchers(home, platform);
+	const { bin, hidden } = stable;
 	await mkdir(bin, { recursive: true, mode: 0o700 });
 	const script = platform === "win32" ? cmdLauncher : shellLauncher;
-	if ((await readFile(launcher, "utf8").catch(() => "")) !== script) {
-		await writeAtomic(launcher, script, 0o700);
-		await chmod(launcher, 0o700);
-	}
+	const files: Array<[string, string]> = [
+		[stable.launcher, script],
+		[stable.compatibility, script],
+		[stable.bridge, bridgeForwarder],
+		...(platform === "win32" ? [] : ([[stable.node, shellNode]] as Array<[string, string]>)),
+	];
+	for (const [path, content] of files)
+		if ((await readFile(path, "utf8").catch(() => "")) !== content) {
+			await writeAtomic(path, content, 0o700);
+			await chmod(path, 0o700);
+		}
 	const hiddenSource = join(target, "runtimes", "laplace-runtime-hidden.exe");
 	if (platform === "win32" && (await exists(hiddenSource)))
 		await cp(hiddenSource, hidden).catch(() => {
@@ -122,7 +149,7 @@ export async function installRuntime(
 		});
 	if (options.select !== false) await selectRuntime(version, home);
 	await prune(home);
-	return { version, ...runtimeLayout(target, platform), launcher };
+	return { version, ...runtimeLayout(target, platform), launcher: stable.launcher, stable };
 }
 /** Keeps the selected and previous versions; older complete versions are removed. */
 async function prune(home: string) {

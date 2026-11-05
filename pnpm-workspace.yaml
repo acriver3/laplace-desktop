@@ -1,5 +1,6 @@
 packages:
   - apps/desktop
+  - apps/local-mcp
   - apps/connector
   - packages/*
   - tooling/*

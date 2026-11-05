@@ -95,6 +95,11 @@ export async function acquireResourceLeases(config: ServerConfig, cwd: string) {
 					try {
 						owner = JSON.parse(await readFile(path, "utf8"));
 					} catch {
+						// The owner creates the file before writing it; give that write a moment.
+						if (attempt < 2) {
+							await new Promise((accept) => setTimeout(accept, 100));
+							continue;
+						}
 						throw new Error(
 							"Another connector is acquiring this working directory or browser profile. Retry shortly.",
 						);

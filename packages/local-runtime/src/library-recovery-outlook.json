@@ -16,9 +16,7 @@
 	"recipe": "outlook",
 	"patches": [],
 	"reviewedAt": "2026-11-05",
-	"reviewEvidence": [
-		"reviews/local-mcp-outlook-review.md"
-	],
+	"reviewEvidence": ["reviews/local-mcp-outlook-review.md"],
 	"reviewNotes": [
 		"Opt-in session recovery candidate. Serialized refresh and atomic token rotation are feature gated. Native authenticated Windows acceptance and internal trials remain pending."
 	],
@@ -38,11 +36,7 @@
 			"storagePrefix": "v0.1.0",
 			"sha256": "7096182257433093f8521830fdb26ef69ec0606fc9edf89c10a53351eb78d411",
 			"size": 11051709,
-			"platforms": [
-				"win32-x64",
-				"darwin-x64",
-				"darwin-arm64"
-			],
+			"platforms": ["win32-x64", "darwin-x64", "darwin-arm64"],
 			"published": true,
 			"acceptance": [],
 			"url": "https://raw.githubusercontent.com/acriver3/laplace-mcp-library/d9340533ce617065458fdfd92f2d602a74d26b2c/bundles/msoutlook-mcp/0.5.0-laplace.2/msoutlook-mcp-0.5.0-laplace.2-universal.mcpb",

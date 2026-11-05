@@ -10,12 +10,12 @@ import {
 import { localManagementRequest } from "@repo/project-protocol/portable-connectors";
 import { z } from "zod";
 
-import { BROWSER_APPROVAL_URI } from "./shared/browser-approval";
 import { browserAuthorizer, type BrowserApprovals } from "./browser-approvals";
 import type { CatalogInstaller, CatalogJob } from "./catalog";
 import { normalizeManualConfiguration, previewManualConfiguration } from "./imports";
 import type { DesktopManager } from "./manager";
 import type { PortableConnectors } from "./portable";
+import { BROWSER_APPROVAL_URI } from "./shared/browser-approval";
 
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
 const empty = z.object({}).strict();

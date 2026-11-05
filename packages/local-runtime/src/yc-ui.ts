@@ -15,8 +15,8 @@ import {
 } from "@repo/project-protocol/mcp/yc-schema";
 import { z } from "zod";
 
-import { ycBrowserIdentity } from "./shared/yc-browser";
 import type { DesktopManager } from "./manager";
+import { ycBrowserIdentity } from "./shared/yc-browser";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 // The 0.1.5 Windows demo installer copied this exact bundled adapter outside the app.

@@ -1,6 +1,9 @@
+import {
+	browserArgument,
+	checkBrowser,
+	CredentialBrowser,
+} from "@repo/local-runtime/credential-browser";
 import { afterEach, expect, it, vi } from "vitest";
-
-import { browserArgument, checkBrowser, CredentialBrowser } from "@repo/local-runtime/credential-browser";
 afterEach(() => vi.unstubAllGlobals());
 it("reads explicit debugging arguments without interpreting shell syntax", () => {
 	expect(

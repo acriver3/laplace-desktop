@@ -5,14 +5,16 @@ import { join } from "node:path";
 
 import type { EntryFactory } from "@repo/local-mcp-core/store";
 import {
+	ConnectionBroker,
+	type ConnectionBrokerAdapter,
+} from "@repo/local-runtime/connection-broker";
+import {
 	brokerMcpResult,
 	brokerTools,
 	checkBrokerTool,
 	brokerToolInput,
 } from "@repo/project-protocol/credential-broker";
 import { afterEach, expect, it, vi, type Mock } from "vitest";
-
-import { ConnectionBroker, type ConnectionBrokerAdapter } from "@repo/local-runtime/connection-broker";
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	for (const work of cleanup.splice(0)) await work();
@@ -156,7 +158,7 @@ it("records interrupted execution and never replays it after helper restart", as
 	const r = await f.review();
 	await f.call({ action: "approve", capability: r.capability, itemIds: [f.itemId] });
 	// Approval schedules execution after persisting its receipt. Interrupt only once
-    // the adapter has actually started, rather than racing that durable write.
+	// the adapter has actually started, rather than racing that durable write.
 	await vi.waitFor(() => expect(f.adapter.execute).toHaveBeenCalledTimes(1));
 	const restarted = new ConnectionBroker(f.root, f.adapter, () => {}, f.entries);
 	try {

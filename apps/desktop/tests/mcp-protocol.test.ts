@@ -8,9 +8,8 @@ import { NodeStreamableHTTPServerTransport, toNodeHandler } from "@modelcontextp
 import { Server, createMcpHandler } from "@modelcontextprotocol/server";
 import { serverConfig, importMcpConfiguration } from "@repo/local-mcp-core/config";
 import { Supervisor } from "@repo/local-mcp-core/supervisor";
-import { afterEach, expect, it } from "vitest";
-
 import { configurationSummary } from "@repo/local-runtime/imports";
+import { afterEach, expect, it } from "vitest";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

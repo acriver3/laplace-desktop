@@ -35,6 +35,7 @@
 		"@napi-rs/keyring": "2.1.0",
 		"@orpc/client": "catalog:",
 		"@repo/browser-runtime": "workspace:*",
+		"@repo/local-mcp": "workspace:*",
 		"@repo/local-mcp-core": "workspace:*",
 		"@repo/local-runtime": "workspace:*",
 		"@repo/project-protocol": "workspace:*",

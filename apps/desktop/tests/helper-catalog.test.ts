@@ -4,8 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ServerConfig } from "@repo/local-mcp-core/config";
-import { afterAll, afterEach, expect, it, vi } from "vitest";
-
 import {
 	CatalogInstaller,
 	extractBundle,
@@ -15,6 +13,7 @@ import {
 	resolveManifestConfiguration,
 } from "@repo/local-runtime/catalog";
 import { bundleCatalog } from "@repo/local-runtime/library-catalog";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
 
 const folders: string[] = [];
 afterEach(async () => {

@@ -1,9 +1,9 @@
 import type { Tool } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-import { desktopVersion } from "./shared/version";
 import type { HostedConnections } from "./hosted-oauth";
 import type { DesktopManager } from "./manager";
+import { desktopVersion } from "./shared/version";
 
 const section = z.enum(["servers", "clients", "device", "updates", "credentials"]);
 export type DesktopSection = z.infer<typeof section>;

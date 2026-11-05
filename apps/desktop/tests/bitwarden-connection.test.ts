@@ -6,8 +6,6 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 
 import { spawnLocal, stopTree } from "@repo/local-mcp-core/process";
-import { afterEach, expect, it, vi } from "vitest";
-
 import {
 	BitwardenConnectionManager,
 	loginPrompt,
@@ -15,6 +13,7 @@ import {
 } from "@repo/local-runtime/bitwarden-connection";
 import { bitwardenError } from "@repo/local-runtime/credential-errors";
 import { helperInputs } from "@repo/local-runtime/shared/helper-contracts";
+import { afterEach, expect, it, vi } from "vitest";
 vi.mock("@repo/local-mcp-core/process", () => ({
 	spawnLocal: vi.fn(),
 	stopTree: vi.fn(async () => {}),

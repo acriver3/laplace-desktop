@@ -62,6 +62,7 @@ export const helperInputs = {
 		.object({ requestId: z.string().uuid(), capability: z.string().min(40).max(100) })
 		.strict(),
 	"browser.cancel": z.object({ requestId: z.string().uuid() }).strict(),
+	"browser.page": z.object({ requestId: z.string().uuid() }).strict(),
 	"browser.focus": z
 		.object({ requestId: z.string().uuid(), profileId: z.string().uuid() })
 		.strict(),

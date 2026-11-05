@@ -3,13 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { EntryFactory } from "@repo/local-mcp-core/store";
-import { LOCAL_RUNTIME_PROTOCOL } from "@repo/project-protocol/local-runtime";
-import { afterEach, expect, it } from "vitest";
-
+import { RuntimeClient } from "@repo/local-runtime/client";
 import { DesktopManager } from "@repo/local-runtime/manager";
 import { startMcpServer, type ControlServer } from "@repo/local-runtime/server";
-import { RuntimeClient } from "@repo/local-runtime/client";
 import type { HelperEvent } from "@repo/local-runtime/shared/helper-contracts";
+import { LOCAL_RUNTIME_PROTOCOL } from "@repo/project-protocol/local-runtime";
+import { afterEach, expect, it } from "vitest";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

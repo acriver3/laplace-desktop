@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { homedir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 
+import { UpdateError, updateLaunchBlocked, updateRoot } from "@repo/local-runtime/update-guard";
 import { z } from "zod";
 
 import {
@@ -18,8 +19,6 @@ import {
 	rm,
 	statfs,
 } from "./filesystem";
-
-import { UpdateError, updateLaunchBlocked, updateRoot } from "@repo/local-runtime/update-guard";
 
 export { UpdateError, updateLaunchBlocked, updateRoot };
 

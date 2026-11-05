@@ -126,6 +126,9 @@ importers:
       '@repo/browser-runtime':
         specifier: workspace:*
         version: link:../../packages/browser-runtime
+      '@repo/local-mcp':
+        specifier: workspace:*
+        version: link:../local-mcp
       '@repo/local-mcp-core':
         specifier: workspace:*
         version: link:../../packages/local-mcp-core
@@ -218,6 +221,25 @@ importers:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.0)(@vitest/coverage-v8@4.1.5)(vite@8.3.2(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))
 
+  apps/local-mcp:
+    dependencies:
+      '@repo/local-mcp-core':
+        specifier: workspace:*
+        version: link:../../packages/local-mcp-core
+      '@repo/local-runtime':
+        specifier: workspace:*
+        version: link:../../packages/local-runtime
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.6.0
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.0)(@vitest/coverage-v8@4.1.5)(vite@8.3.2(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))
+
   packages/browser-runtime:
     dependencies:
       '@modelcontextprotocol/client':
@@ -266,9 +288,15 @@ importers:
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.0)(@vitest/coverage-v8@4.1.5)(vite@8.3.2(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/local-runtime:
     dependencies:

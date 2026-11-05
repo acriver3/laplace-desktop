@@ -4,17 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ServerConfig } from "@repo/local-mcp-core/config";
-import { afterAll, afterEach, expect, it, vi } from "vitest";
-
 import { CatalogInstaller } from "@repo/local-runtime/catalog";
+import { browserExtensionId } from "@repo/local-runtime/shared/browser-extension-id";
+import { slackBrowserVersion, slackSetupNames } from "@repo/local-runtime/shared/slack-browser";
 import {
 	slackBrowserConfig,
 	upgradeSlackConfig,
 	legacySlackIdentity,
 } from "@repo/local-runtime/slack-browser-config";
 import { SlackBrowserRelay, redactBrowserResult } from "@repo/local-runtime/slack-browser-relay";
-import { browserExtensionId } from "@repo/local-runtime/shared/browser-extension-id";
-import { slackBrowserVersion, slackSetupNames } from "@repo/local-runtime/shared/slack-browser";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
+
 import { approveBrowser } from "./fixtures/browser-approval";
 
 vi.hoisted(() => {

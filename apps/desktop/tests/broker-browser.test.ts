@@ -4,10 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { chromium } from "@playwright/test";
-import { expect, it } from "vitest";
-
 import { BrokerBrowser } from "@repo/local-runtime/broker-browser";
 import { browserTargets } from "@repo/local-runtime/credentials-cdp";
+import { expect, it } from "vitest";
 it.skipIf(!existsSync(chromium.executablePath()))(
 	"submits a real login without exposing values and pauses on MFA, consent and cross-origin forms",
 	async () => {

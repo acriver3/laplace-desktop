@@ -6,7 +6,8 @@ afterEach(() => {
 it("keeps the stable background bundle by default", async () => {
 	vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", "false");
 	vi.resetModules();
-	const { legacyBundleCatalog, allBundleCatalog } = await import("@repo/local-runtime/library-catalog");
+	const { legacyBundleCatalog, allBundleCatalog } =
+		await import("@repo/local-runtime/library-catalog");
 	expect(
 		allBundleCatalog.some((x) => x.id === "msoutlook-mcp" && x.version === "0.5.0-laplace.2"),
 	).toBe(true);

@@ -19,12 +19,16 @@ function fixture(responses: Record<string, unknown[]>) {
 			return {} as never;
 		},
 	};
-	const link = new DeviceLink(manager, () => ({
-		post: async (path: string, body: unknown) => {
-			calls.push({ path, body });
-			return responses[path]!.shift();
-		},
-	}) as never);
+	const link = new DeviceLink(
+		manager,
+		() =>
+			({
+				post: async (path: string, body: unknown) => {
+					calls.push({ path, body });
+					return responses[path]!.shift();
+				},
+			}) as never,
+	);
 	return { link, calls, completed };
 }
 
@@ -40,7 +44,10 @@ it("links through browser approval and completes once", async () => {
 				interval: 5,
 			},
 		],
-		poll: [{ status: "pending" }, { status: "linked", installationId: crypto.randomUUID(), accountId: "acct" }],
+		poll: [
+			{ status: "pending" },
+			{ status: "linked", installationId: crypto.randomUUID(), accountId: "acct" },
+		],
 	});
 	const started = await link.start(origin, "Fixture");
 	expect(started).toMatchObject({ pending: true, approvalCode: "ABCD-EFGH" });

@@ -3,13 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { runtimeCommand, serverConfig } from "@repo/local-mcp-core/config";
-import { afterEach, expect, it } from "vitest";
-
 import {
 	previewImportFile,
 	previewLaunch,
 	previewManualConfiguration,
 } from "@repo/local-runtime/imports";
+import { afterEach, expect, it } from "vitest";
 
 const folders: string[] = [];
 afterEach(async () => {

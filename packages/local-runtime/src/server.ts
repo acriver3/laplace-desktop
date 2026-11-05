@@ -23,9 +23,6 @@ import { ycUiResource } from "@repo/project-protocol/mcp/yc-resource";
 import { ycUiTools, YC_UI_URI } from "@repo/project-protocol/mcp/yc-schema";
 import { z } from "zod";
 
-import { BROWSER_APPROVAL_URI } from "./shared/browser-approval";
-import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
-import { desktopVersion } from "./shared/version";
 import {
 	ConnectorManagement,
 	connectorManagementTools,
@@ -35,6 +32,9 @@ import type { CredentialBroker, CredentialPrincipal } from "./credentials";
 import { desktopManagementTool, manageDesktop, type DesktopSection } from "./desktop-tools";
 import type { HostedConnections } from "./hosted-oauth";
 import type { DesktopManager } from "./manager";
+import { BROWSER_APPROVAL_URI } from "./shared/browser-approval";
+import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
+import { desktopVersion } from "./shared/version";
 import { desktopYcView, ycConnections, ycInvocationTools } from "./yc-ui";
 
 const MAX_BODY = 1_048_576;

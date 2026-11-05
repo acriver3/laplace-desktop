@@ -29,8 +29,6 @@ import {
 } from "@repo/project-protocol/setup-notifications";
 import { fromBuffer, type ZipFile, type Entry } from "yauzl";
 
-import { slackBrowserVersion } from "./shared/slack-browser";
-import { ycWorkspace } from "./shared/yc-browser";
 import type { BrowserApprovals } from "./browser-approvals";
 import {
 	bundleCatalog,
@@ -40,6 +38,8 @@ import {
 	type BundleCatalogEntry,
 	type BundleArtifact,
 } from "./library-catalog";
+import { slackBrowserVersion } from "./shared/slack-browser";
+import { ycWorkspace } from "./shared/yc-browser";
 import { slackBrowserConfig } from "./slack-browser-config";
 import { ycBrowserConfig } from "./yc-browser-config";
 const browserSlack = (entry: BundleCatalogEntry) =>

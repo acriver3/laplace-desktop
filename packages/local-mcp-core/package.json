@@ -22,7 +22,8 @@
 		"./retained-runtime": "./src/retained-runtime.ts"
 	},
 	"scripts": {
-		"type-check": "tsc --noEmit"
+		"type-check": "tsc --noEmit",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@cfworker/json-schema": "4.1.1",
@@ -37,6 +38,8 @@
 	"devDependencies": {
 		"@types/node": "catalog:",
 		"@types/ws": "8.18.1",
-		"typescript": "catalog:"
+		"esbuild": "0.28.1",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
 	}
 }

@@ -3,8 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { LocalStore, type EntryFactory } from "@repo/local-mcp-core/store";
-import { afterEach, describe, expect, it } from "vitest";
-
 import {
 	previewConfiguration,
 	previewImportFile,
@@ -12,6 +10,7 @@ import {
 	normalizeManualConfiguration,
 } from "@repo/local-runtime/imports";
 import { previewLegacyMigration, migrateSelectedLegacy } from "@repo/local-runtime/migration";
+import { afterEach, describe, expect, it } from "vitest";
 
 const folders: string[] = [];
 afterEach(async () => {

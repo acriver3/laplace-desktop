@@ -7,9 +7,8 @@ import { gunzipSync } from "node:zlib";
 import { browserExtensionId } from "@repo/browser-runtime/browser-extension-id";
 import { listBrowserRequests } from "@repo/browser-runtime/browser-requests";
 import { serverConfig } from "@repo/local-mcp-core/config";
-import { afterEach, expect, it, vi } from "vitest";
-
 import type { CatalogJob } from "@repo/local-runtime/catalog";
+import { afterEach, expect, it, vi } from "vitest";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
@@ -30,7 +29,10 @@ async function fixture() {
 	const resources = join(root, "resources");
 	if (process.platform === "win32") {
 		await mkdir(join(resources, "runtimes"), { recursive: true });
-		await copyFile(join(process.cwd(), "resources/runtimes/process-host.exe"), join(resources, "runtimes/process-host.exe"));
+		await copyFile(
+			join(process.cwd(), "resources/runtimes/process-host.exe"),
+			join(resources, "runtimes/process-host.exe"),
+		);
 	}
 	await mkdir(join(resources, "helper"), { recursive: true });
 	const bytes = gunzipSync(

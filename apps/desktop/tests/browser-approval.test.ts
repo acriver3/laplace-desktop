@@ -5,16 +5,16 @@ import { join } from "node:path";
 
 import { browserSignInUrl } from "@repo/browser-runtime/browser-approval";
 import { RecoveryError } from "@repo/browser-runtime/session-recovery";
+import { BrowserApprovals, browserAuthorizer } from "@repo/local-runtime/browser-approvals";
+import type { DesktopManager } from "@repo/local-runtime/manager";
+import { browserExtensionId } from "@repo/local-runtime/shared/browser-extension-id";
+import { SlackBrowserRelay } from "@repo/local-runtime/slack-browser-relay";
 import {
 	refreshedApprovalCapability,
 	approvalError,
 } from "@repo/project-protocol/mcp/browser-approval-card";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { BrowserApprovals, browserAuthorizer } from "@repo/local-runtime/browser-approvals";
-import type { DesktopManager } from "@repo/local-runtime/manager";
-import { SlackBrowserRelay } from "@repo/local-runtime/slack-browser-relay";
-import { browserExtensionId } from "@repo/local-runtime/shared/browser-extension-id";
 import { listBrowserRequests } from "../src/shared/browser-requests";
 
 const cleanup: Array<() => Promise<unknown>> = [];

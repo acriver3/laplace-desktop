@@ -4,9 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { EntryFactory } from "@repo/local-mcp-core/store";
-import { credentialInput, credentialSettings } from "@repo/project-protocol/credentials";
-import { afterEach, expect, it, vi } from "vitest";
-
 import { CredentialBroker, type CredentialPrincipal } from "@repo/local-runtime/credentials";
 import { cdpOrigin, browserTargets } from "@repo/local-runtime/credentials-cdp";
 import {
@@ -15,6 +12,8 @@ import {
 	selectedResult,
 	validateParameters,
 } from "@repo/local-runtime/credentials-execution";
+import { credentialInput, credentialSettings } from "@repo/project-protocol/credentials";
+import { afterEach, expect, it, vi } from "vitest";
 
 const cleanup: Array<() => Promise<unknown> | void> = [];
 it.skipIf(process.platform === "win32")(

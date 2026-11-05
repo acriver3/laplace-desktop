@@ -32,14 +32,14 @@ import {
 } from "@repo/project-protocol/portable-connectors";
 import { z } from "zod";
 
-import type { ClientSnapshot, DesktopSnapshot, ServerSnapshot } from "./shared/helper-contracts";
-import { slackSetupNames } from "./shared/slack-browser";
-import { ycBrowserIdentity, ycSetupNames } from "./shared/yc-browser";
 import { connectorManagementTools } from "./connector-tools";
 import { desktopManagementTool } from "./desktop-tools";
 import { configurationSummary } from "./imports";
 import { assertLegacyProcessesStopped } from "./legacy-processes";
 import { allBundleCatalog } from "./library-catalog";
+import type { ClientSnapshot, DesktopSnapshot, ServerSnapshot } from "./shared/helper-contracts";
+import { slackSetupNames } from "./shared/slack-browser";
+import { ycBrowserIdentity, ycSetupNames } from "./shared/yc-browser";
 import { slackBrowserIdentity } from "./slack-browser-config";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");

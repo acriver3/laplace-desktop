@@ -2,9 +2,6 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { parse as parseToml } from "toml";
-import { afterEach, expect, it, vi } from "vitest";
-
 import {
 	configurePluginBridge,
 	previewClientRegistration,
@@ -12,6 +9,8 @@ import {
 	updateCodexConfiguration,
 } from "@repo/local-runtime/client-registration";
 import { helperInputs } from "@repo/local-runtime/shared/helper-contracts";
+import { parse as parseToml } from "toml";
+import { afterEach, expect, it, vi } from "vitest";
 
 const folders: string[] = [];
 afterEach(async () => {

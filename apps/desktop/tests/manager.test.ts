@@ -5,10 +5,9 @@ import { join, resolve } from "node:path";
 
 import { serverConfig } from "@repo/local-mcp-core/config";
 import type { EntryFactory } from "@repo/local-mcp-core/store";
+import { DesktopManager } from "@repo/local-runtime/manager";
 import { bundleCatalog } from "@repo/project-protocol/local-mcp-bundles";
 import { afterEach, expect, it, vi } from "vitest";
-
-import { DesktopManager } from "@repo/local-runtime/manager";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {

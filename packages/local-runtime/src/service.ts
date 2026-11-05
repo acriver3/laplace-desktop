@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join, resolve, sep } from "node:path";
 
 import {
 	LOCAL_RUNTIME_PROTOCOL,
@@ -9,7 +9,9 @@ import {
 	type LocalRuntimeDescriptor,
 } from "@repo/project-protocol/local-runtime";
 
+import { stableLaunchers } from "./install";
 import { registerBrowserNativeHost } from "./native-host";
+import { runtimeHome } from "./paths";
 import { createRuntime, type Runtime } from "./runtime";
 import type { ControlServer } from "./server";
 import { watchSession } from "./session-monitor";
@@ -74,6 +76,15 @@ export async function startService(argv = process.argv) {
 		await registerBrowserNativeHost(resources).catch(() => {
 			process.stderr.write("Laplace browser extension discovery registration failed.\n");
 		});
+	// Installed runtimes register AI clients through stable entries that survive updates.
+	const stable = stableLaunchers();
+	const installed =
+		process.platform !== "win32" &&
+		resolve(argv[1]!).startsWith(join(runtimeHome(), "versions") + sep) &&
+		(await stat(stable.bridge).then(
+			() => true,
+			() => false,
+		));
 	runtime = await createRuntime({
 		root,
 		resources,
@@ -82,6 +93,7 @@ export async function startService(argv = process.argv) {
 		emit,
 		control,
 		keepAwake: true,
+		stableBridge: installed ? { node: stable.node, bridge: stable.bridge } : undefined,
 	});
 	const active = runtime;
 	const session = watchSession((event) => {

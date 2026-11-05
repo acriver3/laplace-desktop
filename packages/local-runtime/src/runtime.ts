@@ -4,6 +4,7 @@ import { homedir, hostname } from "node:os";
 import { join, resolve, dirname } from "node:path";
 
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { openBrowserApprovalPage } from "@repo/browser-runtime/approval-page";
 import { verifyBrowserConfiguration } from "@repo/local-mcp-core/browser-catalog";
 import {
 	ConnectorUpdates,
@@ -93,6 +94,8 @@ export type RuntimeOptions = {
 	bridgePath: string;
 	emit: (event: HelperEvent) => void;
 	control?: ControlServer;
+	/** Stable node/bridge entries from an installed runtime home (macOS and Linux). */
+	stableBridge?: { node: string; bridge: string };
 	/** Background services may hold an idle-sleep assertion while sharing remotely. */
 	keepAwake?: boolean;
 };
@@ -112,7 +115,9 @@ export async function createRuntime(options: RuntimeOptions) {
 	const release = await acquireLock(root);
 	const send = options.emit;
 	const manager = new DesktopManager(root, resources, origin);
-	const bridgeRegistration = await stableBridge(root, nodePath, options.bridgePath);
+	const bridgeRegistration = options.stableBridge
+		? { nodePath: options.stableBridge.node, bridgePath: options.stableBridge.bridge }
+		: await stableBridge(root, nodePath, options.bridgePath);
 	const credentials = new CredentialBroker(
 		root,
 		resources,
@@ -241,6 +246,7 @@ export async function createRuntime(options: RuntimeOptions) {
 				} catch {}
 		connectorUpdates.cancel();
 		keepAwake.stop();
+		for (const page of approvalPages.values()) await page.close();
 		await sharedUpdates.stop();
 		await server.close();
 		await hosted.shutdown();
@@ -337,6 +343,7 @@ export async function createRuntime(options: RuntimeOptions) {
 	};
 	void connectorUpdates.recover().catch(() => {});
 	const deviceLink = new DeviceLink(manager);
+	const approvalPages = new Map<string, { url: string; close(): Promise<void> }>();
 	const settingsPath = join(root, "runtime-settings.json");
 	const settingsSchema = z.object({ keepAwake: z.boolean().default(false) }).strict();
 	let settings = settingsSchema.parse(
@@ -656,6 +663,15 @@ export async function createRuntime(options: RuntimeOptions) {
 					await browserApprovals.approve(input.requestId, "desktop", input.capability);
 					result = browserApprovals.review(input.requestId, "desktop");
 					break;
+				case "browser.page": {
+					// Headless approval UI: request-scoped loopback page with CSRF protection.
+					browserApprovals.review(input.requestId, "desktop");
+					await approvalPages.get(input.requestId)?.close();
+					const page = await openBrowserApprovalPage(browserApprovals, input.requestId, "desktop");
+					approvalPages.set(input.requestId, page);
+					result = { url: page.url };
+					break;
+				}
 				case "browser.cancel":
 					await browserApprovals.cancel(input.requestId, "desktop");
 					result = browserApprovals.review(input.requestId, "desktop");

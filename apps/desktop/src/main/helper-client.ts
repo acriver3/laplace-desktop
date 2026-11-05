@@ -2,13 +2,14 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
+import { helperEnvironment } from "@repo/local-runtime/environment";
+
 import type {
 	DesktopSnapshot,
 	HelperEvent,
 	HelperMethod,
 	HelperReply,
 } from "../shared/helper-contracts";
-import { helperEnvironment } from "@repo/local-runtime/environment";
 
 export class HelperClient {
 	private child?: ChildProcess;

@@ -41,7 +41,7 @@ await build({
 		"../../packages/local-runtime/src/service.ts",
 		"../../packages/local-runtime/src/bridge.ts",
 		"../../packages/local-runtime/src/slack-browser.ts",
-		"../../packages/local-runtime/src/launcher.ts",
+		{ in: "../local-mcp/src/main.ts", out: "launcher" },
 	],
 	outdir: "dist/helper",
 	outExtension: { ".js": ".cjs" },

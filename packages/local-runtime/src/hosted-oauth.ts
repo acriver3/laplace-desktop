@@ -14,8 +14,8 @@ import { closeMcpConnection } from "@repo/local-mcp-core/mcp-lifecycle";
 import { connectorOriginSchema } from "@repo/project-protocol/local-mcp";
 import { z } from "zod";
 
-import type { ClientSnapshot } from "./shared/helper-contracts";
 import type { DesktopManager } from "./manager";
+import type { ClientSnapshot } from "./shared/helper-contracts";
 
 const oauthState = z
 	.object({

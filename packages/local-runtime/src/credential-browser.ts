@@ -9,10 +9,10 @@ import { promisify } from "node:util";
 import { minimalEnvironment } from "@repo/local-mcp-core/config";
 import { spawnLocal, stopTree } from "@repo/local-mcp-core/process";
 
-import type { BrowserChoice, CredentialBrowserState } from "./shared/credential-setup";
 import { CredentialSetupError } from "./credential-errors";
 import { cdpOrigin } from "./credentials-cdp";
 import { browserExtensionId } from "./shared/browser-extension-id";
+import type { BrowserChoice, CredentialBrowserState } from "./shared/credential-setup";
 const exec = promisify(execFile);
 const id = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 24);
 export function browserArgument(command: string, flag: string) {

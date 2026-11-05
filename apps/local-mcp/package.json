@@ -1,0 +1,21 @@
+{
+	"name": "@repo/local-mcp",
+	"version": "0.2.0",
+	"private": true,
+	"description": "laplace-local / laplace-runtime command-line client for the Laplace Runtime",
+	"type": "module",
+	"scripts": {
+		"test": "vitest run",
+		"type-check": "tsc --noEmit",
+		"package": "pnpm --filter @repo/desktop package:runtime"
+	},
+	"dependencies": {
+		"@repo/local-mcp-core": "workspace:*",
+		"@repo/local-runtime": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
+}

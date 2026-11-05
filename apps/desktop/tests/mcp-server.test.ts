@@ -7,9 +7,6 @@ import { join, resolve } from "node:path";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { serverConfig } from "@repo/local-mcp-core/config";
 import type { EntryFactory } from "@repo/local-mcp-core/store";
-import { build } from "esbuild";
-import { afterAll, afterEach, expect, it, vi } from "vitest";
-
 import { BrowserApprovals } from "@repo/local-runtime/browser-approvals";
 import { CatalogInstaller } from "@repo/local-runtime/catalog";
 import { ConnectorManagement, connectorManagementTools } from "@repo/local-runtime/connector-tools";
@@ -18,10 +15,15 @@ import { bundleCatalog, bundleAvailable } from "@repo/local-runtime/library-cata
 import { DesktopManager } from "@repo/local-runtime/manager";
 import { startMcpServer } from "@repo/local-runtime/server";
 import { browserExtensionId } from "@repo/local-runtime/shared/browser-extension-id";
-import { listBrowserRequests } from "../src/shared/browser-requests";
 import { ycBrowserIdentity } from "@repo/local-runtime/shared/yc-browser";
+import { build } from "esbuild";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
+
+import { listBrowserRequests } from "../src/shared/browser-requests";
 // This suite exercises the explicitly enabled browser-extension installation path.
-vi.mock("@repo/local-runtime/shared/browser-feature", () => ({ browserConnectionsEnabled: () => true }));
+vi.mock("@repo/local-runtime/shared/browser-feature", () => ({
+	browserConnectionsEnabled: () => true,
+}));
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
 	for (const work of cleanup.splice(0).reverse()) await work();

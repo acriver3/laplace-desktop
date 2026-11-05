@@ -14,7 +14,6 @@ import {
 import { canonicalJson } from "@repo/project-protocol/local-mcp";
 import { z } from "zod";
 
-import type { BitwardenConnection, CredentialBrowserState } from "./shared/credential-setup";
 import { BitwardenConnectionManager } from "./bitwarden-connection";
 import { BrokerChrome } from "./broker-chrome";
 import { CredentialBrowser } from "./credential-browser";
@@ -26,6 +25,7 @@ import {
 	executeHttp,
 	validateParameters,
 } from "./credentials-execution";
+import type { BitwardenConnection, CredentialBrowserState } from "./shared/credential-setup";
 
 export type CredentialPrincipal = {
 	id: string;

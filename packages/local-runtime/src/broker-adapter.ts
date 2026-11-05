@@ -5,7 +5,6 @@ import {
 } from "@repo/project-protocol/credential-broker";
 import { z } from "zod";
 
-import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
 import { BrokerBrowser } from "./broker-browser";
 import type { CatalogInstaller } from "./catalog";
 import type { ConnectionBrokerAdapter, BrokerExecution } from "./connection-broker";
@@ -13,6 +12,7 @@ import type { CredentialBroker, CredentialPrincipal } from "./credentials";
 import { browserTargets } from "./credentials-cdp";
 import type { DesktopManager } from "./manager";
 import type { PortableConnectors } from "./portable";
+import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
 export function desktopBrokerAdapter(
 	manager: DesktopManager,
 	credentials: CredentialBroker,

@@ -2,13 +2,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { expect, it, vi } from "vitest";
-
 import { CatalogInstaller } from "@repo/local-runtime/catalog";
-import { ycBrowserConfig } from "@repo/local-runtime/yc-browser-config";
-import { YcBrowserRelay, ycActions } from "@repo/local-runtime/yc-browser-relay";
 import { browserExtensionId } from "@repo/local-runtime/shared/browser-extension-id";
 import { ycWorkspace } from "@repo/local-runtime/shared/yc-browser";
+import { ycBrowserConfig } from "@repo/local-runtime/yc-browser-config";
+import { YcBrowserRelay, ycActions } from "@repo/local-runtime/yc-browser-relay";
+import { expect, it, vi } from "vitest";
+
 import { approveBrowser } from "./fixtures/browser-approval";
 
 it("installs the Demo Only connector locally without downloads or browser launch", async () => {

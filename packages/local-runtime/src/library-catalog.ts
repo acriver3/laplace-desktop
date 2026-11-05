@@ -10,11 +10,11 @@ import {
 import { localConnectorMetadata } from "@repo/project-protocol/local-mcp-setup";
 import { z } from "zod";
 
+import snapshot from "./library-catalog.json";
+import recoveryOutlook from "./library-recovery-outlook.json";
 import { browserConnectionsEnabled } from "./shared/browser-feature";
 import { slackBrowserVersion } from "./shared/slack-browser";
 import { ycBrowserVersion } from "./shared/yc-browser";
-import snapshot from "./library-catalog.json";
-import recoveryOutlook from "./library-recovery-outlook.json";
 
 // Reviewed library snapshot; downloads never follow a moving branch or accept remote launch settings.
 export const libraryRevision = "fa29103099f9f735da1b9c0ac10410ebda816249";

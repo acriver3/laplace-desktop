@@ -30,7 +30,9 @@ const stop = async () => {
 };
 const server = createServer((request, response) => {
 	if (request.headers.authorization !== `Bearer ${token}`) return response.writeHead(401).end();
-	response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ result: { stopping: true } }));
+	response
+		.writeHead(200, { "Content-Type": "application/json" })
+		.end(JSON.stringify({ result: { stopping: true } }));
 	setTimeout(stop, 20);
 });
 server.listen(0, "127.0.0.1", async () => {
@@ -38,7 +40,13 @@ server.listen(0, "127.0.0.1", async () => {
 	const temporary = join(root, `runtime.json.${process.pid}.tmp`);
 	await writeFile(
 		temporary,
-		JSON.stringify({ version: 1, protocol: 1, pid: process.pid, control: `http://127.0.0.1:${port}/control/v1/`, token }),
+		JSON.stringify({
+			version: 1,
+			protocol: 1,
+			pid: process.pid,
+			control: `http://127.0.0.1:${port}/control/v1/`,
+			token,
+		}),
 	);
 	await rename(temporary, join(root, "runtime.json"));
 	await writeFile(join(root, `started-${process.pid}`), "");
