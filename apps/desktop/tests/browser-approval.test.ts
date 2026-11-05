@@ -19,6 +19,7 @@ import { listBrowserRequests } from "../src/shared/browser-requests";
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
 	vi.restoreAllMocks();
+	vi.unstubAllEnvs();
 	for (const fn of cleanup.splice(0).reverse()) await fn();
 	delete process.env.LAPLACE_DESKTOP_TEST_ROOT;
 });
@@ -432,4 +433,54 @@ it("clears persisted consent before migration even when no request exists in thi
 	await f.report();
 	await (restored as any).tick();
 	expect(restored.view(requestId, f.clientId).state).toBe("approval_required");
+});
+
+it("backs off transport recovery without dropping consent or exposing error contents", async () => {
+	vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", "true");
+	const f = await fixture();
+	const original = f.manager.catalogSetupCall;
+	f.manager.catalogSetupCall = vi
+		.fn()
+		.mockRejectedValue(Object.assign(new Error("private detail"), { code: "ECONNRESET" }));
+	await f.tick();
+	expect(f.broker.view(f.requestId, f.clientId).recovery).toMatchObject({
+		state: "reconnecting",
+		reason: "transport_unavailable",
+	});
+	await f.tick();
+	expect(f.manager.catalogSetupCall).toHaveBeenCalledTimes(1);
+	expect(JSON.stringify(f.broker.recoveryEvents)).not.toContain("private detail");
+	f.manager.catalogSetupCall = original;
+});
+it("classifies a missing browser without requesting a new sign-in", async () => {
+	vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", "true");
+	const f = await fixture();
+	await f.report([], "discovering");
+	await f.tick();
+	expect(f.broker.view(f.requestId, f.clientId).recovery).toEqual({
+		state: "browser_required",
+		reason: "browser_required",
+	});
+});
+
+it("renews an expired eight-hour transport using remembered consent", async () => {
+	vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", "true");
+	const f = await fixture();
+	await f.report();
+	await f.tick();
+	await f.broker.approve(
+		f.requestId,
+		f.clientId,
+		f.broker.review(f.requestId, f.clientId).capabilities[f.candidate.id]!,
+	);
+	await f.pair();
+	await f.tick();
+	vi.spyOn(Date, "now").mockReturnValue(Date.now() + 8 * 60 * 60_000 + 1);
+	await f.tick();
+	await f.renew();
+	await f.report();
+	await f.tick();
+	expect((await f.pair()).token).toBeTruthy();
+	await f.tick();
+	expect(f.broker.view(f.requestId, f.clientId).state).toBe("connected");
 });

@@ -5,6 +5,14 @@ import { join, resolve, isAbsolute, dirname, delimiter, sep, basename } from "no
 import { setTimeout as delay } from "node:timers/promises";
 
 import { browserProviders } from "@repo/browser-runtime/browser-approval";
+import {
+	sessionRecoveryEnabled,
+	classifyRecovery,
+	recoveryMessage,
+	RecoveryError,
+	recoveryDelay,
+	type RecoveryStatus,
+} from "@repo/browser-runtime/session-recovery";
 import { browserConfiguration } from "@repo/local-mcp-core/browser-catalog";
 import {
 	prepareBrowserMigration,
@@ -74,6 +82,7 @@ interface CatalogManager {
 	): Promise<unknown>;
 }
 export interface CatalogJob {
+	recovery?: RecoveryStatus;
 	connectorName?: string;
 	notificationOwner?: SetupNotificationOwner;
 	notificationDelivered?: boolean;
@@ -774,6 +783,10 @@ export class CatalogInstaller {
 					: error instanceof Error
 						? error.message
 						: "The operation failed.";
+				if (sessionRecoveryEnabled() && !controller.signal.aborted) {
+					job.recovery = error instanceof RecoveryError ? error.recovery : classifyRecovery(error);
+					job.error = recoveryMessage(job.recovery);
+				}
 				job.message = job.error;
 			})
 			.finally(() => {
@@ -1449,11 +1462,15 @@ export class CatalogInstaller {
 			entry,
 			"verify",
 			async (job, signal) => {
+				const enabled = this.manager.getServerConfig(id).enabled;
 				try {
 					await this.verifyReads(entry, job, signal);
 				} catch (error) {
-					await this.manager.setEnabled(id, false);
+					if (!sessionRecoveryEnabled()) await this.manager.setEnabled(id, false);
 					throw error;
+				} finally {
+					if (sessionRecoveryEnabled() && this.manager.getServerConfig(id).enabled !== enabled)
+						await this.manager.setEnabled(id, enabled);
 				}
 			},
 			id,
@@ -1480,6 +1497,24 @@ export class CatalogInstaller {
 					/* Not all successful tools return JSON. */
 				}
 			}
+		if (failed && sessionRecoveryEnabled()) {
+			let detail: unknown = response.structuredContent;
+			for (const item of response.content ?? []) {
+				if (item.type === "text" && item.text) {
+					try {
+						detail ??= JSON.parse(item.text);
+					} catch {}
+				}
+			}
+			const data = detail as { code?: string; error?: string; authenticated?: boolean } | undefined;
+			throw new RecoveryError(
+				classifyRecovery(
+					data?.code ??
+						data?.error ??
+						(data?.authenticated === false ? "sign_in_required" : detail),
+				),
+			);
+		}
 		if (failed)
 			throw new Error(
 				"The connector reported a sign-in or verification failure. Check its local diagnostics, then authenticate again.",
@@ -1496,7 +1531,29 @@ export class CatalogInstaller {
 				: checks[entry.recipe]!;
 		for (const tool of verify) {
 			assertActive(signal);
-			this.assertToolResult(await this.manager.catalogSetupCall(job.serverId, tool, {}, signal));
+			let attempt = 0;
+			for (;;) {
+				try {
+					this.assertToolResult(
+						await this.manager.catalogSetupCall(job.serverId, tool, {}, signal),
+					);
+					delete job.recovery;
+					break;
+				} catch (error) {
+					if (!sessionRecoveryEnabled()) throw error;
+					const recovery =
+						error instanceof RecoveryError ? error.recovery : classifyRecovery(error);
+					if (recovery.state !== "reconnecting" || attempt >= 5) throw error;
+					const suppliedDelay = (error as { retryAfterMs?: number })?.retryAfterMs;
+					const wait = recoveryDelay(
+						attempt++,
+						typeof suppliedDelay === "number" && Number.isFinite(suppliedDelay) ? suppliedDelay : 0,
+					);
+					job.recovery = { ...recovery, nextRetryAt: new Date(Date.now() + wait).toISOString() };
+					this.update(job, "reconnecting", recoveryMessage(recovery));
+					await delay(wait, undefined, { signal });
+				}
+			}
 		}
 		this.update(job, "ready", "Connected. Authenticated read checks passed.");
 	}

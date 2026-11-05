@@ -19,6 +19,7 @@ import { bundleCatalog } from "../src/helper/library-catalog";
 const folders: string[] = [];
 afterEach(async () => {
 	vi.unstubAllGlobals();
+	vi.unstubAllEnvs();
 	await Promise.all(
 		folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true })),
 	);
@@ -183,99 +184,107 @@ it("resolves pinned Canvas manifest settings without leaving placeholders or sto
 	).toThrow("identity");
 });
 
-it.each(["canvas", "slack-ready"])(
-	"installs %s disabled, verifies reads, and disables a failed connection",
-	async (recipe) => {
-		// The in-memory install fixture exercises a reviewed desktop platform,
-		// including when source checks run on the Linux Workers Builds image.
-		vi.stubGlobal("process", { ...process, platform: "darwin", arch: "arm64" });
-		const root = await mkdtemp(join(tmpdir(), "laplace-catalog-flow-"));
-		folders.push(root);
-		const entry = bundleCatalog.find((candidate) => candidate.recipe === recipe)!;
-		const id = recipe === "canvas" ? "canvas-session" : "slack";
-		const directory = join(root, "connectors", entry.id, entry.version);
-		await mkdir(join(directory, "bin"), { recursive: true });
-		await writeFile(
-			join(directory, ".laplace-bundle.json"),
-			JSON.stringify({
-				sha256: entry.artifacts.find((item) => item.platforms.includes("darwin-arm64"))!.sha256,
-			}),
-		);
-		await writeFile(
-			join(directory, "manifest.json"),
-			JSON.stringify({
-				name: entry.id,
-				version: entry.version,
-				server: {
-					mcp_config: {
-						command: "node",
-						args: ["${__dirname}/bin/cli.js"],
-						env: { CANVAS_URL: "${user_config.canvas_url}" },
-					},
+it.each([
+	["canvas", false],
+	["slack-ready", false],
+	["canvas", true],
+	["slack-ready", true],
+] as const)("verifies %s with recovery flag %s", async (recipe, recovery) => {
+	vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", String(recovery));
+	// The in-memory install fixture exercises a reviewed desktop platform,
+	// including when source checks run on the Linux Workers Builds image.
+	vi.stubGlobal("process", { ...process, platform: "darwin", arch: "arm64" });
+	const root = await mkdtemp(join(tmpdir(), "laplace-catalog-flow-"));
+	folders.push(root);
+	const entry = bundleCatalog.find((candidate) => candidate.recipe === recipe)!;
+	const id = recipe === "canvas" ? "canvas-session" : "slack";
+	const directory = join(root, "connectors", entry.id, entry.version);
+	await mkdir(join(directory, "bin"), { recursive: true });
+	await writeFile(
+		join(directory, ".laplace-bundle.json"),
+		JSON.stringify({
+			sha256: entry.artifacts.find((item) => item.platforms.includes("darwin-arm64"))!.sha256,
+		}),
+	);
+	await writeFile(
+		join(directory, "manifest.json"),
+		JSON.stringify({
+			name: entry.id,
+			version: entry.version,
+			server: {
+				mcp_config: {
+					command: "node",
+					args: ["${__dirname}/bin/cli.js"],
+					env: { CANVAS_URL: "${user_config.canvas_url}" },
 				},
-			}),
-		);
-		const configs = new Map<string, ServerConfig>(),
-			calls: string[] = [];
-		let failRead = false;
-		const manager = {
-			async addServers(servers: ServerConfig[]) {
-				for (const server of servers) configs.set(server.id, server);
 			},
-			getServerConfig(id: string) {
-				const config = configs.get(id);
-				if (!config) throw new Error("Not found");
-				return config;
-			},
-			async setEnabled(id: string, enabled: boolean) {
-				configs.get(id)!.enabled = enabled;
-			},
-			async restartServer() {},
-			async catalogSetupCall(_id: string, name: string) {
-				calls.push(name);
-				return failRead
-					? { content: [{ type: "text", text: JSON.stringify({ authenticated: false }) }] }
-					: { isError: false };
-			},
-		};
-		const installer = new CatalogInstaller(manager, {
-			root,
-			resources: join(root, "resources"),
-			nodePath: process.execPath,
-			fetch: vi.fn(async () => {
-				throw new Error("Unexpected download");
-			}),
-		});
-		const install = await installer.install({
-			catalogId: entry.id,
-			configuration:
-				recipe === "canvas"
-					? { canvas_url: "https://canvas.example.edu" }
-					: { workspace: "https://fixture.slack.com" },
-		});
-		await vi.waitFor(() =>
-			expect(installer.jobs().find((job) => job.id === install.id)?.status).toBe("completed"),
+		}),
+	);
+	const configs = new Map<string, ServerConfig>(),
+		calls: string[] = [];
+	let failRead = false;
+	const manager = {
+		async addServers(servers: ServerConfig[]) {
+			for (const server of servers) configs.set(server.id, server);
+		},
+		getServerConfig(id: string) {
+			const config = configs.get(id);
+			if (!config) throw new Error("Not found");
+			return config;
+		},
+		async setEnabled(id: string, enabled: boolean) {
+			configs.get(id)!.enabled = enabled;
+		},
+		async restartServer() {},
+		async catalogSetupCall(_id: string, name: string) {
+			calls.push(name);
+			return failRead
+				? { content: [{ type: "text", text: JSON.stringify({ authenticated: false }) }] }
+				: { isError: false };
+		},
+	};
+	const installer = new CatalogInstaller(manager, {
+		root,
+		resources: join(root, "resources"),
+		nodePath: process.execPath,
+		fetch: vi.fn(async () => {
+			throw new Error("Unexpected download");
+		}),
+	});
+	const install = await installer.install({
+		catalogId: entry.id,
+		configuration:
+			recipe === "canvas"
+				? { canvas_url: "https://canvas.example.edu" }
+				: { workspace: "https://fixture.slack.com" },
+	});
+	await vi.waitFor(() =>
+		expect(installer.jobs().find((job) => job.id === install.id)?.status).toBe("completed"),
+	);
+	expect(configs.get(id)?.enabled).toBe(false);
+	const verify = await installer.verify(id);
+	await vi.waitFor(() =>
+		expect(installer.jobs().find((job) => job.id === verify.id)?.status).toBe("completed"),
+	);
+	expect(calls).toEqual(
+		recipe === "canvas" ? ["canvas_whoami", "canvas_list_courses"] : ["channels_list"],
+	);
+	expect(configs.get(id)?.enabled).toBe(!recovery);
+	if (recovery) await manager.setEnabled(id, true);
+	failRead = true;
+	const failed = await installer.verify(id);
+	await vi.waitFor(() =>
+		expect(installer.jobs().find((job) => job.id === failed.id)?.status).toBe("failed"),
+	);
+	expect(configs.get(id)?.enabled).toBe(recovery);
+	if (recovery)
+		expect(installer.jobs().find((job) => job.id === failed.id)?.recovery?.state).toBe(
+			"sign_in_required",
 		);
-		expect(configs.get(id)?.enabled).toBe(false);
-		const verify = await installer.verify(id);
-		await vi.waitFor(() =>
-			expect(installer.jobs().find((job) => job.id === verify.id)?.status).toBe("completed"),
-		);
-		expect(calls).toEqual(
-			recipe === "canvas" ? ["canvas_whoami", "canvas_list_courses"] : ["channels_list"],
-		);
-		expect(configs.get(id)?.enabled).toBe(true);
-		failRead = true;
-		const failed = await installer.verify(id);
-		await vi.waitFor(() =>
-			expect(installer.jobs().find((job) => job.id === failed.id)?.status).toBe("failed"),
-		);
-		expect(configs.get(id)?.enabled).toBe(false);
-		expect((await installer.list()).find((item) => item.id === entry.id)?.installed).toBe(true);
-		configs.delete(id);
-		expect((await installer.list()).find((item) => item.id === entry.id)?.installed).toBe(false);
-	},
-);
+	expect((await installer.list()).find((item) => item.id === entry.id)?.installed).toBe(true);
+	configs.delete(id);
+	expect((await installer.list()).find((item) => item.id === entry.id)?.installed).toBe(false);
+});
 
 it.each(["win32", "darwin", "linux"])(
 	"uses the pinned Slack runtime and read-only tools on %s",

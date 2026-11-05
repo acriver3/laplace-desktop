@@ -246,12 +246,21 @@ async function inspect(entry) {
 				)
 			: [];
 		const candidates = [];
+		let signedOut = false;
 		const seen = new Set();
 		for (const tab of tabs.slice(0, 32)) {
 			const value = await inTab(tab.id, adapter, adapter.identify, {}, null, item.workspace).catch(
 				() => ({ ok: false }),
 			);
-			if (!value.ok || value.result?.workspace !== item.workspace) continue;
+			if (!value.ok || value.result?.workspace !== item.workspace) {
+				if (
+					["sign_in_required", "session_expired", "token_expired", "token_revoked"].includes(
+						value.error,
+					)
+				)
+					signedOut = true;
+				continue;
+			}
 			const identity = value.result,
 				key = JSON.stringify(identity);
 			if (seen.has(key)) continue;
@@ -278,7 +287,9 @@ async function inspect(entry) {
 				? "permission_required"
 				: candidates.length
 					? "discovering"
-					: "sign_in_required",
+					: item.sessionRecoveryV1 && !signedOut
+						? "discovering"
+						: "sign_in_required",
 		});
 		const decision = await request(target.base, "/decision", {
 			code: target.code,

@@ -9,6 +9,7 @@ export const browserHostName = "com.laplace.browser";
 export const browserRequest = z
 	.object({
 		id: z.string().uuid(),
+		sessionRecoveryV1: z.boolean().optional(),
 		provider: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
 		environment: z.string().max(80),
 		workspace: z.string().url().max(2048),

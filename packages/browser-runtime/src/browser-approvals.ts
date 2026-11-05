@@ -13,6 +13,12 @@ import {
 	type BrowserProviderId,
 } from "./browser-approval";
 import { publishBrowserRequest } from "./browser-requests";
+import {
+	sessionRecoveryEnabled,
+	classifyRecovery,
+	recoveryDelay,
+	recoveryMessage,
+} from "./session-recovery";
 import { slackWorkspace } from "./slack-browser";
 
 type Owner = { clientId: string; tool: string };
@@ -50,6 +56,9 @@ export interface BrowserApprovalHost {
 }
 export const browserConsentSchema = z.object({ grants: z.array(grant) });
 type Request = Owner & {
+	recoveryAttempts?: number;
+	nextRetryAt?: number;
+	recoveryStartedAt?: number;
 	id: string;
 	serverId: string;
 	provider: BrowserProviderId;
@@ -84,6 +93,15 @@ export class BrowserApprovals {
 	private ticking = false;
 	private closed = false;
 	readonly events: Array<{ at: string; state: string }> = [];
+	readonly recoveryEvents: Array<{ reason: string; attempts: number; elapsedMs: number }> = [];
+	private recordRecovery(r: Request, reason: string) {
+		this.recoveryEvents.push({
+			reason,
+			attempts: r.recoveryAttempts ?? 0,
+			elapsedMs: r.recoveryStartedAt ? Date.now() - r.recoveryStartedAt : 0,
+		});
+		if (this.recoveryEvents.length > 50) this.recoveryEvents.shift();
+	}
 	constructor(
 		private manager: BrowserApprovalHost,
 		private store: BrowserConsentStore,
@@ -113,6 +131,18 @@ export class BrowserApprovals {
 		if (r.view.state !== state) {
 			this.events.push({ at: new Date().toISOString(), state });
 			if (this.events.length > 50) this.events.shift();
+		}
+		if (sessionRecoveryEnabled()) {
+			r.view.recovery =
+				state === "sign_in_required"
+					? { state, reason: "session_expired" }
+					: state === "permission_required" || state === "approval_required"
+						? { state: "approval_required", reason: state }
+						: state === "discovering"
+							? { state: "browser_required", reason: "browser_required" }
+							: state === "connected" || state === "cancelled"
+								? undefined
+								: r.view.recovery;
 		}
 		r.view = { ...r.view, state, message };
 		this.manager.changed();
@@ -213,6 +243,7 @@ export class BrowserApprovals {
 				environment: basename(this.manager.root),
 				workspace: r.workspace,
 				...pairing,
+				...(sessionRecoveryEnabled() ? { sessionRecoveryV1: true } : {}),
 			},
 			process.env.LAPLACE_DESKTOP_TEST_ROOT
 				? join(process.env.LAPLACE_DESKTOP_TEST_ROOT, "browser-requests")
@@ -437,6 +468,7 @@ export class BrowserApprovals {
 								await this.cancel(r.id, "desktop", false);
 								return;
 							}
+							if (sessionRecoveryEnabled() && (r.nextRetryAt ?? 0) > Date.now()) return;
 							const status = await this.call(r.serverId, "status");
 							if (status.revoked) {
 								await this.cancel(r.id, "desktop");
@@ -462,8 +494,21 @@ export class BrowserApprovals {
 										"Connected. Closing the tab pauses access; reopen it to reconnect this account.",
 									);
 								}
+								if (sessionRecoveryEnabled()) {
+									if (r.recoveryAttempts) this.recordRecovery(r, "recovered");
+									r.recoveryAttempts = 0;
+									r.view.recovery = undefined;
+									this.update(
+										r,
+										"connected",
+										"Connected. Closing the tab pauses access; reopen it to reconnect this account.",
+									);
+									r.nextRetryAt = undefined;
+									r.recoveryStartedAt = undefined;
+								}
 								return;
 							}
+							if (sessionRecoveryEnabled()) r.verified = false;
 							if (!r.pairing || Date.now() >= r.expiresAt) {
 								if (!r.consent) {
 									r.terminal = true;
@@ -509,7 +554,17 @@ export class BrowserApprovals {
 											? "Sign in using the service link in your existing Chrome profile. This request will detect the account; closed tabs stay closed until you open them."
 											: "Looking for the browser extension. Check that it is installed and Chrome is running.",
 							);
-						} catch {
+						} catch (error) {
+							if (sessionRecoveryEnabled() && !r.terminal) {
+								const status = classifyRecovery(error);
+								r.recoveryStartedAt ??= Date.now();
+								r.nextRetryAt = Date.now() + recoveryDelay(r.recoveryAttempts ?? 0);
+								r.recoveryAttempts = (r.recoveryAttempts ?? 0) + 1;
+								r.view.recovery = { ...status, nextRetryAt: new Date(r.nextRetryAt).toISOString() };
+								this.recordRecovery(r, status.reason);
+								this.update(r, "disconnected", recoveryMessage(status));
+								return;
+							}
 							if (!r.terminal)
 								this.update(
 									r,

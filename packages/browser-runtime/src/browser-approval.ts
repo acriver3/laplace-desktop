@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { RecoveryStatus } from "./session-recovery";
 import { slackWorkspace } from "./slack-browser";
 
 export const browserIdentity = z
@@ -58,6 +59,7 @@ export function browserSignInUrl(provider: BrowserProviderId, workspace: string)
 	return slackWorkspace(workspace);
 }
 export type BrowserApprovalView = {
+	recovery?: RecoveryStatus;
 	requestId: string;
 	provider: string;
 	workspace: string;
