@@ -20,7 +20,9 @@ export const updateInstanceKey = (root: string, id: string) =>
 	createHash("sha256")
 		.update(resolve(root) + "\0" + id)
 		.digest("hex");
-export const automaticUpdatesEnabled = () => process.env.LAPLACE_AUTOMATIC_UPDATES_V1 === "true";
+export const automaticUpdatesEnabled = () =>
+	process.env.LAPLACE_AUTOMATIC_UPDATES_V1 === undefined ||
+	process.env.LAPLACE_AUTOMATIC_UPDATES_V1 === "true";
 
 /** Shared per-user preferences; no credentials or executable paths are stored here. */
 export class UpdatePolicyStore {

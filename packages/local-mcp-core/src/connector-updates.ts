@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename, rm, lstat, readdir, statfs } from "node:fs/promises";
 import { join, resolve, sep, basename, dirname } from "node:path";
@@ -440,8 +441,18 @@ export class ConnectorUpdates {
 		try {
 			for (const file of release.files) {
 				signal.throwIfAborted();
-				const url = `https://raw.githubusercontent.com/acriver3/laplace-mcp-library/${release.commit}/${release.directory}/${file.path.split("/").map(encodeURIComponent).join("/")}`;
-				const bytes = await boundedDownload(url, file.size, signal, this.fetcher);
+				const url = `https://raw.githubusercontent.com/acriver3/laplace-mcp-library/${release.commit}/${release.directory}/${file.path.split("/").map(encodeURIComponent).join("/")}${file.compressed ? ".gz" : ""}`;
+				let bytes = await boundedDownload(
+					url,
+					file.compressed?.size ?? file.size,
+					signal,
+					this.fetcher,
+				);
+				if (file.compressed) {
+					if (bytes.length !== file.compressed.size || sha256(bytes) !== file.compressed.sha256)
+						throw Error("Compressed connector download failed integrity verification");
+					bytes = gunzipSync(bytes, { maxOutputLength: Math.max(1, file.size) });
+				}
 				if (bytes.length !== file.size || sha256(bytes) !== file.sha256)
 					throw Error("Connector download failed integrity verification");
 				const path = join(temporary, file.path);

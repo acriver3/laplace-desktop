@@ -54,6 +54,17 @@ export const connectorRelease = z
 							.nonnegative()
 							.max(256 * 1024 * 1024),
 						executable: z.boolean(),
+						compressed: z
+							.object({
+								size: z
+									.number()
+									.int()
+									.positive()
+									.max(256 * 1024 * 1024),
+								sha256: digest,
+							})
+							.strict()
+							.optional(),
 					})
 					.strict(),
 			)

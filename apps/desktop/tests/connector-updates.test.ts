@@ -1,3 +1,4 @@
+import { gzipSync } from "node:zlib";
 import { generateKeyPairSync, sign, createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,7 +13,10 @@ import {
 	connectorIndex,
 } from "../../../packages/local-mcp-core/src/connector-releases";
 import { ConnectorUpdates } from "../../../packages/local-mcp-core/src/connector-updates";
-import { UpdatePolicyStore } from "../../../packages/local-mcp-core/src/update-policy";
+import {
+	UpdatePolicyStore,
+	automaticUpdatesEnabled,
+} from "../../../packages/local-mcp-core/src/update-policy";
 const roots: string[] = [];
 afterEach(async () => {
 	vi.unstubAllEnvs();
@@ -307,4 +311,51 @@ it("retains a verified tethered entry before enrolling a shared helper directory
 	expect(retained.args[0]).toContain("/retained/server.mjs");
 	expect(retained.env.TOKEN).toBe("fixture-secret");
 	expect(await f.updates.status()).toMatchObject([{ id: "canvas", version: "0.1.0" }]);
+});
+
+it.each([false, true])(
+	"verifies compressed transport and extracted bytes (tampered=%s)",
+	async (tampered) => {
+		const f = await fixture();
+		const index = structuredClone(f.index);
+		index.sequence = 2;
+		const packed = gzipSync(Buffer.from("new"));
+		const candidate = structuredClone(index.releases[1]!);
+		candidate.version = "0.3.0";
+		candidate.sequence = 3;
+		Object.assign(candidate.files[0]!, {
+			compressed: {
+				size: packed.length,
+				sha256: createHash("sha256").update(packed).digest("hex"),
+			},
+		});
+		index.releases.push(candidate);
+		f.changeIndex(index);
+		await f.updates.check();
+		vi.mocked(f.fetcher).mockImplementation(async (url) => {
+			if (String(url).endsWith(".gz"))
+				return new Response(new Uint8Array(tampered ? Buffer.alloc(packed.length) : packed));
+			throw Error("Unexpected artifact request");
+		});
+		if (tampered) {
+			await expect(f.updates.apply("canvas")).rejects.toThrow("integrity");
+			expect(f.replace).not.toHaveBeenCalled();
+		} else {
+			await f.updates.apply("canvas");
+			expect(f.getConfig().identity).toBe("canvas-session-mcp@0.3.0");
+		}
+	},
+);
+
+it("enables the accepted rollout while retaining the explicit execution kill switch", async () => {
+	vi.stubEnv("LAPLACE_AUTOMATIC_UPDATES_V1", undefined);
+	expect(automaticUpdatesEnabled()).toBe(true);
+	const f = await fixture();
+	expect(await f.policy.read()).toMatchObject({ desktop: false, connectors: false });
+	vi.stubEnv("LAPLACE_AUTOMATIC_UPDATES_V1", "false");
+	expect(automaticUpdatesEnabled()).toBe(false);
+	vi.stubEnv("LAPLACE_AUTOMATIC_UPDATES_V1", "invalid");
+	expect(automaticUpdatesEnabled()).toBe(false);
+	vi.stubEnv("LAPLACE_AUTOMATIC_UPDATES_V1", "true");
+	expect(automaticUpdatesEnabled()).toBe(true);
 });

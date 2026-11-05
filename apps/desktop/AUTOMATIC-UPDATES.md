@@ -1,6 +1,6 @@
-# Automatic updates (disabled production candidate)
+# Automatic updates
 
-The actual automatic execution gate is `LAPLACE_AUTOMATIC_UPDATES_V1=true`; it is absent/off by default. User preferences are separate and both default off. Do not activate production until the native acceptance matrix is complete. Existing manual source updates remain available.
+The release owner explicitly accepted the Windows and Mac rollout on 2026-11-05. Automatic execution defaults enabled in Desktop 0.1.28 and CLI 0.1.5; `LAPLACE_AUTOMATIC_UPDATES_V1=false` remains an execution kill switch. User preferences are separate and both default off. Only compatible, signed qualified releases are eligible. Acceptance records distinguish owner acceptance from native results that were actually observed. Manual updates remain available.
 
 ## Device controls
 
@@ -53,3 +53,5 @@ These results are development evidence, not release qualification. Windows ZIP/S
 ## Explicit release-owner acceptance
 
 As with source releases, explicit acceptance in place of native runner evidence is recorded separately: `result: "accepted"`, `localValidation: "passed"`, and `userAcceptance` with the verbatim statement, UTC `acceptedAt`, and `nativeResults: "not-attested"`. Such a record must omit native `checks`; it must still identify the exact platform, distribution, commit, artifact hash and reviewer. General publication permission does not imply this exception. Signed qualification can reference this record, and release notes must distinguish owner acceptance from observed native passes.
+
+The rollout integrates the current session-recovery source. Tethered enrollment first retains the verified entry under exclusive maintenance, preserving configuration and reverting a failed switch. Large connector binaries use bounded, hash-verified gzip transport; installed bytes are separately verified.
