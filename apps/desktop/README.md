@@ -118,7 +118,7 @@ The Electron main process owns the window, the Connect view and its navigation b
 
 Closing a window hides it. Reopen it through the tray/menu-bar icon or app activation. Quitting stops the helper and managed stdio process trees; externally owned HTTP servers remain running. There is no installed system service or login-item autostart. If the helper exits unexpectedly, restart Laplace; in-flight calls are not retried.
 
-`LAPLACE_UNIFIED_RUNTIME_V1=true` (disabled by default, under development) instead runs the same manager as the background **Laplace Runtime** (`helper/service.cjs`). Desktop connects to an already running runtime for the profile, or starts one detached. It talks to the runtime over the authenticated loopback control API (`/control/v1/`, management token in the 0600 `runtime.json`; AI-client tokens are not accepted there, and browser origins are rejected). Quitting Desktop leaves the runtime and its connectors running for AI clients. Switching profiles stops the previous profile's runtime. There is still no login-item autostart yet.
+`LAPLACE_UNIFIED_RUNTIME_V1=true` (disabled by default, under development) instead runs the same manager as the background **Laplace Runtime**: Desktop installs its bundled runtime into a stable per-user location, connects to it (or starts it), and offers Close Laplace Desktop, Stop/Start Laplace Runtime, Start at login, and Keep awake controls. See [Laplace Runtime](../../docs/laplace-runtime.md).
 
 ## Build and test
 

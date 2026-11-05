@@ -10,10 +10,11 @@ import { minimalEnvironment } from "@repo/local-mcp-core/config";
 import { systemEntry } from "@repo/local-mcp-core/store";
 import { z } from "zod";
 
-import { desktopVersion } from "./shared/version";
-import { updateLaunchBlocked, UpdateError } from "./update-guard";
 import { BridgeConnection } from "./bridge-connection";
 import { bridgeConnectionMessage, bridgeCallMessage } from "./bridge-errors";
+import { startRuntime } from "./lifecycle";
+import { desktopVersion } from "./shared/version";
+import { updateLaunchBlocked, UpdateError } from "./update-guard";
 
 const descriptorSchema = z
 	.object({
@@ -51,9 +52,30 @@ async function discover(root: string) {
 		return undefined;
 	}
 }
+const serviceSchema = z
+	.object({
+		version: z.literal(1),
+		node: z.string().refine(isAbsolute),
+		service: z.string().refine(isAbsolute),
+		resources: z.string().refine(isAbsolute),
+		origin: z.string().url(),
+		nativeHost: z.boolean(),
+	})
+	.strict();
 async function endpoint(root: string) {
 	let value = await discover(root);
 	if (value) return value;
+	const service = await readFile(join(root, "service.json"), "utf8").then(
+		(raw) => serviceSchema.parse(JSON.parse(raw)),
+		() => undefined,
+	);
+	if (service) {
+		// The background runtime owns this profile; an explicit stop is respected.
+		await startRuntime({ root, ...service, explicit: false });
+		value = await discover(root);
+		if (value) return value;
+		throw new Error("Laplace Runtime did not become available. Check `laplace-runtime status`.");
+	}
 	try {
 		const launcher = z
 			.object({

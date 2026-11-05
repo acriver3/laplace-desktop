@@ -180,6 +180,8 @@ export const helperInputs = {
 		.object({ origin: origin.optional(), name: z.string().trim().min(1).max(80).optional() })
 		.strict(),
 	"link.poll": empty,
+	"runtime.settings": empty,
+	"runtime.configure": z.object({ keepAwake: z.boolean() }).strict(),
 	"link.complete": z
 		.object({ origin, installationId: z.string().uuid(), accountId: z.string().min(1) })
 		.strict(),

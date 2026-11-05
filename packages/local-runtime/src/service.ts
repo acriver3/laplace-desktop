@@ -81,6 +81,7 @@ export async function startService(argv = process.argv) {
 		bridgePath: join(dirname(argv[1]!), "bridge.cjs"),
 		emit,
 		control,
+		keepAwake: true,
 	});
 	const active = runtime;
 	const session = watchSession((event) => {
@@ -106,6 +107,22 @@ export async function startService(argv = process.argv) {
 		control: runtime.server.endpoint.replace(/\/mcp$/, "/control/v1/"),
 		token: control.token,
 	};
+	// Lets AI-client bridges start this runtime again without Desktop.
+	const launch = join(root, "service.json"),
+		launchTemporary = `${launch}.${process.pid}.tmp`;
+	await writeFile(
+		launchTemporary,
+		JSON.stringify({
+			version: 1,
+			node: process.execPath,
+			service: resolve(argv[1]!),
+			resources,
+			origin: option(argv, "--origin"),
+			nativeHost: argv.includes("--native-host"),
+		}),
+		{ mode: 0o600 },
+	);
+	await rename(launchTemporary, launch);
 	const temporary = `${descriptor}.${process.pid}.tmp`;
 	await writeFile(temporary, JSON.stringify(value), { mode: 0o600 });
 	await rename(temporary, descriptor);

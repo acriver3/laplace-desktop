@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import { join, resolve, dirname } from "node:path";
 
@@ -42,6 +42,7 @@ import {
 	normalizeManualConfiguration,
 	previewManualConfiguration,
 } from "./imports";
+import { KeepAwake } from "./keep-awake";
 import { DesktopManager } from "./manager";
 import { previewLegacyMigration, migrateSelectedLegacy } from "./migration";
 import { PortableConnectors } from "./portable";
@@ -92,6 +93,8 @@ export type RuntimeOptions = {
 	bridgePath: string;
 	emit: (event: HelperEvent) => void;
 	control?: ControlServer;
+	/** Background services may hold an idle-sleep assertion while sharing remotely. */
+	keepAwake?: boolean;
 };
 /** `changed` replies are followed by a snapshot event, matching the IPC ordering. */
 export type RuntimeReply = ({ result: unknown } | { error: string }) & {
@@ -237,6 +240,7 @@ export async function createRuntime(options: RuntimeOptions) {
 					catalog.cancel(job.id);
 				} catch {}
 		connectorUpdates.cancel();
+		keepAwake.stop();
 		await sharedUpdates.stop();
 		await server.close();
 		await hosted.shutdown();
@@ -333,6 +337,25 @@ export async function createRuntime(options: RuntimeOptions) {
 	};
 	void connectorUpdates.recover().catch(() => {});
 	const deviceLink = new DeviceLink(manager);
+	const settingsPath = join(root, "runtime-settings.json");
+	const settingsSchema = z.object({ keepAwake: z.boolean().default(false) }).strict();
+	let settings = settingsSchema.parse(
+		await readFile(settingsPath, "utf8")
+			.then(JSON.parse)
+			.catch(() => ({})),
+	);
+	const sharingRemotely = () => {
+		const status = manager.status();
+		return (
+			status.mode === "linked" &&
+			status.servers.some((server) => server.linkMode === "linked" && server.access?.remoteEnabled)
+		);
+	};
+	const keepAwake = new KeepAwake(() => settings.keepAwake && sharingRemotely());
+	if (options.keepAwake) {
+		keepAwake.start();
+		manager.onChanged(() => void keepAwake.update());
+	}
 	const handle = async (method: HelperMethod, rawInput: unknown): Promise<RuntimeReply> => {
 		const request = { method, input: rawInput };
 		const counted = !request.method.startsWith("updates.") && request.method !== "status";
@@ -737,6 +760,18 @@ export async function createRuntime(options: RuntimeOptions) {
 				case "link.prepare":
 					result = await manager.prepareLink(input.origin);
 					break;
+				case "runtime.settings":
+					result = { ...settings, keepAwakeActive: keepAwake.active };
+					break;
+				case "runtime.configure": {
+					settings = settingsSchema.parse({ ...settings, ...input });
+					const temporary = `${settingsPath}.${randomUUID()}.tmp`;
+					await writeFile(temporary, JSON.stringify(settings), { mode: 0o600 });
+					await rename(temporary, settingsPath);
+					await keepAwake.update();
+					result = { ...settings, keepAwakeActive: keepAwake.active };
+					break;
+				}
 				case "link.start":
 					result = await deviceLink.start(
 						input.origin ?? origin,

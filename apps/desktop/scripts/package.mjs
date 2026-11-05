@@ -4,6 +4,8 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assembleRuntime } from "./runtime-tree.mjs";
+
 const root = fileURLToPath(new URL("..", import.meta.url));
 process.chdir(root);
 if (!["darwin", "win32"].includes(process.platform))
@@ -18,28 +20,7 @@ await mkdir(stage, { recursive: true });
 // Keep Forge's pnpm requirement local; do not change the monorepo's linker.
 await writeFile(join(stage, ".npmrc"), "node-linker=hoisted\n");
 await cp(join(root, "dist"), join(stage, "dist"), { recursive: true });
-const keyringRoot = dirname(require.resolve("@napi-rs/keyring/package.json"));
-const nativeName = `@napi-rs/keyring-${process.platform}-${process.arch}${process.platform === "win32" ? "-msvc" : ""}`;
-const keyringRequire = createRequire(join(keyringRoot, "package.json"));
-const nativeRoot = dirname(keyringRequire.resolve(`${nativeName}/package.json`));
-await rm(join(root, ".cache/runtime"), { recursive: true, force: true });
-const runtime = join(root, ".cache/runtime");
-await cp(join(root, "resources"), runtime, { recursive: true });
-// Standalone Node cannot read Electron ASAR archives. Keep its complete module
-// tree outside app.asar, including the keychain native binding and stdio bridge.
-await cp(join(root, "dist/update"), join(runtime, "update"), { recursive: true });
-await cp(join(root, "dist/helper"), join(runtime, "helper"), { recursive: true });
-// Keep the matching plugin launcher beside the helper for candidate installation and rollback.
-await cp(join(root, "../../plugins/laplace"), join(runtime, "plugin"), { recursive: true });
-await mkdir(join(runtime, "node_modules/@napi-rs"), { recursive: true });
-await cp(keyringRoot, join(runtime, "node_modules/@napi-rs/keyring"), {
-	recursive: true,
-	dereference: true,
-});
-await cp(nativeRoot, join(runtime, "node_modules", nativeName), {
-	recursive: true,
-	dereference: true,
-});
+await assembleRuntime(root, join(root, ".cache/runtime"));
 await cp(join(root, "forge.config.cjs"), join(stage, "forge.config.cjs"));
 const pkg = JSON.parse(await readFile("package.json", "utf8"));
 await writeFile(

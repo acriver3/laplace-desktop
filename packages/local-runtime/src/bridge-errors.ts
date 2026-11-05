@@ -1,7 +1,10 @@
 import { SdkHttpError } from "@modelcontextprotocol/client";
 
+import { RuntimeStoppedError } from "./runtime-errors";
+
 /** Never include response bodies, headers, or transport error text in diagnostics. */
 export function bridgeConnectionMessage(error: unknown) {
+	if (error instanceof RuntimeStoppedError) return error.message;
 	if (error instanceof SdkHttpError) {
 		if (error.status === 429)
 			return "Laplace Desktop is busy. This tool call was not started. Try again after running calls finish.";

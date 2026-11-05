@@ -3,7 +3,15 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve, isAbsolute, extname } from "node:path";
 
 import { UpdatePolicyStore, automaticUpdatesEnabled } from "@repo/local-mcp-core/update-policy";
-import { RuntimeClient } from "@repo/local-runtime/client";
+import { RuntimeClient, readRuntimeDescriptor } from "@repo/local-runtime/client";
+import { installRuntime, stableLaunchers } from "@repo/local-runtime/install";
+import {
+	autostartEnabled,
+	disableAutostart,
+	enableAutostart,
+	stopRuntime,
+} from "@repo/local-runtime/lifecycle";
+import { desktopVersion } from "@repo/local-runtime/shared/version";
 import {
 	app,
 	clipboard,
@@ -20,6 +28,7 @@ import {
 	shell,
 	dialog,
 	screen,
+	type MenuItemConstructorOptions,
 	type WebContents,
 } from "electron";
 
@@ -825,21 +834,104 @@ async function startHelper() {
 			publish();
 		},
 	);
-	if (next instanceof RuntimeClient)
-		next.nativeHost = app.isPackaged && !process.env.LAPLACE_DESKTOP_TEST_ROOT;
 	helper = next;
 	try {
-		await next.start(
-			profileRoot(),
-			resources,
-			state.origin,
-			join(app.isPackaged ? resources : appRoot, "helper", "main.cjs"),
-		);
+		let runtime = resources,
+			helperDirectory = join(app.isPackaged ? resources : appRoot, "helper");
+		if (next instanceof RuntimeClient && app.isPackaged && !process.env.LAPLACE_DESKTOP_TEST_ROOT) {
+			next.nativeHost = true;
+			// Run from the stable per-user install so registrations survive Desktop updates and moves.
+			const installed = await installRuntime(resources, desktopVersion);
+			runtime = installed.directory;
+			helperDirectory = join(installed.directory, "helper");
+			if (state.profile === "hosted") void applyLoginPreference().catch(() => {});
+		}
+		await next.start(profileRoot(), runtime, state.origin, join(helperDirectory, "main.cjs"));
 	} catch (error) {
 		state.helperError = (error as Error).message;
 	}
 	publish();
+	void refreshTray();
 }
+
+/** Start at login defaults on; an explicit user opt-out is remembered per OS user. */
+const loginPreference = () => join(app.getPath("userData"), "runtime-login.json");
+async function applyLoginPreference() {
+	const disabled = await readFile(loginPreference(), "utf8").then(
+		(raw) => JSON.parse(raw).disabled === true,
+		() => false,
+	);
+	if (disabled) return;
+	const { launcher, hidden } = stableLaunchers();
+	await enableAutostart({
+		launcher,
+		hidden: process.platform === "win32" ? hidden : undefined,
+		profile: "hosted",
+	});
+}
+async function setStartAtLogin(enabled: boolean) {
+	await writeFile(loginPreference(), JSON.stringify({ disabled: !enabled }), { mode: 0o600 });
+	if (enabled) await applyLoginPreference();
+	else await disableAutostart("hosted");
+	await refreshTray();
+}
+async function stopLocalRuntime() {
+	await stopRuntime(profileRoot());
+	await helper?.stop();
+	state.helperError =
+		"Laplace Runtime is stopped. AI clients cannot use local connectors until you start it.";
+	publish();
+	await refreshTray();
+}
+let trayItems: MenuItemConstructorOptions[] = [];
+let trayRefresh: Promise<void> | undefined;
+/** Separate Close Desktop, Stop/Start Runtime, Start at login, and Keep awake controls. */
+async function runtimeControls(): Promise<MenuItemConstructorOptions[]> {
+	if (!unifiedRuntimeEnabled()) return [];
+	const running = !!(await readRuntimeDescriptor(profileRoot()));
+	const items: MenuItemConstructorOptions[] = [
+		running
+			? { label: "Stop Laplace Runtime", click: () => void stopLocalRuntime().catch(() => {}) }
+			: { label: "Start Laplace Runtime", click: () => void startHelper() },
+	];
+	if (state.profile === "hosted" && app.isPackaged) {
+		const login = await autostartEnabled("hosted");
+		items.push({
+			label: "Start at login",
+			type: "checkbox",
+			checked: login,
+			click: () => void setStartAtLogin(!login).catch(() => {}),
+		});
+	}
+	const settings = running
+		? await helper?.request<{ keepAwake: boolean }>("runtime.settings").catch(() => undefined)
+		: undefined;
+	if (settings)
+		items.push({
+			label: "Keep computer awake while sharing remotely",
+			sublabel: "Only while plugged in",
+			type: "checkbox",
+			checked: settings.keepAwake,
+			click: () =>
+				void helper
+					?.request("runtime.configure", { keepAwake: !settings.keepAwake })
+					.then(() => refreshTray())
+					.catch(() => {}),
+		});
+	return [{ type: "separator" }, ...items];
+}
+function refreshTray() {
+	return (trayRefresh ??= runtimeControls()
+		.then((items) => {
+			trayItems = items;
+			buildTrayMenu?.();
+		})
+		.catch(() => {})
+		.finally(() => {
+			trayRefresh = undefined;
+		}));
+}
+let buildTrayMenu: (() => void) | undefined;
 
 async function selectProfile(profile: Profile) {
 	if (profile === state.profile || changingProfile) return;
@@ -1588,35 +1680,42 @@ void app
 		const icon = nativeImage.createFromPath(join(resources, "icon.png"));
 		tray = new Tray(icon.resize({ width: 18, height: 18 }));
 		tray.setToolTip("Laplace — local MCPs running");
-		tray.setContextMenu(
-			Menu.buildFromTemplate([
-				{
-					label: "Capture with Point",
-					click: () => {
-						void (async () => {
-							await helper?.request("updates.deviceActivity", { busy: true });
-							await point?.capture();
-						})().catch(() => {});
+		buildTrayMenu = () =>
+			tray.setContextMenu(
+				Menu.buildFromTemplate([
+					{
+						label: "Capture with Point",
+						click: () => {
+							void (async () => {
+								await helper?.request("updates.deviceActivity", { busy: true });
+								await point?.capture();
+							})().catch(() => {});
+						},
 					},
-				},
-				{
-					label: "Open Laplace",
-					click: () => {
-						window.show();
-						window.focus();
+					{
+						label: "Open Laplace",
+						click: () => {
+							window.show();
+							window.focus();
+						},
 					},
-				},
-				{
-					label: "On this device",
-					click: () => {
-						showLocal();
-						window.show();
+					{
+						label: "On this device",
+						click: () => {
+							showLocal();
+							window.show();
+						},
 					},
-				},
-				{ type: "separator" },
-				{ label: "Quit Laplace", click: () => setImmediate(quitLaplace) },
-			]),
-		);
+					...trayItems,
+					{ type: "separator" },
+					{
+						label: unifiedRuntimeEnabled() ? "Close Laplace Desktop" : "Quit Laplace",
+						click: () => setImmediate(quitLaplace),
+					},
+				]),
+			);
+		buildTrayMenu();
+		void refreshTray();
 		tray.on("click", () => {
 			window.show();
 			window.focus();

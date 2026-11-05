@@ -1,9 +1,10 @@
+import { rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 
 import { z } from "zod";
 
-import { helperRequest, type HelperEvent, type HelperReply } from "./shared/helper-contracts";
 import { createRuntime } from "./runtime";
+import { helperRequest, type HelperEvent, type HelperReply } from "./shared/helper-contracts";
 
 /** Legacy host: Electron owns the runtime lifetime through an IPC channel. */
 export async function startHelper() {
@@ -12,8 +13,11 @@ export async function startHelper() {
 	const send = (message: HelperEvent | HelperReply) => {
 		if (process.connected) process.send?.(message, () => {});
 	};
+	const root = z.string().min(1).parse(process.env.LAPLACE_DESKTOP_ROOT);
+	// Electron owns this profile again; bridges must relaunch Desktop, not a background runtime.
+	await rm(join(root, "service.json"), { force: true });
 	const runtime = await createRuntime({
-		root: z.string().min(1).parse(process.env.LAPLACE_DESKTOP_ROOT),
+		root,
 		resources: z.string().min(1).parse(process.env.LAPLACE_DESKTOP_RESOURCES),
 		origin: process.env.LAPLACE_DESKTOP_ORIGIN ?? "https://connect.withlaplace.com",
 		bridgePath: join(dirname(process.argv[1]!), "bridge.cjs"),

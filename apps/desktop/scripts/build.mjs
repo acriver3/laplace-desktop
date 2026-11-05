@@ -41,6 +41,7 @@ await build({
 		"../../packages/local-runtime/src/service.ts",
 		"../../packages/local-runtime/src/bridge.ts",
 		"../../packages/local-runtime/src/slack-browser.ts",
+		"../../packages/local-runtime/src/launcher.ts",
 	],
 	outdir: "dist/helper",
 	outExtension: { ".js": ".cjs" },
@@ -85,6 +86,17 @@ if (process.platform === "win32") {
 			"/target:exe",
 			"/out:" + resolve("resources/runtimes/browser-native-host.exe"),
 			resolve("resources/helper/browser-native-host.cs"),
+		],
+		{ stdio: "inherit", windowsHide: true },
+	);
+	// Windowless login launcher: the Run key must not flash a console window.
+	execFileSync(
+		join(process.env.SystemRoot || "C:\\Windows", "Microsoft.NET/Framework64/v4.0.30319/csc.exe"),
+		[
+			"/nologo",
+			"/target:winexe",
+			"/out:" + resolve("resources/runtimes/laplace-runtime-hidden.exe"),
+			resolve("native/runtime-hidden.cs"),
 		],
 		{ stdio: "inherit", windowsHide: true },
 	);

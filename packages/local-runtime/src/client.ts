@@ -1,29 +1,16 @@
-import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
 	LOCAL_RUNTIME_PROTOCOL,
-	localRuntimeDescriptor,
-	localRuntimeDescriptorFile,
 	type LocalRuntimeDescriptor,
 } from "@repo/project-protocol/local-runtime";
 
-import { helperEnvironment } from "./environment";
+import { controlHeaders, controlRequest, readRuntimeDescriptor } from "./control";
+import { startRuntime } from "./lifecycle";
 import type { DesktopSnapshot, HelperEvent, HelperMethod } from "./shared/helper-contracts";
 
-export async function readRuntimeDescriptor(root: string) {
-	try {
-		const descriptor = localRuntimeDescriptor.parse(
-			JSON.parse(await readFile(join(root, localRuntimeDescriptorFile), "utf8")),
-		);
-		process.kill(descriptor.pid, 0);
-		return descriptor;
-	} catch {
-		return undefined;
-	}
-}
+export { controlHeaders, controlRequest, readRuntimeDescriptor };
 
 /** Desktop's connection to the background Laplace Runtime; quitting Desktop leaves it running. */
 export class RuntimeClient {
@@ -40,52 +27,26 @@ export class RuntimeClient {
 	) {}
 	async start(root: string, resources: string, origin: string, helperPath: string) {
 		this.stopping = false;
-		let descriptor = await readRuntimeDescriptor(root);
-		if (!descriptor) {
-			const node = join(resources, "runtimes", process.platform === "win32" ? "node.exe" : "node");
-			const child = spawn(
-				node,
-				[
-					join(dirname(helperPath), "service.cjs"),
-					"--root",
-					root,
-					"--resources",
-					resources,
-					"--origin",
-					origin,
-					...(this.nativeHost ? ["--native-host"] : []),
-				],
-				{ detached: true, stdio: "ignore", windowsHide: true, env: helperEnvironment() },
-			);
-			child.on("error", () => {});
-			child.unref();
-			for (let attempt = 0; attempt < 80 && !descriptor; attempt++) {
-				if (child.exitCode !== null)
-					throw new Error(
-						"Laplace Runtime could not initialize. Check that the system keychain is available.",
-					);
-				await delay(250);
-				descriptor = await readRuntimeDescriptor(root);
-			}
-			if (!descriptor)
-				throw new Error("Laplace Runtime did not start. Check its runtime installation.");
-		}
+		// Opening Desktop is a user start: it clears an explicit runtime stop.
+		const descriptor = await startRuntime({
+			root,
+			node: join(resources, "runtimes", process.platform === "win32" ? "node.exe" : "node"),
+			service: join(dirname(helperPath), "service.cjs"),
+			resources,
+			origin,
+			nativeHost: this.nativeHost,
+			explicit: true,
+		});
 		if (descriptor.protocol !== LOCAL_RUNTIME_PROTOCOL)
 			throw new Error("Laplace Runtime needs an update before Desktop can connect.");
 		this.descriptor = descriptor;
 		await this.subscribe(descriptor);
 	}
-	private headers(descriptor: LocalRuntimeDescriptor) {
-		return {
-			Authorization: `Bearer ${descriptor.token}`,
-			"Laplace-Runtime-Protocol": String(LOCAL_RUNTIME_PROTOCOL),
-		};
-	}
 	private async subscribe(descriptor: LocalRuntimeDescriptor) {
 		const controller = new AbortController();
 		this.events = controller;
 		const response = await fetch(new URL("events", descriptor.control), {
-			headers: this.headers(descriptor),
+			headers: controlHeaders(descriptor),
 			signal: controller.signal,
 		});
 		if (!response.ok || !response.body)
@@ -128,25 +89,7 @@ export class RuntimeClient {
 		const descriptor = this.descriptor;
 		if (!descriptor || !this.ready)
 			throw new Error("Laplace Runtime is unavailable or still starting.");
-		let response: Response;
-		try {
-			response = await fetch(new URL("request", descriptor.control), {
-				method: "POST",
-				headers: { ...this.headers(descriptor), "Content-Type": "application/json" },
-				body: JSON.stringify({ method, input }),
-				signal: AbortSignal.timeout(180_000),
-			});
-		} catch (error) {
-			throw new Error(
-				(error as Error).name === "TimeoutError"
-					? "Local operation timed out. Check its status before retrying."
-					: "Laplace Runtime disconnected. In-flight calls were not replayed.",
-			);
-		}
-		if (!response.ok) throw new Error("Laplace Runtime rejected the request.");
-		const reply = (await response.json()) as { result: T } | { error: string };
-		if ("error" in reply) throw new Error(reply.error);
-		return reply.result;
+		return controlRequest<T>(descriptor, method, input);
 	}
 	/** Disconnects this Desktop instance; the runtime keeps serving AI clients. */
 	async stop() {

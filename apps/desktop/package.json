@@ -24,7 +24,8 @@
 		"source:install": "node scripts/source-install.mjs",
 		"source:release": "node scripts/source-install.mjs --release",
 		"test:update-filesystem": "node scripts/update-filesystem-smoke.mjs",
-		"test:source-update": "node scripts/source-update-smoke.mjs"
+		"test:source-update": "node scripts/source-update-smoke.mjs",
+		"package:runtime": "node scripts/package-runtime.mjs"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/client": "2.4.0",
