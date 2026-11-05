@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename, rm, lstat, readdir, statfs } from "node:fs/promises";
-import { join, resolve, sep, basename } from "node:path";
+import { join, resolve, sep, basename, dirname } from "node:path";
 
 import { z } from "zod";
 
@@ -43,6 +43,7 @@ export interface ConnectorUpdateHost {
 	version: string;
 	kind: "desktop" | "cli";
 	configurations(): Promise<ServerConfig[]>;
+	retainForEnrollment?(config: ServerConfig): Promise<ServerConfig>;
 	replace(config: ServerConfig, expected?: ServerConfig): Promise<void>;
 	verify(id: string): Promise<void>;
 	maintenance(id: string): Promise<(() => void) | undefined>;
@@ -327,22 +328,23 @@ export class ConnectorUpdates {
 			throw Error(
 				"Check for updates first; the installed version must have a signed release receipt.",
 			);
-		const config = (await this.host.configurations()).find((c) => c.id === id);
+		let config = (await this.host.configurations()).find((c) => c.id === id);
 		if (
 			!config ||
 			config.transport !== "stdio" ||
 			(config.identity && config.identity !== `${catalogId}@${version}`)
 		)
 			throw Error("Only a matching verified managed connector can be enrolled.");
-		const source = resolve(directory);
-		const entry = config.args[0];
+		let source = resolve(directory);
+		const launch = config;
+		const entry = launch.args[0];
 		const nodeCommand =
 			config.command === "node" ||
 			config.command === "node.exe" ||
 			release.files.some(
 				(file) =>
 					file.executable &&
-					join(source, file.path) === config.command &&
+					join(source, file.path) === launch.command &&
 					/^(node|node.exe)$/i.test(basename(file.path)),
 			);
 		const nodeRecipe =
@@ -365,7 +367,7 @@ export class ConnectorUpdates {
 		const uvRecipe =
 			catalogId === "linkedin-mcp-server" &&
 			config.command === "uv" &&
-			uvPrefix.every((value, i) => config.args[i] === value);
+			uvPrefix.every((value, i) => launch.args[i] === value);
 		if (!nodeRecipe && !uvRecipe)
 			throw Error(
 				"Enrollment requires a maintained local launch recipe and the exact published entry; custom executables remain unmanaged.",
@@ -376,11 +378,43 @@ export class ConnectorUpdates {
 			!config.command.startsWith(source + sep)
 		)
 			throw Error("Connector executable does not belong to the selected bundle");
-		await this.verifyFiles(source, release);
-		await this.store.mutate((s) => {
-			s.installations = s.installations.filter((i) => i.id !== id);
-			s.installations.push({ id, directory: source, release, config });
-		});
+
+		let maintenance: (() => void) | undefined;
+		const original = config;
+		let switched = false;
+		try {
+			if (mode === "tethered" && config.managedBrowser && this.host.retainForEnrollment) {
+				if (this.host.busy())
+					throw Error("Connector is busy; retry enrollment after local work finishes");
+				maintenance = await this.host.maintenance(id);
+				if (!maintenance) throw Error("Connector is busy; retry enrollment shortly");
+				const retained = await this.host.retainForEnrollment(config);
+				if (retained.transport !== "stdio") throw Error("Invalid retained connector transport");
+				if (retained !== config) {
+					config = retained;
+					source = dirname(retained.args[0]!);
+				}
+			}
+			await this.verifyFiles(source, release);
+			if (config !== original) {
+				switched = true;
+				await this.host.replace(config, original);
+				if (config.enabled) await this.host.verify(id);
+			}
+			await this.store.mutate((s) => {
+				s.installations = s.installations.filter((i) => i.id !== id);
+				s.installations.push({ id, directory: source, release, config: config! });
+			});
+		} catch (error) {
+			if (switched) {
+				const current = (await this.host.configurations()).find((c) => c.id === id);
+				if (JSON.stringify(current) === JSON.stringify(config))
+					await this.host.replace(original, config);
+			}
+			throw error;
+		} finally {
+			maintenance?.();
+		}
 	}
 	private async stage(release: ConnectorRelease, signal: AbortSignal) {
 		const directory = join(

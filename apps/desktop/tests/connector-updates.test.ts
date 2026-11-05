@@ -18,7 +18,7 @@ afterEach(async () => {
 	vi.unstubAllEnvs();
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
-async function fixture() {
+async function fixture(retain = false) {
 	const root = await mkdtemp(join(tmpdir(), "laplace-updates-"));
 	roots.push(root);
 	const directory = join(root, "old");
@@ -30,7 +30,7 @@ async function fixture() {
 		id: "canvas-session-mcp",
 		version,
 		sequence,
-		mode: "background-browser" as const,
+		mode: (retain ? "tethered" : "background-browser") as "tethered" | "background-browser",
 		channel: "stable" as const,
 		platforms: [`${process.platform}-${process.arch}`] as any,
 		minDesktop: "0.1.0",
@@ -62,6 +62,17 @@ async function fixture() {
 		command: "node",
 		args: [join(directory, "server.mjs")],
 		identity: "canvas-session-mcp@0.1.0",
+		...(retain
+			? {
+					managedBrowser: {
+						catalogId: "canvas-session-mcp",
+						provider: "outlook",
+						workspace: "https://outlook.office.com",
+						artifactSha256: createHash("sha256").update("old").digest("hex"),
+						runtimeVersion: "0.1.0",
+					},
+				}
+			: {}),
 		env: { SESSION_DIR: join(root, "session"), TOKEN: "fixture-secret" },
 	});
 	const secrets = new Map<string, string>();
@@ -97,6 +108,16 @@ async function fixture() {
 			kind: "desktop",
 			entries,
 			configurations: async () => [config],
+			...(retain
+				? {
+						retainForEnrollment: async (current: typeof config) => {
+							const retained = join(root, "retained");
+							await mkdir(retained, { recursive: true });
+							await writeFile(join(retained, "server.mjs"), "old");
+							return { ...current, args: [join(retained, "server.mjs")] };
+						},
+					}
+				: {}),
 			replace,
 			verify,
 			maintenance,
@@ -108,7 +129,14 @@ async function fixture() {
 		fetcher,
 	);
 	await updates.check();
-	await updates.enroll("canvas", directory, "canvas-session-mcp", "0.1.0", "background-browser");
+	if (retain) await writeFile(join(directory, "other-helper.cjs"), "unrelated bundled helper");
+	await updates.enroll(
+		"canvas",
+		directory,
+		"canvas-session-mcp",
+		"0.1.0",
+		retain ? "tethered" : "background-browser",
+	);
 	return {
 		updates,
 		idleSeconds,
@@ -267,4 +295,16 @@ it("accepts separate platform artifacts but rejects overlapping versions", async
 	expect(() => verifyConnectorIndex(duplicate, sign(null, duplicate, f.privateKey), f.key)).toThrow(
 		"Duplicate",
 	);
+});
+
+it("retains a verified tethered entry before enrolling a shared helper directory", async () => {
+	const f = await fixture(true);
+	expect(f.maintenance).toHaveBeenCalledWith("canvas");
+	expect(f.releaseLock).toHaveBeenCalledOnce();
+	expect(f.replace).toHaveBeenCalledOnce();
+	const retained = f.getConfig();
+	if (retained.transport !== "stdio") throw Error("Expected stdio");
+	expect(retained.args[0]).toContain("/retained/server.mjs");
+	expect(retained.env.TOKEN).toBe("fixture-secret");
+	expect(await f.updates.status()).toMatchObject([{ id: "canvas", version: "0.1.0" }]);
 });

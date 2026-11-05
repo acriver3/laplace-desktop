@@ -273,6 +273,10 @@ export async function startHelper() {
 	await sharedUpdates.start();
 	manager.updateMaintenance = () => sharedUpdates.active;
 	const connectorUpdates = new ConnectorUpdates({
+		retainForEnrollment: async (config) => {
+			await verifyBrowserConfiguration(resources, config);
+			return retainRuntime(root, resources, config, manager.entries);
+		},
 		root,
 		version: desktopPackage.version,
 		kind: "desktop",
