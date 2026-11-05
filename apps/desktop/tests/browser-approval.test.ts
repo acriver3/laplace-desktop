@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { browserSignInUrl } from "@repo/browser-runtime/browser-approval";
+import { RecoveryError } from "@repo/browser-runtime/session-recovery";
 import {
 	refreshedApprovalCapability,
 	approvalError,
@@ -483,4 +484,97 @@ it("renews an expired eight-hour transport using remembered consent", async () =
 	expect((await f.pair()).token).toBeTruthy();
 	await f.tick();
 	expect(f.broker.view(f.requestId, f.clientId).state).toBe("connected");
+});
+
+it("preserves provider retry delay across the relay and blocks read retries until it expires", async () => {
+	vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", "true");
+	const f = await fixture();
+	await f.report();
+	await f.tick();
+	await f.broker.approve(
+		f.requestId,
+		f.clientId,
+		f.broker.review(f.requestId, f.clientId).capabilities[f.candidate.id]!,
+	);
+	const { token } = await f.pair();
+	await f.tick();
+	const failure = f.relay
+		.read("channels_list", {}, new AbortController().signal)
+		.catch((error) => error);
+	const next = await (await f.post("/next", {}, token)).json();
+	expect(next.request.recoverySupported).toBe(true);
+	await f.post(
+		"/result",
+		{ id: next.request.id, ok: false, failure: { code: "rate_limited", retryAfterMs: 120000 } },
+		token,
+	);
+	const error = await failure;
+	if (!(error instanceof RecoveryError)) throw error;
+	expect(error).toMatchObject({ retryAfterMs: 120000, recovery: { reason: "rate_limited" } });
+	const original = f.manager.catalogSetupCall;
+	f.manager.catalogSetupCall = vi.fn(async (...args: any[]) => {
+		if (args[1] === "channels_list")
+			return {
+				isError: true,
+				structuredContent: { recovery: error.recovery, retryAfterMs: error.retryAfterMs },
+				content: [],
+			};
+		return (original as any)(...args);
+	});
+	(f.broker as any).requests.get(f.requestId).verified = false;
+	const now = Date.now();
+	await f.tick();
+	const view = f.broker.view(f.requestId, f.clientId);
+	expect(Date.parse(view.recovery!.nextRetryAt!) - now).toBeGreaterThanOrEqual(120000);
+	const count = vi.mocked(f.manager.catalogSetupCall).mock.calls.length;
+	await f.broker.resumeRecovery();
+	expect(vi.mocked(f.manager.catalogSetupCall).mock.calls.length).toBe(count);
+});
+
+it("wakes transport recovery after resume without replaying an operation", async () => {
+	vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", "true");
+	const f = await fixture();
+	const original = f.manager.catalogSetupCall;
+	f.manager.catalogSetupCall = vi
+		.fn()
+		.mockRejectedValue(Object.assign(new Error("offline"), { code: "ENETUNREACH" }));
+	await f.tick();
+	expect(f.broker.view(f.requestId, f.clientId).recovery?.nextRetryAt).toBeTruthy();
+	f.manager.catalogSetupCall = original;
+	await f.report();
+	await f.broker.resumeRecovery();
+	expect(f.broker.view(f.requestId, f.clientId).state).toBe("approval_required");
+	expect(
+		vi.mocked(original).mock.calls.every((call) => String(call[1]).startsWith("laplace_browser_")),
+	).toBe(true);
+});
+
+it("stops verification on confirmed sign-out until the browser connection changes", async () => {
+	vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", "true");
+	const f = await fixture();
+	await f.report();
+	await f.tick();
+	await f.broker.approve(
+		f.requestId,
+		f.clientId,
+		f.broker.review(f.requestId, f.clientId).capabilities[f.candidate.id]!,
+	);
+	await f.pair();
+	const original = f.manager.catalogSetupCall;
+	const verify = vi.fn(() => ({
+		isError: true,
+		structuredContent: { recovery: { state: "sign_in_required", reason: "session_expired" } },
+		content: [],
+	}));
+	f.manager.catalogSetupCall = vi.fn(async (...args: any[]) =>
+		args[1] === "channels_list" ? verify() : (original as any)(...args),
+	);
+	await f.tick();
+	await f.broker.resumeRecovery();
+	await f.tick();
+	expect(verify).toHaveBeenCalledTimes(1);
+	expect(f.broker.view(f.requestId, f.clientId)).toMatchObject({
+		state: "sign_in_required",
+		recovery: { state: "sign_in_required" },
+	});
 });

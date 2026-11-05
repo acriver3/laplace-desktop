@@ -395,6 +395,10 @@ export async function startHelper() {
 							true,
 						);
 						break;
+					case "browser.resumeRecovery":
+						await browserApprovals.resumeRecovery();
+						result = { resumed: true };
+						break;
 					case "browser.list":
 						result = browserApprovals.list();
 						break;

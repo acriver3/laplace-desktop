@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile, rm, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, dirname } from "node:path";
 import { promisify } from "node:util";
 
 import { Client } from "@modelcontextprotocol/client";
@@ -12,9 +12,15 @@ import { chromium } from "@playwright/test";
 
 // Synthetic Slack only. Never attaches to or reads a real browser profile.
 const [adapter, extension, executable, desktop] = process.argv.slice(2);
-if (!adapter || !extension || !executable || !desktop || process.platform !== "win32")
+if (
+	!adapter ||
+	!extension ||
+	!executable ||
+	!desktop ||
+	!["win32", "darwin"].includes(process.platform)
+)
 	throw new Error(
-		"Usage: node slack-extension-smoke.mjs ADAPTER EXTENSION TEST_CHROMIUM PACKAGED_DESKTOP (Windows native host acceptance)",
+		"Usage: node slack-extension-smoke.mjs ADAPTER EXTENSION TEST_CHROMIUM PACKAGED_DESKTOP (Windows or macOS native host acceptance)",
 	);
 const root = await mkdtemp(join(tmpdir(), "laplace-extension-smoke-"));
 async function until(read, message) {
@@ -31,6 +37,7 @@ let context;
 const nativeHost = "com.laplace.browser.test_" + randomUUID().replaceAll("-", "");
 const registry = "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\" + nativeHost;
 let registered = false;
+const nativeManifests = [];
 try {
 	const ext = join(root, "extension");
 	await cp(resolve(extension), ext, { recursive: true });
@@ -58,6 +65,7 @@ try {
 		JSON.stringify({
 			id: requestId,
 			provider: "slack",
+			sessionRecoveryV1: true,
 			environment: "fixture",
 			workspace: ticket.workspace,
 			pairingUrl: ticket.pairingUrl,
@@ -65,6 +73,23 @@ try {
 		}),
 	);
 	const hostManifest = join(root, "native-host.json");
+	let nativeExecutable = resolve(desktop);
+	if (process.platform === "darwin") {
+		const runtime = resolve(dirname(desktop), "../Resources/runtime");
+		const quote = (value) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+		nativeExecutable = join(root, "native-host");
+		await writeFile(
+			nativeExecutable,
+			"#!/bin/sh\nexport LAPLACE_DESKTOP_TEST_ROOT=" +
+				quote(root) +
+				"\nexec " +
+				quote(join(runtime, "runtimes/node")) +
+				" " +
+				quote(join(runtime, "helper/browser-native-entry.cjs")) +
+				' "$@"\n',
+		);
+		await chmod(nativeExecutable, 0o700);
+	}
 	const publicKey = Buffer.from(manifest.key, "base64");
 	const { createHash } = await import("node:crypto");
 	const extensionId = createHash("sha256")
@@ -77,16 +102,25 @@ try {
 		JSON.stringify({
 			name: nativeHost,
 			description: "Disposable native host smoke",
-			path: resolve(desktop),
+			path: nativeExecutable,
 			type: "stdio",
 			allowed_origins: ["chrome-extension://" + extensionId + "/"],
 		}),
 	);
-	await promisify(execFile)(
-		"reg.exe",
-		["add", registry, "/ve", "/t", "REG_SZ", "/d", hostManifest, "/f"],
-		{ windowsHide: true },
-	);
+	if (process.platform === "win32") {
+		await promisify(execFile)(
+			"reg.exe",
+			["add", registry, "/ve", "/t", "REG_SZ", "/d", hostManifest, "/f"],
+			{ windowsHide: true },
+		);
+	} else {
+		for (const directory of [join(root, "profile", "NativeMessagingHosts")]) {
+			await mkdir(directory, { recursive: true });
+			const path = join(directory, nativeHost + ".json");
+			await writeFile(path, await readFile(hostManifest), { flag: "wx", mode: 0o600 });
+			nativeManifests.push(path);
+		}
+	}
 	registered = true;
 	const workerPath = join(ext, "worker.js");
 	await writeFile(
@@ -106,6 +140,21 @@ try {
 		headless: true,
 		args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
 	});
+	const probeWorker = context.serviceWorkers()[0] || (await context.waitForEvent("serviceworker"));
+	const probe = await probeWorker.evaluate(
+		(host) =>
+			new Promise((resolve) => {
+				const port = chrome.runtime.connectNative(host);
+				port.onMessage.addListener((value) => {
+					resolve({ requests: value.requests?.length });
+					port.disconnect();
+				});
+				port.onDisconnect.addListener(() => resolve({ error: chrome.runtime.lastError?.message }));
+				port.postMessage({ method: "list_pending" });
+			}),
+		nativeHost,
+	);
+	assert.ok(!probe.error, "Native host probe: " + JSON.stringify(probe));
 	let providerUser = "U123456";
 	const methods = [];
 	await context.route("https://fixture.slack.com/**", async (route) => {
@@ -270,6 +319,7 @@ try {
 		JSON.stringify({
 			id: requestId,
 			provider: "slack",
+			sessionRecoveryV1: true,
 			environment: "fixture",
 			...renewed,
 		}),
@@ -309,7 +359,8 @@ try {
 } finally {
 	await context?.close();
 	await client.close();
-	if (registered)
+	if (registered && process.platform === "win32")
 		await promisify(execFile)("reg.exe", ["delete", registry, "/f"], { windowsHide: true });
+	await Promise.all(nativeManifests.map((path) => rm(path, { force: true })));
 	await rm(root, { recursive: true, force: true });
 }

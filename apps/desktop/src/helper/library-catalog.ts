@@ -1,5 +1,6 @@
 import outlookArtifact from "@repo/browser-runtime/assets/outlook.json";
 import slackArtifact from "@repo/browser-runtime/assets/slack.json";
+import { sessionRecoveryEnabled } from "@repo/browser-runtime/session-recovery";
 import { browserEnabled } from "@repo/local-mcp-core/browser-catalog";
 import {
 	bundleEntrySchema,
@@ -13,9 +14,11 @@ import { browserConnectionsEnabled } from "../shared/browser-feature";
 import { slackBrowserVersion } from "../shared/slack-browser";
 import { ycBrowserVersion } from "../shared/yc-browser";
 import snapshot from "./library-catalog.json";
+import recoveryOutlook from "./library-recovery-outlook.json";
 
 // Reviewed library snapshot; downloads never follow a moving branch or accept remote launch settings.
 export const libraryRevision = "fa29103099f9f735da1b9c0ac10410ebda816249";
+const recoveryLibraryRevision = "d9340533ce617065458fdfd92f2d602a74d26b2c";
 const artifactSchema = bundleArtifactSchema
 	.extend({
 		storagePrefix: z.string().default("library"),
@@ -30,8 +33,10 @@ const artifactSchema = bundleArtifactSchema
 			.url()
 			.refine(
 				(url) =>
-					url.startsWith(
-						`https://raw.githubusercontent.com/acriver3/laplace-mcp-library/${libraryRevision}/bundles/`,
+					[libraryRevision, recoveryLibraryRevision].some((revision) =>
+						url.startsWith(
+							`https://raw.githubusercontent.com/acriver3/laplace-mcp-library/${revision}/bundles/`,
+						),
 					) &&
 					!url.includes("..") &&
 					!/[?#]/.test(url),
@@ -49,7 +54,10 @@ const entrySchema = bundleEntrySchema
 	.strip();
 export type BundleCatalogEntry = z.infer<typeof entrySchema>;
 export type BundleArtifact = z.infer<typeof artifactSchema>;
-const legacyCatalogEntry = (item: (typeof snapshot)[number], browserPreview: boolean) =>
+const legacyCatalogEntry = (
+	item: (typeof snapshot)[number] | typeof recoveryOutlook,
+	browserPreview: boolean,
+) =>
 	entrySchema.parse({
 		...item,
 		...localConnectorMetadata(item.id),
@@ -96,7 +104,10 @@ const legacyCatalogEntry = (item: (typeof snapshot)[number], browserPreview: boo
 				: "https://github.com/acriver3/laplace-mcp-library",
 	});
 export const legacyBundleCatalog = snapshot.map((item) =>
-	legacyCatalogEntry(item, browserConnectionsEnabled()),
+	legacyCatalogEntry(
+		sessionRecoveryEnabled() && item.id === "msoutlook-mcp" ? recoveryOutlook : item,
+		browserConnectionsEnabled(),
+	),
 );
 export function bundleAvailable(artifact: BundleArtifact) {
 	return acceptedBundle(artifact) || (artifact.published && artifact.candidate === true);
@@ -175,6 +186,7 @@ export const allBundleCatalog = [
 	...new Map(
 		[
 			...snapshot.map((item) => legacyCatalogEntry(item, false)),
+			legacyCatalogEntry(recoveryOutlook, false),
 			...legacyBundleCatalog,
 			...tetheredBundleCatalog,
 		].map((entry) => [`${entry.id}@${entry.version}`, entry]),

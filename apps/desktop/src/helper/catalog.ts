@@ -7,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { browserProviders } from "@repo/browser-runtime/browser-approval";
 import {
 	sessionRecoveryEnabled,
+	recoveryFromResult,
 	classifyRecovery,
 	recoveryMessage,
 	RecoveryError,
@@ -1458,6 +1459,12 @@ export class CatalogInstaller {
 	async verify(id: string, authorize?: () => void) {
 		const { entry } = await this.installed(id);
 		authorize?.();
+		if (sessionRecoveryEnabled()) {
+			const pending = [...this.work.values()].find(
+				(job) => job.serverId === id && job.kind === "verify" && job.status === "running",
+			);
+			if (pending) return { ...pending };
+		}
 		return this.start(
 			entry,
 			"verify",
@@ -1498,6 +1505,8 @@ export class CatalogInstaller {
 				}
 			}
 		if (failed && sessionRecoveryEnabled()) {
+			const failure = recoveryFromResult(response);
+			if (failure && response.isError && response.structuredContent) throw failure;
 			let detail: unknown = response.structuredContent;
 			for (const item of response.content ?? []) {
 				if (item.type === "text" && item.text) {

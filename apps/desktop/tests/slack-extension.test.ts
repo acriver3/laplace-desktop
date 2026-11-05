@@ -158,3 +158,15 @@ it("rejects writes before making a provider request", async () => {
 	});
 	expect(fetch).not.toHaveBeenCalled();
 });
+
+it("returns a bounded error code and provider retry delay without response contents", async () => {
+	const f = fixture();
+	f.fetch.mockResolvedValueOnce(
+		new Response("sensitive response", { status: 429, headers: { "retry-after": "120" } }),
+	);
+	expect(await f.read("auth.test", {}, null, workspace)).toEqual({
+		ok: false,
+		error: "rate_limited",
+		retryAfterMs: 120000,
+	});
+});

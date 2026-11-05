@@ -1,7 +1,7 @@
 {
 	"manifest_version": 3,
 	"name": "Laplace Browser Connection",
-	"version": "0.7.1",
+	"version": "0.7.2",
 	"description": "Connect signed-in accounts from your AI agent. Review access in chat.",
 	"key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlKPTp5B3CCrFaHrANnkCk+UIzPm4pk5vxAObU7rAX2UmiDtBA5PYMF9WltsJBUKTkOJuy/9dyD/0n8GhdSxbZD9gop8ZUdcvmm/97LosdVnxJQHIWSn6TxxnMRvW50nIohv3GObwuL0SzlhQGZe7gxuW9G+NAjXECK7y2d7kNaLl9zV+QhvYjjzE3rlxVomXzm5Go1N4mabqCNtkMIrdxSRDkUp9RFs7IjaAZAJJj7ZwG9V+dPLmDpI1EMov8DoOe4yf4rtpdzSc/hORlY2xjVV4OtyyIUkYgN8DMU7xh9el/NfBvz9n/lJlDoDkbNtFDFSDBICJ0VCpgsdCCHiZPQIDAQAB",
 	"permissions": [

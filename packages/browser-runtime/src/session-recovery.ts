@@ -63,7 +63,63 @@ export function recoveryDelay(attempt: number, retryAfterMs = 0, random = Math.r
 	return Math.max(Math.min(60_000, base * (0.8 + random() * 0.2)), Math.max(0, retryAfterMs));
 }
 export class RecoveryError extends Error {
-	constructor(readonly recovery: RecoveryStatus) {
+	constructor(
+		readonly recovery: RecoveryStatus,
+		readonly retryAfterMs = 0,
+	) {
 		super(recoveryMessage(recovery));
 	}
+}
+
+export function recoveryFromResult(result: unknown): RecoveryError | undefined {
+	const r = result as {
+		isError?: boolean;
+		structuredContent?: any;
+		content?: Array<{ text?: string }>;
+	};
+	if (!r?.isError) return;
+	let detail = r.structuredContent;
+	if (!detail)
+		for (const item of r.content ?? []) {
+			try {
+				detail = JSON.parse(item.text ?? "");
+				break;
+			} catch {}
+		}
+	const recovery = detail?.recovery;
+	if (
+		!recovery ||
+		![
+			"reconnecting",
+			"browser_required",
+			"sign_in_required",
+			"approval_required",
+			"unavailable",
+		].includes(recovery.state)
+	)
+		return new RecoveryError(classifyRecovery(detail?.code ?? detail?.error));
+	const ms = detail.retryAfterMs;
+	return new RecoveryError(
+		{
+			state: recovery.state,
+			reason: [
+				"session_expired",
+				"permission_required",
+				"identity_mismatch",
+				"approval_required",
+				"browser_required",
+				"rate_limited",
+				"transport_unavailable",
+				"verification_failed",
+			].includes(recovery.reason)
+				? recovery.reason
+				: "verification_failed",
+		},
+		typeof ms === "number" && Number.isFinite(ms) && ms >= 0 ? ms : 0,
+	);
+}
+export function recoveryContent(error: unknown) {
+	return error instanceof RecoveryError
+		? { structuredContent: { recovery: error.recovery, retryAfterMs: error.retryAfterMs } }
+		: {};
 }

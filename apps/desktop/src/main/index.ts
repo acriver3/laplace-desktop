@@ -1377,6 +1377,9 @@ void app
 			void helper?.request("credentials.lock", {}).catch(() => {});
 		};
 		powerMonitor.on("suspend", lockCredentials);
+		powerMonitor.on("resume", () => {
+			void helper?.request("browser.resumeRecovery", {}).catch(() => {});
+		});
 		powerMonitor.on("lock-screen", lockCredentials);
 		const icon = nativeImage.createFromPath(join(resources, "icon.png"));
 		tray = new Tray(icon.resize({ width: 18, height: 18 }));

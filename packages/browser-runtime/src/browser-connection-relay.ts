@@ -13,6 +13,7 @@ import {
 	describeTransfer,
 	transferLimit,
 } from "./browser-transfer";
+import { RecoveryError, classifyRecovery } from "./session-recovery";
 
 const secret = () => randomBytes(32).toString("base64url");
 const equal = (a: string, b: string) =>
@@ -262,6 +263,7 @@ export class BrowserConnectionRelay {
 										? { argumentsTransfer: describeTransfer(next.inputBytes) }
 										: { args: next.args }),
 									resultLimit: next.resultLimit,
+									recoverySupported: true,
 								}
 							: null,
 					};
@@ -318,6 +320,20 @@ export class BrowserConnectionRelay {
 						.object({
 							id: z.string().uuid(),
 							ok: z.boolean(),
+							failure: z
+								.object({
+									code: z.enum([
+										"rate_limited",
+										"session_expired",
+										"sign_in_required",
+										"identity_mismatch",
+										"request_failed",
+										"permission_required",
+									]),
+									retryAfterMs: z.number().finite().nonnegative().optional(),
+								})
+								.strict()
+								.optional(),
 							result: z.unknown().optional(),
 							transfer: z.literal(true).optional(),
 						})
@@ -341,6 +357,10 @@ export class BrowserConnectionRelay {
 					clearTimeout(pending.timer);
 					this.pending.delete(parsed.id);
 					if (parsed.ok) pending.resolve(sanitized);
+					else if (!pending.write && parsed.failure)
+						pending.reject(
+							new RecoveryError(classifyRecovery(parsed.failure.code), parsed.failure.retryAfterMs),
+						);
 					else
 						pending.reject(
 							new Error(

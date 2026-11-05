@@ -26,3 +26,20 @@ it("bounds backoff and honors provider retry delays", () => {
 	expect(recoveryDelay(100, 0, () => 1)).toBe(60000);
 	expect(recoveryDelay(100, 120000, () => 1)).toBe(120000);
 });
+
+it("preserves structured retry metadata and never exposes untrusted reason text", async () => {
+	const { recoveryFromResult, recoveryContent, RecoveryError } =
+		await import("@repo/browser-runtime/session-recovery");
+	const error = recoveryFromResult({
+		isError: true,
+		structuredContent: {
+			recovery: { state: "reconnecting", reason: "provider-private-text" },
+			retryAfterMs: 120000,
+		},
+	})!;
+	expect(error.recovery.reason).toBe("verification_failed");
+	expect(error.retryAfterMs).toBe(120000);
+	expect(
+		recoveryContent(new RecoveryError({ state: "reconnecting", reason: "rate_limited" }, 120000)),
+	).toMatchObject({ structuredContent: { retryAfterMs: 120000 } });
+});

@@ -8,7 +8,7 @@ import { expect, it, vi } from "vitest";
 // @ts-expect-error The extension is plain JavaScript.
 import { provider } from "../../../packages/browser-runtime/extension/providers.js";
 
-async function fixture(providerId: string, workspace: string, tabUrl: string) {
+async function fixture(providerId: string, workspace: string, tabUrl: string, recovery = false) {
 	const session: Record<string, any> = {};
 	const local: Record<string, any> = { profileId: randomUUID() };
 	const storage = (data: Record<string, any>) => ({
@@ -63,7 +63,7 @@ async function fixture(providerId: string, workspace: string, tabUrl: string) {
 		let result = {};
 		switch (new URL(url).pathname) {
 			case "/describe":
-				result = { provider: providerId, workspace };
+				result = { provider: providerId, sessionRecoveryV1: recovery, workspace };
 				break;
 			case "/review":
 				candidate = body.candidates[0];
@@ -87,7 +87,9 @@ async function fixture(providerId: string, workspace: string, tabUrl: string) {
 		}
 		return { ok: true, json: async () => result };
 	});
+	const online = vi.fn();
 	const context = createContext({
+		addEventListener: online,
 		chrome,
 		provider,
 		fetch,
@@ -100,19 +102,21 @@ async function fixture(providerId: string, workspace: string, tabUrl: string) {
 		clearTimeout() {},
 	});
 	const source = await readFile(
-        new URL("../../../packages/browser-runtime/extension/worker.js", import.meta.url),
-        "utf8",
-    );
-    runInContext(
-        source.replace('import { provider } from "./providers.js";', "")
-            .replace('import { connectBroker } from "./broker.js";', ""),
-        context,
-    );
+		new URL("../../../packages/browser-runtime/extension/worker.js", import.meta.url),
+		"utf8",
+	);
+	runInContext(
+		source
+			.replace('import { provider } from "./providers.js";', "")
+			.replace('import { connectBroker } from "./broker.js";', ""),
+		context,
+	);
 	const id = randomUUID();
 	const discover = async () => {
 		context.ticket = {
 			id,
 			provider: providerId,
+			sessionRecoveryV1: recovery,
 			workspace,
 			pairingUrl: "http://127.0.0.1:12345/#" + randomUUID().replaceAll("-", "").padEnd(43, "a"),
 			expiresAt: new Date(Date.now() + 60_000).toISOString(),
@@ -126,6 +130,7 @@ async function fixture(providerId: string, workspace: string, tabUrl: string) {
 	};
 	return {
 		chrome,
+		online: () => online.mock.calls.find((call) => call[0] === "online")![1](),
 		session,
 		fetch,
 		discover,
@@ -177,4 +182,18 @@ it.each([
 	await f.refresh();
 	expect(f.chrome.tabs.update).toHaveBeenCalledWith(42, { active: true });
 	expect(f.chrome.tabs.create).toHaveBeenCalledTimes(1);
+});
+
+it("restored network wakes opted-in discovery without opening a closed tab", async () => {
+	const f = await fixture(
+		"slack",
+		"https://fixture.slack.com",
+		"https://fixture.slack.com/client/T123456",
+		true,
+	);
+	await f.discover();
+	const before = f.fetch.mock.calls.length;
+	await f.online();
+	expect(f.fetch.mock.calls.length).toBeGreaterThan(before);
+	expect(f.chrome.tabs.create).not.toHaveBeenCalled();
 });
