@@ -15,6 +15,8 @@ import {
 import { publishBrowserRequest } from "./browser-requests";
 import {
 	sessionRecoveryEnabled,
+	recoveryFromResult,
+	RecoveryError,
 	classifyRecovery,
 	recoveryDelay,
 	recoveryMessage,
@@ -57,6 +59,7 @@ export interface BrowserApprovalHost {
 export const browserConsentSchema = z.object({ grants: z.array(grant) });
 type Request = Owner & {
 	recoveryAttempts?: number;
+	authenticationBlocked?: boolean;
 	nextRetryAt?: number;
 	recoveryStartedAt?: number;
 	id: string;
@@ -475,6 +478,7 @@ export class BrowserApprovals {
 								return;
 							}
 							if (status.connected) {
+								if (sessionRecoveryEnabled() && r.authenticationBlocked) return;
 								r.pairing = false;
 								if (!r.verified) {
 									const result = (await this.manager.catalogSetupCall(
@@ -483,6 +487,10 @@ export class BrowserApprovals {
 										{},
 										AbortSignal.timeout(15000),
 									)) as { isError?: boolean };
+									if (sessionRecoveryEnabled()) {
+										const failure = recoveryFromResult(result);
+										if (failure) throw failure;
+									}
 									if (result.isError) throw Error("Verification failed.");
 									this.allowed(r, r.serverId);
 									r.verified = true;
@@ -498,17 +506,21 @@ export class BrowserApprovals {
 									if (r.recoveryAttempts) this.recordRecovery(r, "recovered");
 									r.recoveryAttempts = 0;
 									r.view.recovery = undefined;
-									this.update(
-										r,
-										"connected",
-										"Connected. Closing the tab pauses access; reopen it to reconnect this account.",
-									);
+									if (r.view.state !== "connected")
+										this.update(
+											r,
+											"connected",
+											"Connected. Closing the tab pauses access; reopen it to reconnect this account.",
+										);
 									r.nextRetryAt = undefined;
 									r.recoveryStartedAt = undefined;
 								}
 								return;
 							}
-							if (sessionRecoveryEnabled()) r.verified = false;
+							if (sessionRecoveryEnabled()) {
+								r.verified = false;
+								r.authenticationBlocked = false;
+							}
 							if (!r.pairing || Date.now() >= r.expiresAt) {
 								if (!r.consent) {
 									r.terminal = true;
@@ -556,9 +568,23 @@ export class BrowserApprovals {
 							);
 						} catch (error) {
 							if (sessionRecoveryEnabled() && !r.terminal) {
-								const status = classifyRecovery(error);
+								const status =
+									error instanceof RecoveryError ? error.recovery : classifyRecovery(error);
+								if (status.state === "sign_in_required" || status.state === "approval_required") {
+									r.authenticationBlocked = true;
+									r.nextRetryAt = undefined;
+									r.view.recovery = status;
+									this.recordRecovery(r, status.reason);
+									this.update(r, status.state, recoveryMessage(status));
+									return;
+								}
 								r.recoveryStartedAt ??= Date.now();
-								r.nextRetryAt = Date.now() + recoveryDelay(r.recoveryAttempts ?? 0);
+								r.nextRetryAt =
+									Date.now() +
+									recoveryDelay(
+										r.recoveryAttempts ?? 0,
+										error instanceof RecoveryError ? error.retryAfterMs : 0,
+									);
 								r.recoveryAttempts = (r.recoveryAttempts ?? 0) + 1;
 								r.view.recovery = { ...status, nextRetryAt: new Date(r.nextRetryAt).toISOString() };
 								this.recordRecovery(r, status.reason);
@@ -578,6 +604,15 @@ export class BrowserApprovals {
 			this.ticking = false;
 		}
 	}
+	/** Wake transport discovery only; never replay a provider invocation. */
+	async resumeRecovery() {
+		if (!sessionRecoveryEnabled() || this.closed) return;
+		for (const r of this.requests.values()) {
+			if (!r.terminal && r.view.recovery?.reason !== "rate_limited") r.nextRetryAt = undefined;
+		}
+		await this.tick();
+	}
+
 	async close() {
 		this.closed = true;
 		clearInterval(this.timer);

@@ -56,6 +56,7 @@ export const helperInputs = {
 		.object({ principalId: z.string(), requestId: z.string().uuid(), command: brokerCommand })
 		.strict(),
 	"browser.list": empty,
+	"browser.resumeRecovery": empty,
 	"browser.review": z.object({ requestId: z.string().uuid() }).strict(),
 	"browser.approve": z
 		.object({ requestId: z.string().uuid(), capability: z.string().min(40).max(100) })

@@ -49,3 +49,7 @@ On macOS ARM64, Desktop source verification passed type checking, all 421 tests 
 The isolated native harness passed source 0.1.26 → 0.1.27, injected-failure rollback, and verified ZIP 0.1.26 → 0.1.27 without Git/Node/pnpm on the update path. It checked packaged startup and profile preservation. The Node/Electron ASAR filesystem harness passed copying, hashing, tamper detection, and removal.
 
 These results are development evidence, not release qualification. Windows ZIP/Squirrel, Intel Mac, and the complete per-connector native acceptance matrix have not run here. Full disk-exhaustion, native locks, live credentials/browser sessions, and concurrent native Desktop/CLI owner acceptance are still required for the exact released artifacts. No platform row is marked qualified by this report, no stable feed has been published, and production automation remains disabled.
+
+## Explicit release-owner acceptance
+
+As with source releases, explicit acceptance in place of native runner evidence is recorded separately: `result: "accepted"`, `localValidation: "passed"`, and `userAcceptance` with the verbatim statement, UTC `acceptedAt`, and `nativeResults: "not-attested"`. Such a record must omit native `checks`; it must still identify the exact platform, distribution, commit, artifact hash and reviewer. General publication permission does not imply this exception. Signed qualification can reference this record, and release notes must distinguish owner acceptance from observed native passes.

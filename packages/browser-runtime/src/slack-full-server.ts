@@ -14,6 +14,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { z } from "zod";
 
 import { browserTransferLimit } from "./browser-transfer";
+import { recoveryContent } from "./session-recovery";
 import { SlackFullBrowserRelay, slackFullActions } from "./slack-full-relay";
 import { ycSetupNames } from "./yc-browser";
 
@@ -329,6 +330,7 @@ export async function runSlackBrowser(binary: string) {
 		} catch (error) {
 			return {
 				isError: true,
+				...recoveryContent(error),
 				content: [
 					{
 						type: "text" as const,

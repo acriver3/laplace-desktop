@@ -263,6 +263,7 @@ it.each([
 	);
 	expect(configs.get(id)?.enabled).toBe(false);
 	const verify = await installer.verify(id);
+	if (recovery) expect((await installer.verify(id)).id).toBe(verify.id);
 	await vi.waitFor(() =>
 		expect(installer.jobs().find((job) => job.id === verify.id)?.status).toBe("completed"),
 	);

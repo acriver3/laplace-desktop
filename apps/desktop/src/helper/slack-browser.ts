@@ -1,6 +1,7 @@
 import { ToolSchema } from "@modelcontextprotocol/core";
 import { Server } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { recoveryContent } from "@repo/browser-runtime/session-recovery";
 import { z } from "zod";
 
 import { slackBrowserVersion, slackSetupNames } from "../shared/slack-browser";
@@ -62,6 +63,7 @@ async function main() {
 		} catch (error) {
 			return {
 				isError: true,
+				...recoveryContent(error),
 				content: [
 					{
 						type: "text",

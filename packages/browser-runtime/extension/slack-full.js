@@ -1,6 +1,8 @@
 // Runs only in the explicitly approved tab's isolated world. The browser sends
 // its own cookies; no cookie API, credential export, or page-to-extension messages.
 export async function slackFullAction(method, args, expected, requestedWorkspace) {
+	let retryAfterMs;
+
 	let failure = "not_slack_tab";
 	try {
 		if (
@@ -280,7 +282,16 @@ export async function slackFullAction(method, args, expected, requestedWorkspace
 				signal: AbortSignal.timeout(15000),
 			});
 			if (!response.ok) {
-				if (response.status === 429) failure = "rate_limited";
+				if (response.status === 429) {
+					failure = "rate_limited";
+					const retry = response.headers.get("retry-after");
+					const ms = retry
+						? /^\d+(?:\.\d+)?$/.test(retry)
+							? Number(retry) * 1000
+							: Date.parse(retry) - Date.now()
+						: NaN;
+					if (Number.isFinite(ms)) retryAfterMs = Math.max(0, ms);
+				}
 				throw new Error();
 			}
 			failure = "invalid_response";

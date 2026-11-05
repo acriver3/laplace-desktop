@@ -214,7 +214,13 @@ export class Supervisor {
 						...runtimeCommand(config.command, config.args, this.resources),
 						cwd: config.cwd ?? directory,
 						home: homedir(),
-						env: config.env,
+						env: {
+							...config.env,
+							...(process.env.LAPLACE_SESSION_RECOVERY_V1 === "true" &&
+							config.identity?.startsWith("msoutlook-mcp@")
+								? { LAPLACE_SESSION_RECOVERY_V1: "true" }
+								: {}),
+						},
 						resources: this.resources,
 						diagnostic: (message) => this.diagnostic(runtime, message),
 					})

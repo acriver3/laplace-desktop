@@ -3,6 +3,7 @@ import { Server } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { z } from "zod";
 
+import { recoveryContent } from "./session-recovery";
 import { ycBrowserVersion, ycSetupNames } from "./yc-browser";
 import { ycActions, YcBrowserRelay } from "./yc-browser-relay";
 
@@ -57,6 +58,7 @@ async function main() {
 		if (busy)
 			return {
 				isError: true,
+
 				content: [
 					{
 						type: "text",
@@ -101,6 +103,7 @@ async function main() {
 		} catch (error) {
 			return {
 				isError: true,
+				...recoveryContent(error),
 				content: [
 					{
 						type: "text",

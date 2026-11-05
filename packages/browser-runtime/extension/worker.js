@@ -82,7 +82,31 @@ async function sendResult(stored, next, value) {
 	// Older relays have no chunk protocol. Preserve their existing JSON path.
 	if (next.resultLimit === undefined)
 		return request(stored.base, "/result", { id: next.id, ...value }, stored.token);
-	if (!value.ok) return request(stored.base, "/result", { id: next.id, ok: false }, stored.token);
+	if (!value.ok) {
+		const allowed = [
+			"rate_limited",
+			"session_expired",
+			"sign_in_required",
+			"identity_mismatch",
+			"request_failed",
+			"permission_required",
+		];
+		const failure =
+			stored.sessionRecoveryV1 && next.recoverySupported && allowed.includes(value.error)
+				? {
+						code: value.error,
+						...(Number.isFinite(value.retryAfterMs) && value.retryAfterMs >= 0
+							? { retryAfterMs: value.retryAfterMs }
+							: {}),
+					}
+				: undefined;
+		return request(
+			stored.base,
+			"/result",
+			{ id: next.id, ok: false, ...(failure ? { failure } : {}) },
+			stored.token,
+		);
+	}
 	const bytes = new TextEncoder().encode(JSON.stringify(value.result) ?? "null");
 	const limit = next.resultLimit ?? 1024 * 1024;
 	if (!Number.isSafeInteger(limit) || limit < 1 || limit > maxTransferBytes || bytes.length > limit)
@@ -114,13 +138,21 @@ async function sendResult(stored, next, value) {
 	}
 	return request(stored.base, "/result", { id: next.id, ok: true, transfer: true }, stored.token);
 }
-async function inTab(tabId, adapter, method, args, expected, workspace = expected?.workspace) {
+async function inTab(
+	tabId,
+	adapter,
+	method,
+	args,
+	expected,
+	workspace = expected?.workspace,
+	recoveryV1 = false,
+) {
 	if (method !== adapter.identify && !adapter.methods.includes(method)) return { ok: false };
 	const results = await chrome.scripting.executeScript({
 		target: { tabId },
 		world: "ISOLATED",
 		func: adapter.read,
-		args: [method, args, expected, workspace],
+		args: [method, args, expected, workspace, recoveryV1],
 	});
 	return results.find((r) => r.frameId === 0)?.result ?? { ok: false };
 }
@@ -169,6 +201,8 @@ async function pump(id) {
 						next.method,
 						await requestArguments(stored, next),
 						stored.identity,
+						stored.identity.workspace,
+						stored.sessionRecoveryV1 === true,
 					).catch(() => ({ ok: false }));
 					await sendResult(stored, next, value);
 					if (!value.ok) {
@@ -249,9 +283,15 @@ async function inspect(entry) {
 		let signedOut = false;
 		const seen = new Set();
 		for (const tab of tabs.slice(0, 32)) {
-			const value = await inTab(tab.id, adapter, adapter.identify, {}, null, item.workspace).catch(
-				() => ({ ok: false }),
-			);
+			const value = await inTab(
+				tab.id,
+				adapter,
+				adapter.identify,
+				{},
+				null,
+				item.workspace,
+				item.sessionRecoveryV1 === true,
+			).catch(() => ({ ok: false }));
 			if (!value.ok || value.result?.workspace !== item.workspace) {
 				if (
 					["sign_in_required", "session_expired", "token_expired", "token_revoked"].includes(
@@ -324,6 +364,7 @@ async function inspect(entry) {
 			[prefix + item.id]: {
 				base: target.base,
 				provider: item.provider,
+				sessionRecoveryV1: item.sessionRecoveryV1 === true,
 				tabId: chosen.tabId,
 				identity: chosen.identity,
 				...approved,
@@ -415,3 +456,12 @@ chrome.runtime.onStartup.addListener(() => void resume());
 chrome.runtime.onInstalled.addListener(() => void resume());
 setInterval(() => void refresh(), 1000);
 void resume();
+
+// A restored network can deliver fresh rendezvous tickets; provider writes are never replayed.
+globalThis.addEventListener?.("online", async () => {
+	if (
+		[...discoveries.values()].some((entry) => entry.item.sessionRecoveryV1) ||
+		(await sessions()).some((session) => session.sessionRecoveryV1)
+	)
+		await resume();
+});

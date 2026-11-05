@@ -1578,6 +1578,7 @@ void app
 			wakeDeferUntil = Date.now() + 60000;
 			automaticUpdates?.resume();
 			void helper?.request("updates.deviceActivity", { busy: true }).catch(() => {});
+			void helper?.request("browser.resumeRecovery", {}).catch(() => {});
 		});
 		powerMonitor.on("lock-screen", lockCredentials);
 		const icon = nativeImage.createFromPath(join(resources, "icon.png"));

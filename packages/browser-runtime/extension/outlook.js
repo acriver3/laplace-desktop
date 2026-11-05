@@ -2,7 +2,7 @@
  * MSAL storage format: microsoft-authentication-library-for-js/lib/msal-browser/src/cache.
  * Tokens are read and used only inside Chrome, never returned to the local relay.
  */
-export async function outlookAction(method, args = {}, expected, workspace) {
+export async function outlookAction(method, args = {}, expected, workspace, recoveryV1 = false) {
 	const home = "https://outlook.cloud.microsoft";
 	const clientId = "9199bf20-a13f-4107-85dc-02114787ef48";
 	const hosts = ["outlook.cloud.microsoft", "outlook.office.com", "outlook.office365.com"];
@@ -237,6 +237,20 @@ export async function outlookAction(method, args = {}, expected, workspace) {
 			...(verb === "POST" || verb === "PATCH" ? { body: JSON.stringify(args.body) } : {}),
 			signal: AbortSignal.timeout(90000),
 		});
+		if (recoveryV1 && verb === "GET" && response.status === 429) {
+			const retry = response.headers.get("retry-after");
+			const ms = retry
+				? /^\d+(?:\.\d+)?$/.test(retry)
+					? Number(retry) * 1000
+					: Date.parse(retry) - Date.now()
+				: NaN;
+			return {
+				ok: false,
+				error: "rate_limited",
+				...(Number.isFinite(ms) ? { retryAfterMs: Math.max(0, ms) } : {}),
+			};
+		}
+		if (recoveryV1 && verb === "GET" && response.status === 401) return fail("sign_in_required");
 		if (!response.ok)
 			return {
 				ok: true,

@@ -45,6 +45,7 @@ export class HelperClient {
 			"LC_ALL",
 			"LAPLACE_BROWSER_CONNECTION_ENABLED",
 			"LAPLACE_AUTOMATIC_UPDATES_V1",
+			"LAPLACE_SESSION_RECOVERY_V1",
 			"ENABLE_CREDENTIAL_BROKERING",
 		])
 			if (process.env[key]) env[key] = process.env[key];

@@ -39,12 +39,14 @@ function fixture() {
 
 it("passes the browser adapter opt-in to the helper without forwarding arbitrary environment values", async () => {
 	vi.stubEnv("LAPLACE_BROWSER_CONNECTION_ENABLED", "true");
+	vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", "true");
 	vi.stubEnv("LAPLACE_UNRELATED_TEST_SECRET", "not-for-the-helper");
 	const f = fixture();
 	f.child.emit("message", { event: "ready" });
 	await f.started;
 	const options = mocks.spawn.mock.calls[0]![2];
 	expect(options.env.LAPLACE_BROWSER_CONNECTION_ENABLED).toBe("true");
+	expect(options.env.LAPLACE_SESSION_RECOVERY_V1).toBe("true");
 	expect(options.env.LAPLACE_UNRELATED_TEST_SECRET).toBeUndefined();
 });
 
@@ -95,7 +97,6 @@ it("waits for actual helper exit after shutdown acknowledgement", async () => {
 	expect(f.failed).not.toHaveBeenCalled();
 	expect(f.child.kill).not.toHaveBeenCalled();
 });
-
 
 it("withholds startup snapshots until catalog reads can succeed", async () => {
 	const f = fixture();
