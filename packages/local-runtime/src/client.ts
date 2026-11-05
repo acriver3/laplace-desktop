@@ -10,8 +10,8 @@ import {
 	type LocalRuntimeDescriptor,
 } from "@repo/project-protocol/local-runtime";
 
-import type { DesktopSnapshot, HelperEvent, HelperMethod } from "./shared/helper-contracts";
 import { helperEnvironment } from "./environment";
+import type { DesktopSnapshot, HelperEvent, HelperMethod } from "./shared/helper-contracts";
 
 export async function readRuntimeDescriptor(root: string) {
 	try {
@@ -32,6 +32,8 @@ export class RuntimeClient {
 	private ready = false;
 	private stopping = false;
 	snapshot?: DesktopSnapshot;
+	/** Installed hosts let the runtime own browser-extension discovery registration. */
+	nativeHost = false;
 	constructor(
 		private event: (event: HelperEvent) => void,
 		private failed: (message: string) => void,
@@ -51,6 +53,7 @@ export class RuntimeClient {
 					resources,
 					"--origin",
 					origin,
+					...(this.nativeHost ? ["--native-host"] : []),
 				],
 				{ detached: true, stdio: "ignore", windowsHide: true, env: helperEnvironment() },
 			);

@@ -9,9 +9,12 @@ import {
 	type LocalRuntimeDescriptor,
 } from "@repo/project-protocol/local-runtime";
 
-import { helperRequest, type HelperEvent } from "./shared/helper-contracts";
+import { registerBrowserNativeHost } from "./native-host";
 import { createRuntime, type Runtime } from "./runtime";
 import type { ControlServer } from "./server";
+import { watchSession } from "./session-monitor";
+import { browserConnectionsEnabled } from "./shared/browser-feature";
+import { helperRequest, type HelperEvent } from "./shared/helper-contracts";
 
 function option(argv: string[], name: string) {
 	const index = argv.indexOf(name);
@@ -65,17 +68,30 @@ export async function startService(argv = process.argv) {
 			return () => listeners.delete(listener);
 		},
 	};
+	const resources = resolve(option(argv, "--resources"));
+	// Only installed launchers pass this; source checkouts must not replace the user's manifest.
+	if (argv.includes("--native-host") && browserConnectionsEnabled())
+		await registerBrowserNativeHost(resources).catch(() => {
+			process.stderr.write("Laplace browser extension discovery registration failed.\n");
+		});
 	runtime = await createRuntime({
 		root,
-		resources: option(argv, "--resources"),
+		resources,
 		origin: option(argv, "--origin"),
 		bridgePath: join(dirname(argv[1]!), "bridge.cjs"),
 		emit,
 		control,
 	});
+	const active = runtime;
+	const session = watchSession((event) => {
+		void active
+			.handle(event === "lock" ? "credentials.lock" : "browser.resumeRecovery", {})
+			.then((reply) => reply.changed && emit({ event: "snapshot", data: active.snapshot() }));
+	});
 	const descriptor = join(root, localRuntimeDescriptorFile);
 	const stop = () =>
 		(stopping ??= (async () => {
+			session.stop();
 			await rm(descriptor, { force: true });
 			await runtime!.stop();
 			process.exit(0);

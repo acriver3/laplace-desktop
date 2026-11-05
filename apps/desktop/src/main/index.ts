@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve, isAbsolute, extname } from "node:path";
 
 import { UpdatePolicyStore, automaticUpdatesEnabled } from "@repo/local-mcp-core/update-policy";
+import { RuntimeClient } from "@repo/local-runtime/client";
 import {
 	app,
 	clipboard,
@@ -49,7 +50,6 @@ import {
 	restorePersistedAccount,
 } from "./feature-access";
 import { HelperClient } from "./helper-client";
-import { RuntimeClient } from "@repo/local-runtime/client";
 import {
 	agentHandoffUrl,
 	connectClipboardWrite,
@@ -825,6 +825,8 @@ async function startHelper() {
 			publish();
 		},
 	);
+	if (next instanceof RuntimeClient)
+		next.nativeHost = app.isPackaged && !process.env.LAPLACE_DESKTOP_TEST_ROOT;
 	helper = next;
 	try {
 		await next.start(

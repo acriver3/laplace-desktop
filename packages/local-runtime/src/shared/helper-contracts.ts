@@ -176,6 +176,10 @@ export const helperInputs = {
 	"hosted.connect": z.object({ clientId, desktopManagement: z.boolean().optional() }).strict(),
 	"hosted.disconnect": z.object({ clientId }).strict(),
 	"link.prepare": z.object({ origin }).strict(),
+	"link.start": z
+		.object({ origin: origin.optional(), name: z.string().trim().min(1).max(80).optional() })
+		.strict(),
+	"link.poll": empty,
 	"link.complete": z
 		.object({ origin, installationId: z.string().uuid(), accountId: z.string().min(1) })
 		.strict(),

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rm } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join, resolve, dirname } from "node:path";
 
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
@@ -21,10 +21,6 @@ import {
 } from "@repo/local-mcp-core/update-policy";
 import { z } from "zod";
 
-import { desktopVersion } from "./shared/version";
-import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
-import { credentialMessages } from "./shared/credential-setup";
-import { helperInputs, type HelperEvent, type HelperMethod } from "./shared/helper-contracts";
 import { desktopBrokerAdapter } from "./broker-adapter";
 import { BrowserApprovals } from "./browser-approvals";
 import { CatalogInstaller } from "./catalog";
@@ -38,6 +34,7 @@ import { ConnectorManagement } from "./connector-tools";
 import { CredentialSetupError } from "./credential-errors";
 import { CredentialBroker } from "./credentials";
 import { startCredentialRelay } from "./credentials-relay";
+import { DeviceLink } from "./device-link";
 import { HostedConnections } from "./hosted-oauth";
 import {
 	previewImportFile,
@@ -50,6 +47,10 @@ import { previewLegacyMigration, migrateSelectedLegacy } from "./migration";
 import { PortableConnectors } from "./portable";
 import { startPortableRelay } from "./portable-relay";
 import { startMcpServer, type ControlServer } from "./server";
+import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
+import { credentialMessages } from "./shared/credential-setup";
+import { helperInputs, type HelperEvent, type HelperMethod } from "./shared/helper-contracts";
+import { desktopVersion } from "./shared/version";
 import { stableBridge } from "./stable-bridge";
 
 export async function acquireLock(root: string) {
@@ -331,6 +332,7 @@ export async function createRuntime(options: RuntimeOptions) {
 		return rows;
 	};
 	void connectorUpdates.recover().catch(() => {});
+	const deviceLink = new DeviceLink(manager);
 	const handle = async (method: HelperMethod, rawInput: unknown): Promise<RuntimeReply> => {
 		const request = { method, input: rawInput };
 		const counted = !request.method.startsWith("updates.") && request.method !== "status";
@@ -734,6 +736,15 @@ export async function createRuntime(options: RuntimeOptions) {
 					break;
 				case "link.prepare":
 					result = await manager.prepareLink(input.origin);
+					break;
+				case "link.start":
+					result = await deviceLink.start(
+						input.origin ?? origin,
+						input.name ?? `Laplace Runtime on ${hostname()}`,
+					);
+					break;
+				case "link.poll":
+					result = await deviceLink.poll();
 					break;
 				case "link.complete":
 					result = await manager.completeLink(input);
