@@ -306,7 +306,14 @@ try {
 		(tool) =>
 			!tool.name.startsWith("local_connectors_") &&
 			!tool.name.startsWith("local_credential") &&
+			!tool.name.startsWith("laplace_") &&
 			tool.name !== "local_desktop_manage",
+	);
+	// Discovery tools (laplace_status/laplace_setup and CLI aliases) are listed for every client.
+	assert.ok(
+		["laplace_status", "laplace_setup", "laplace_local_status", "laplace_local_setup"].every(
+			(name) => discovered.some((tool) => tool.name === name),
+		),
 	);
 	assert.equal(tools.length, 4);
 	assert.ok(tools.every((tool) => tool.name.startsWith("local_")));
