@@ -27,13 +27,13 @@ async function tree(version: string, behavior = "ok") {
 	await writeFile(join(directory, "BEHAVIOR"), behavior);
 	return directory;
 }
-async function fixture() {
+async function fixture(behavior = "ok") {
 	const home = await mkdtemp(join(tmpdir(), "runtime-home-"));
 	const root = await mkdtemp(join(tmpdir(), "runtime-profile-"));
 	cleanup.push(() => rm(home, { recursive: true, force: true }));
 	cleanup.push(() => rm(root, { recursive: true, force: true }));
 	cleanup.push(() => stopRuntime(root, 3000).catch(() => {}));
-	const first = await installRuntime(await tree("1.0.0"), "1.0.0", { home });
+	const first = await installRuntime(await tree("1.0.0", behavior), "1.0.0", { home });
 	await startRuntime({
 		root,
 		...runtimeLayout(first.directory),
@@ -44,8 +44,12 @@ async function fixture() {
 	return { home, root };
 }
 const version = async (root: string) =>
-	(await controlRequest<{ version: string }>((await readRuntimeDescriptor(root))!, "runtime.info"))
-		.version;
+	(
+		await controlRequest<{ version: string }>(
+			(await readRuntimeDescriptor(root))!,
+			"runtime.info",
+		)
+	).version;
 
 it.skipIf(process.platform === "win32")(
 	"drains the running runtime, moves it to the selected version, and verifies it",
@@ -80,5 +84,45 @@ it.skipIf(process.platform === "win32")(
 		});
 		expect((await currentRuntime(home))?.version).toBe("1.0.0");
 		expect(await version(root)).toBe("1.0.0");
+	},
+);
+
+it.skipIf(process.platform === "win32")(
+	"defers without stopping anything while the running runtime stays busy",
+	async () => {
+		const { home, root } = await fixture("busy");
+		await installRuntime(await tree("1.1.0"), "1.1.0", { home });
+		const result = await swapRunningRuntime({
+			root,
+			origin: "https://x.invalid",
+			home,
+			drainTimeout: 300,
+			pollInterval: 50,
+		});
+		expect(result).toEqual({ swapped: false, reason: "busy" });
+		expect(await version(root)).toBe("1.0.0");
+	},
+);
+
+it.skipIf(process.platform === "win32")(
+	"hands the maintenance lease back when the old runtime does not exit",
+	async () => {
+		const { home, root } = await fixture("stubborn");
+		cleanup.push(async () => {
+			const descriptor = await readRuntimeDescriptor(root);
+			if (descriptor) process.kill(descriptor.pid, "SIGKILL");
+		});
+		await installRuntime(await tree("1.1.0"), "1.1.0", { home });
+		const result = await swapRunningRuntime({
+			root,
+			origin: "https://x.invalid",
+			home,
+			stopTimeout: 300,
+		});
+		expect(result).toEqual({ swapped: false, reason: "not-stopped" });
+		const descriptor = (await readRuntimeDescriptor(root))!;
+		expect(await version(root)).toBe("1.0.0");
+		// The lease was released, so a later attempt can acquire it again.
+		expect(await controlRequest<boolean>(descriptor, "updates.acquire")).toBe(true);
 	},
 );

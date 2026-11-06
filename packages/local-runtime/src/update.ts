@@ -15,9 +15,11 @@ export type SwapOptions = {
 	/** How long to wait for local work to finish before deferring the swap. */
 	drainTimeout?: number;
 	pollInterval?: number;
+	/** How long to wait for the old process to exit after shutdown, before and after SIGTERM. */
+	stopTimeout?: number;
 };
 export type SwapResult =
-	| { swapped: false; reason: "not-running" | "current" | "stopped" | "busy" }
+	| { swapped: false; reason: "not-running" | "current" | "stopped" | "busy" | "not-stopped" }
 	| { swapped: true; from?: string; to: string }
 	| { swapped: false; reason: "restored"; from?: string; to: string; error: string };
 
@@ -66,9 +68,29 @@ export async function swapRunningRuntime(options: SwapOptions): Promise<SwapResu
 		if (!acquired) await delay(options.pollInterval ?? 5000);
 	}
 	if (!acquired) return { swapped: false, reason: "busy" };
-	await controlRequest(running, "shutdown", {}, 10_000).catch(() => {});
-	if (!(await waitForExit(running.pid, 20_000))) process.kill(running.pid, "SIGTERM");
-	await waitForExit(running.pid, 5000);
+	// Until the old process has exited, any failure must hand its maintenance lease back;
+	// otherwise it keeps refusing new calls as "not started" with nothing left to finish the swap.
+	const release = () => controlRequest(running, "updates.release", {}, 10_000).catch(() => {});
+	const stopTimeout = options.stopTimeout ?? 20_000;
+	try {
+		await controlRequest(running, "shutdown", {}, 10_000).catch(() => {});
+		let exited = await waitForExit(running.pid, stopTimeout);
+		if (!exited) {
+			try {
+				process.kill(running.pid, "SIGTERM");
+			} catch {
+				// Already gone (Windows reports ESRCH for an exited process).
+			}
+			exited = await waitForExit(running.pid, Math.min(stopTimeout, 5000));
+		}
+		if (!exited) {
+			await release();
+			return { swapped: false, reason: "not-stopped" };
+		}
+	} catch (error) {
+		await release();
+		throw error;
+	}
 	if (await explicitlyStopped(options.root)) return { swapped: false, reason: "stopped" };
 	const launch = (layout: { node: string; service: string; directory: string }) =>
 		startRuntime({
@@ -82,7 +104,12 @@ export async function swapRunningRuntime(options: SwapOptions): Promise<SwapResu
 		});
 	try {
 		const started = await launch(target);
-		const health = await controlRequest<{ version?: string }>(started, "runtime.info", {}, 15_000);
+		const health = await controlRequest<{ version?: string }>(
+			started,
+			"runtime.info",
+			{},
+			15_000,
+		);
 		if (health.version !== target.version)
 			throw new Error("Updated runtime reported another version");
 		await controlRequest(started, "status", {}, 15_000);

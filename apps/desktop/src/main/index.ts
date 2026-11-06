@@ -51,6 +51,7 @@ import {
 import { AutomaticUpdates } from "../update/automatic";
 import { acknowledgeUpdate } from "../update/installer";
 import { SourceUpdater } from "../update/source";
+import { RUNTIME_SWAP_BUSY_RETRY, runtimeSwapRetryDelay } from "./runtime-swap";
 import { registerBrowserNativeHost } from "./browser-native-host";
 import {
 	requireLaplaceSession,
@@ -242,7 +243,8 @@ function protectWeb(contents: WebContents) {
 	const allowed = (url: string) => {
 		try {
 			return (
-				permittedWebOrigin(profile, url) || (!!testOrigin && new URL(url).origin === testOrigin)
+				permittedWebOrigin(profile, url) ||
+				(!!testOrigin && new URL(url).origin === testOrigin)
 			);
 		} catch {
 			return false;
@@ -260,7 +262,12 @@ function protectWeb(contents: WebContents) {
 	};
 	contents.on("will-navigate", (event, url) => {
 		if (
-			desktopLocalNavigation(contents === web?.webContents, contents.getURL(), url, state.origin)
+			desktopLocalNavigation(
+				contents === web?.webContents,
+				contents.getURL(),
+				url,
+				state.origin,
+			)
 		) {
 			event.preventDefault();
 			showLocal(new URL(url).pathname === "/desktop/credentials" ? "credentials" : "servers");
@@ -320,7 +327,12 @@ function layout() {
 	if (!window || window.isDestroyed()) return;
 	const { width, height } = window.getContentBounds();
 	const available = hostedReady && !!state.account && !state.webError;
-	state.localEmbedded = !!(available && state.mode === "local" && contentLayout && localPanelReady);
+	state.localEmbedded = !!(
+		available &&
+		state.mode === "local" &&
+		contentLayout &&
+		localPanelReady
+	);
 	web?.setBounds({ x: 0, y: 0, width, height });
 	web?.setVisible(available && (state.mode === "web" || !!state.localEmbedded));
 	if (localPanel) {
@@ -469,7 +481,9 @@ function createWeb() {
 					if (profile === state.profile) showLocal(undefined, true);
 				}
 			})
-			.catch(() => send("error", "Desktop sign-out could not clear this profile’s browser data."))
+			.catch(() =>
+				send("error", "Desktop sign-out could not clear this profile’s browser data."),
+			)
 			.finally(() => {
 				signingOut = false;
 			});
@@ -836,16 +850,26 @@ async function startHelper() {
 			runtime = installed.directory;
 			helperDirectory = join(installed.directory, "helper");
 			// Move an already-running older runtime onto this version once its work drains.
+			// A failed attempt is retried; swallowing it would leave the old runtime in place.
 			const swap = await swapRunningRuntime({
 				root: profileRoot(),
 				origin: state.origin,
 				nativeHost: true,
 				drainTimeout: 30_000,
-			}).catch(() => undefined);
-			if (swap?.swapped === false && swap.reason === "busy") scheduleRuntimeSwap();
+			}).catch((error: unknown) => {
+				console.warn("Laplace Runtime update deferred", (error as Error)?.message);
+				return undefined;
+			});
+			const retry = runtimeSwapRetryDelay(swap);
+			if (retry !== undefined) scheduleRuntimeSwap(retry);
 			if (state.profile === "hosted") void applyLoginPreference().catch(() => {});
 		}
-		await next.start(profileRoot(), runtime, state.origin, join(helperDirectory, "service.cjs"));
+		await next.start(
+			profileRoot(),
+			runtime,
+			state.origin,
+			join(helperDirectory, "service.cjs"),
+		);
 	} catch (error) {
 		state.helperError = (error as Error).message;
 	}
@@ -854,8 +878,8 @@ async function startHelper() {
 }
 
 let runtimeSwapTimer: ReturnType<typeof setTimeout> | undefined;
-/** Retries a deferred runtime update every five minutes, then reconnects Desktop. */
-function scheduleRuntimeSwap() {
+/** Retries a deferred or failed runtime update, then reconnects Desktop. */
+function scheduleRuntimeSwap(delay = RUNTIME_SWAP_BUSY_RETRY) {
 	clearTimeout(runtimeSwapTimer);
 	runtimeSwapTimer = setTimeout(() => {
 		void swapRunningRuntime({
@@ -865,11 +889,15 @@ function scheduleRuntimeSwap() {
 			drainTimeout: 60_000,
 		})
 			.then((result) => {
-				if (result.swapped === false && result.reason === "busy") scheduleRuntimeSwap();
+				const retry = runtimeSwapRetryDelay(result);
+				if (retry !== undefined) scheduleRuntimeSwap(retry);
 				else if (result.swapped || result.reason === "restored") void startHelper();
 			})
-			.catch(() => scheduleRuntimeSwap());
-	}, 300_000);
+			.catch((error: unknown) => {
+				console.warn("Laplace Runtime update deferred", (error as Error)?.message);
+				scheduleRuntimeSwap(runtimeSwapRetryDelay(undefined));
+			});
+	}, delay);
 	runtimeSwapTimer.unref();
 }
 /** Start at login defaults on; an explicit user opt-out is remembered per OS user. */
@@ -908,7 +936,10 @@ async function runtimeControls(): Promise<MenuItemConstructorOptions[]> {
 	const running = !!(await readRuntimeDescriptor(profileRoot()));
 	const items: MenuItemConstructorOptions[] = [
 		running
-			? { label: "Stop Laplace Runtime", click: () => void stopLocalRuntime().catch(() => {}) }
+			? {
+					label: "Stop Laplace Runtime",
+					click: () => void stopLocalRuntime().catch(() => {}),
+				}
 			: { label: "Start Laplace Runtime", click: () => void startHelper() },
 	];
 	if (state.profile === "hosted" && app.isPackaged) {
@@ -961,8 +992,7 @@ async function selectProfile(profile: Profile) {
 			defaultId: 0,
 			cancelId: 1,
 			message: `Switch to ${profiles[profile].name}?`,
-			detail:
-				"The current profile’s MCP processes will stop. Each profile has separate servers, credentials, and AI-client registrations.",
+			detail: "The current profile’s MCP processes will stop. Each profile has separate servers, credentials, and AI-client registrations.",
 		});
 		if (choice.response !== 0) return;
 		void invalidateAuth();
@@ -1018,7 +1048,8 @@ async function handleShell(raw: unknown) {
 			return point?.requestPermissions();
 		case "shell.updatePreferences":
 			await updatePreferences.mutate((policy) => Object.assign(policy, request.input));
-			if (request.input.connectors === false) await helper?.request("updates.cancelConnector", {});
+			if (request.input.connectors === false)
+				await helper?.request("updates.cancelConnector", {});
 			await publishUpdatePreferences();
 			return;
 		case "shell.updatePostpone":
@@ -1070,7 +1101,8 @@ async function handleShell(raw: unknown) {
 			if (helper !== current || generation !== profileGeneration || changingProfile)
 				throw new Error("Your Laplace profile changed. Please prepare setup again.");
 			const entry = entries.find((item) => item.id === request.input.catalogId);
-			if (!entry?.available) throw new Error("This connector is not available on this device.");
+			if (!entry?.available)
+				throw new Error("This connector is not available on this device.");
 			const prompt = catalogSetupPrompt(entry, profiles[state.profile].name);
 			const destination = catalogSetupDestination(request.input.target, prompt);
 			let opened = false;
@@ -1184,7 +1216,11 @@ async function handleShell(raw: unknown) {
 				signal = authController.signal;
 			showLocal();
 			try {
-				const capabilities = await sessionJson("/api/desktop/capabilities", undefined, context);
+				const capabilities = await sessionJson(
+					"/api/desktop/capabilities",
+					undefined,
+					context,
+				);
 				if (generation !== profileGeneration || !authenticationStable())
 					throw new Error("Profile changed. Start sign-in again.");
 				state.localContentVersion = capabilities.localContentVersion === 1 ? 1 : 0;
@@ -1324,7 +1360,10 @@ async function createWindow() {
 			const a = display.workArea,
 				b = saved.bounds!;
 			return (
-				b.x < a.x + a.width && b.x + b.width > a.x && b.y < a.y + a.height && b.y + b.height > a.y
+				b.x < a.x + a.width &&
+				b.x + b.width > a.x &&
+				b.y < a.y + a.height &&
+				b.y + b.height > a.y
 			);
 		})
 			? saved.bounds
@@ -1409,12 +1448,15 @@ app.on("second-instance", (_event, _argv, _directory, data) => {
 	window?.show();
 	window?.focus();
 	const requested = (data as { profile?: unknown } | undefined)?.profile;
-	if (window && (requested === "local" || requested === "hosted") && requested !== state.profile) {
+	if (
+		window &&
+		(requested === "local" || requested === "hosted") &&
+		requested !== state.profile
+	) {
 		void dialog.showMessageBox(window, {
 			type: "info",
 			message: `An AI client needs the ${profiles[requested].name} profile.`,
-			detail:
-				"Switch profiles using the selector in Laplace, then reconnect the AI client. The current profile continues running until you choose to switch.",
+			detail: "Switch profiles using the selector in Laplace, then reconnect the AI client. The current profile continues running until you choose to switch.",
 		});
 	}
 });
@@ -1514,7 +1556,12 @@ void app
 				!trustedRenderer(event.senderFrame.url, devUrl)
 			)
 				throw new Error("Unauthorized desktop request.");
-			if (!raw || typeof raw !== "object" || !("method" in raw) || typeof raw.method !== "string")
+			if (
+				!raw ||
+				typeof raw !== "object" ||
+				!("method" in raw) ||
+				typeof raw.method !== "string"
+			)
 				throw new Error("Invalid desktop request.");
 			if (raw.method.startsWith("shell.")) return handleShell(raw);
 			const method = raw.method as HelperMethod;
@@ -1637,7 +1684,8 @@ void app
 				},
 				error: () => {
 					if (state.updates)
-						state.updates.message = "Automatic update deferred. Review Updates to retry.";
+						state.updates.message =
+							"Automatic update deferred. Review Updates to retry.";
 					publish();
 				},
 			},
@@ -1646,15 +1694,19 @@ void app
 		await publishUpdatePreferences();
 		let nextConnectorCheck = Date.now() + 15000;
 		automaticTimer = setInterval(() => {
-			void helper?.request("updates.deviceActivity", { busy: deviceUpdateBusy() }).catch(() => {});
+			void helper
+				?.request("updates.deviceActivity", { busy: deviceUpdateBusy() })
+				.catch(() => {});
 			if (automaticTickBusy) return;
 			automaticTickBusy = true;
 			void (async () => {
 				const policy = await updatePreferences.read();
 				automaticUpdates!.setEnabled(policy.desktop);
-				if (policy.deferredUntil > Date.now()) automaticUpdates!.postpone(policy.deferredUntil);
+				if (policy.deferredUntil > Date.now())
+					automaticUpdates!.postpone(policy.deferredUntil);
 				activityBusy =
-					!helper || ((await helper.request("updates.activity", {})) as { busy: boolean }).busy;
+					!helper ||
+					((await helper.request("updates.activity", {})) as { busy: boolean }).busy;
 				await automaticUpdates!.tick();
 				if (automaticUpdatesEnabled() && policy.connectors && helper) {
 					if (Date.now() >= nextConnectorCheck) {
@@ -1753,14 +1805,18 @@ void app
 										filters: [{ name: "MCP bundles", extensions: ["mcpb"] }],
 									})
 									.then((result) => openBundles(result.filePaths))
-									.catch(() => send("error", "The MCPB bundle could not be opened."));
+									.catch(() =>
+										send("error", "The MCPB bundle could not be opened."),
+									);
 							},
 						},
 						{
 							label: "Laplace",
 							accelerator: "CmdOrCtrl+1",
 							click: () => {
-								void showWeb().catch((error: Error) => send("error", error.message));
+								void showWeb().catch((error: Error) =>
+									send("error", error.message),
+								);
 							},
 						},
 						{
