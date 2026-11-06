@@ -310,7 +310,7 @@ it("retains a verified tethered entry before enrolling a shared helper directory
 	expect(f.replace).toHaveBeenCalledOnce();
 	const retained = f.getConfig();
 	if (retained.transport !== "stdio") throw Error("Expected stdio");
-	expect(retained.args[0]).toContain("/retained/server.mjs");
+	expect(retained.args[0]).toContain(join("retained", "server.mjs"));
 	expect(retained.env.TOKEN).toBe("fixture-secret");
 	expect(await f.updates.status()).toMatchObject([{ id: "canvas", version: "0.1.0" }]);
 });
