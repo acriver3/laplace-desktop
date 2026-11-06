@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, dirname, relative, isAbsolute } from "node:path";
 
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { openBrowserApprovalPage } from "@repo/browser-runtime/approval-page";
@@ -22,6 +22,7 @@ import {
 } from "@repo/local-mcp-core/update-policy";
 import { z } from "zod";
 
+import { runtimeHome } from "./paths";
 import { desktopBrokerAdapter } from "./broker-adapter";
 import { BrowserApprovals } from "./browser-approvals";
 import { CatalogInstaller } from "./catalog";
@@ -312,6 +313,8 @@ export async function createRuntime(options: RuntimeOptions) {
 				.states()
 				.find((s) => s.id === id)
 				?.tools.map((t) => t.name) ?? [],
+		bundledRuntime: (command) =>
+			bundledRuntimeKind(command, [process.execPath, nodePath, resources]),
 	});
 	catalog.updateResolver = async (id) => {
 		const installed = await connectorUpdates.installed(id);
@@ -861,4 +864,30 @@ export async function createRuntime(options: RuntimeOptions) {
 			return closing;
 		},
 	};
+}
+
+/**
+ * Whether a connector launch command is one of this runtime's own bundled executables:
+ * the running Node, the configured bridge Node, a runtime resource binary, or any installed
+ * runtime version under the stable runtime home. Other node.exe/uv files stay unmanaged.
+ */
+export function bundledRuntimeKind(
+	command: string,
+	[execPath, nodePath, resources]: [string, string, string],
+	home = runtimeHome(),
+): "node" | "uv" | undefined {
+	if (!isAbsolute(command)) return undefined;
+	const key = (path: string) =>
+		process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
+	const exe = process.platform === "win32" ? ".exe" : "";
+	const target = key(command);
+	const node = [execPath, nodePath, join(resources, "runtimes", "node" + exe)];
+	if (node.some((path) => key(path) === target)) return "node";
+	if (key(join(resources, "runtimes", "uv" + exe)) === target) return "uv";
+	const inHome = relative(key(home), target).split(/[\\/]/);
+	if (inHome.length === 4 && inHome[0] === "versions" && inHome[2] === "runtimes") {
+		if (inHome[3] === "node" + exe) return "node";
+		if (inHome[3] === "uv" + exe) return "uv";
+	}
+	return undefined;
 }

@@ -52,6 +52,11 @@ export interface ConnectorUpdateHost {
 	idleSeconds?(): Promise<number | undefined>;
 	toolNames?(id: string): string[];
 	entries?: EntryFactory;
+	/**
+	 * Identifies the host's own bundled runtimes. Catalog installs may launch connectors with
+	 * them by full path (for example the Windows runtime's node.exe) instead of the bare alias.
+	 */
+	bundledRuntime?(command: string): "node" | "uv" | undefined;
 }
 export interface ConnectorUpdateStatus {
 	id: string;
@@ -66,6 +71,17 @@ export interface ConnectorUpdateStatus {
 }
 const feed =
 	"https://raw.githubusercontent.com/acriver3/laplace-mcp-library/main/updates/stable.json";
+/** Compare filesystem paths the way the OS does: separators normalized, case-insensitive on Windows. */
+const pathKey = (path: string) => {
+	const resolved = resolve(path);
+	return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+};
+const samePath = (a: string, b: string) => pathKey(a) === pathKey(b);
+const insidePath = (child: string, parent: string) =>
+	pathKey(child).startsWith(pathKey(parent) + sep);
+/** Files the uv recipe creates inside the LinkedIn project (its environment and bytecode). */
+const generatedPythonPath = (path: string) =>
+	path === ".venv" || path.split("/").includes("__pycache__");
 export { connectorSigningKey } from "./connector-releases";
 export class ConnectorUpdates {
 	private store: EncryptedStore<z.infer<typeof document>>;
@@ -279,9 +295,12 @@ export class ConnectorUpdates {
 	}
 	private async verifyFiles(directory: string, release: ConnectorRelease) {
 		const expected = new Set(release.files.map((f) => f.path));
+		const python = release.id === "linkedin-mcp-server";
 		const walk = async (relative = "") => {
 			for (const entry of await readdir(join(directory, relative), { withFileTypes: true })) {
 				const path = relative ? relative + "/" + entry.name : entry.name;
+				// uv sync and Python create these locally; every published file is still verified below.
+				if (python && !expected.has(path) && generatedPythonPath(path)) continue;
 				if (entry.isSymbolicLink()) throw Error("Linked connector file rejected");
 				if (entry.isDirectory()) await walk(path);
 				else if (
@@ -352,20 +371,22 @@ export class ConnectorUpdates {
 		let source = resolve(directory);
 		const launch = config;
 		const entry = launch.args[0];
+		const bundled = this.host.bundledRuntime?.(config.command);
 		const nodeCommand =
-			config.command === "node" ||
-			config.command === "node.exe" ||
+			/^node(\.exe)?$/i.test(config.command) ||
+			bundled === "node" ||
 			release.files.some(
 				(file) =>
 					file.executable &&
-					join(source, file.path) === launch.command &&
+					samePath(join(source, file.path), launch.command) &&
 					/^(node|node.exe)$/i.test(basename(file.path)),
 			);
 		const nodeRecipe =
 			nodeCommand &&
 			!!entry &&
 			release.files.some(
-				(file) => join(source, file.path) === entry && /\.(mjs|cjs|js)$/.test(file.path),
+				(file) =>
+					samePath(join(source, file.path), entry) && /\.(mjs|cjs|js)$/.test(file.path),
 			);
 		const uvPrefix = [
 			"run",
@@ -380,16 +401,20 @@ export class ConnectorUpdates {
 		];
 		const uvRecipe =
 			catalogId === "linkedin-mcp-server" &&
-			config.command === "uv" &&
-			uvPrefix.every((value, i) => launch.args[i] === value);
+			(/^uv(\.exe)?$/i.test(config.command) || bundled === "uv") &&
+			uvPrefix.every((value, i) =>
+				value === source
+					? !!launch.args[i] && samePath(launch.args[i]!, source)
+					: launch.args[i] === value,
+			);
 		if (!nodeRecipe && !uvRecipe)
 			throw Error(
 				"Enrollment requires a maintained local launch recipe and the exact published entry; custom executables remain unmanaged.",
 			);
 		if (
-			!config.args.some((arg) => arg.startsWith(source + sep)) &&
-			config.cwd !== source &&
-			!config.command.startsWith(source + sep)
+			!config.args.some((arg) => insidePath(arg, source)) &&
+			!(config.cwd && samePath(config.cwd, source)) &&
+			!insidePath(config.command, source)
 		)
 			throw Error("Connector executable does not belong to the selected bundle");
 

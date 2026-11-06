@@ -22,7 +22,15 @@ afterEach(async () => {
 	vi.unstubAllEnvs();
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
-async function fixture(retain = false) {
+type FixtureOptions = {
+	catalogId?: string;
+	/** Launch command and args for the installed connector, given its bundle directory. */
+	launch?: (directory: string) => { command: string; args: string[]; cwd?: string };
+	/** Extra local files created inside the bundle before enrollment. */
+	prepare?: (directory: string) => Promise<void>;
+	bundledRuntime?: (command: string) => "node" | "uv" | undefined;
+};
+async function fixture(retain = false, options: FixtureOptions = {}) {
 	const root = await mkdtemp(join(tmpdir(), "laplace-updates-"));
 	roots.push(root);
 	const directory = join(root, "old");
@@ -31,8 +39,9 @@ async function fixture(retain = false) {
 	await writeFile(join(directory, ".laplace-bundle.json"), JSON.stringify({ version: "0.1.0" }));
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 	const key = publicKey.export({ type: "spki", format: "pem" }).toString();
+	const catalogId = options.catalogId ?? "canvas-session-mcp";
 	const release = (version: string, sequence: number, bytes: string) => ({
-		id: "canvas-session-mcp",
+		id: catalogId,
 		version,
 		sequence,
 		mode: (retain ? "tethered" : "background-browser") as "tethered" | "background-browser",
@@ -66,7 +75,8 @@ async function fixture(retain = false) {
 		transport: "stdio",
 		command: "node",
 		args: [join(directory, "server.mjs")],
-		identity: "canvas-session-mcp@0.1.0",
+		...options.launch?.(directory),
+		identity: `${catalogId}@0.1.0`,
 		...(retain
 			? {
 					managedBrowser: {
@@ -132,6 +142,7 @@ async function fixture(retain = false) {
 			maintenance,
 			busy,
 			idleSeconds,
+			...(options.bundledRuntime ? { bundledRuntime: options.bundledRuntime } : {}),
 		},
 		policy,
 		key,
@@ -139,10 +150,11 @@ async function fixture(retain = false) {
 	);
 	await updates.check();
 	if (retain) await writeFile(join(directory, "other-helper.cjs"), "unrelated bundled helper");
+	await options.prepare?.(directory);
 	await updates.enroll(
 		"canvas",
 		directory,
-		"canvas-session-mcp",
+		catalogId,
 		"0.1.0",
 		retain ? "tethered" : "background-browser",
 	);
@@ -372,4 +384,78 @@ it("enables the accepted rollout while retaining the explicit execution kill swi
 	expect(automaticUpdatesEnabled()).toBe(false);
 	vi.stubEnv("LAPLACE_AUTOMATIC_UPDATES_V1", "true");
 	expect(automaticUpdatesEnabled()).toBe(true);
+});
+
+it("enrolls catalog installs whose entry path is written differently from the bundle path", async () => {
+	// Windows installs store e.g. C:\\...\\0.1.0/bin/cli.js; equivalent spellings must match.
+	const f = await fixture(false, {
+		launch: (directory) => ({ command: "node", args: [`${directory}/./sub/../server.mjs`] }),
+	});
+	expect(await f.updates.status()).toMatchObject([{ id: "canvas", version: "0.1.0" }]);
+});
+it("enrolls catalog installs launched with the runtime's own bundled node by full path", async () => {
+	const bundled = join(tmpdir(), "laplace-runtime", "runtimes", "node");
+	const f = await fixture(false, {
+		launch: (directory) => ({ command: bundled, args: [join(directory, "server.mjs")] }),
+		bundledRuntime: (command) => (command === bundled ? "node" : undefined),
+	});
+	expect(await f.updates.status()).toMatchObject([{ id: "canvas", version: "0.1.0" }]);
+});
+it("keeps other node executables unmanaged", async () => {
+	await expect(
+		fixture(false, {
+			launch: (directory) => ({
+				command: join(tmpdir(), "elsewhere", "node"),
+				args: [join(directory, "server.mjs")],
+			}),
+			bundledRuntime: () => undefined,
+		}),
+	).rejects.toThrow("maintained local launch recipe");
+});
+const linkedin = (directory: string) => ({
+	command: "uv",
+	args: [
+		"run",
+		"--locked",
+		"--no-dev",
+		"--python",
+		"3.13",
+		"--project",
+		directory,
+		"-m",
+		"linkedin_mcp_server",
+	],
+	cwd: directory,
+});
+it("enrolls LinkedIn with its local uv environment and Python bytecode present", async () => {
+	const f = await fixture(false, {
+		catalogId: "linkedin-mcp-server",
+		launch: linkedin,
+		prepare: async (directory) => {
+			await mkdir(join(directory, ".venv", "Scripts"), { recursive: true });
+			await writeFile(join(directory, ".venv", "pyvenv.cfg"), "home = python");
+			await mkdir(join(directory, "__pycache__"), { recursive: true });
+			await writeFile(join(directory, "__pycache__", "server.cpython-313.pyc"), "bytecode");
+		},
+	});
+	expect(await f.updates.status()).toMatchObject([{ id: "canvas", version: "0.1.0" }]);
+});
+it("still rejects unpublished LinkedIn files outside the generated environment", async () => {
+	await expect(
+		fixture(false, {
+			catalogId: "linkedin-mcp-server",
+			launch: linkedin,
+			prepare: (directory) => writeFile(join(directory, "injected.py"), "print('x')"),
+		}),
+	).rejects.toThrow("unverified files");
+});
+it("does not exempt generated Python paths for other connectors", async () => {
+	await expect(
+		fixture(false, {
+			prepare: async (directory) => {
+				await mkdir(join(directory, "__pycache__"), { recursive: true });
+				await writeFile(join(directory, "__pycache__", "x.pyc"), "bytecode");
+			},
+		}),
+	).rejects.toThrow("unverified files");
 });
