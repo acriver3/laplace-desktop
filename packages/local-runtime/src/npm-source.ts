@@ -19,8 +19,10 @@ import { spawnLocal, stopTree } from "@repo/local-mcp-core/process";
 import semver from "semver";
 import { z } from "zod";
 
+/** On for macOS; Windows awaits native validation. LAPLACE_NPM_CONNECTORS_V1 overrides either way. */
 export const npmConnectorsEnabled = () =>
-	process.env.LAPLACE_NPM_CONNECTORS_V1 === "true";
+	process.env.LAPLACE_NPM_CONNECTORS_V1 === "true" ||
+	(process.env.LAPLACE_NPM_CONNECTORS_V1 !== "false" && process.platform === "darwin");
 export const NPM_REGISTRY = "https://registry.npmjs.org";
 /** Laplace-published connectors must pin their whole dependency tree with npm-shrinkwrap.json. */
 export const LAPLACE_NPM_SCOPES = ["@laplace/", "@withlaplace/"];

@@ -604,14 +604,20 @@ export class DesktopManager {
 					JSON.stringify(previous.transport === "stdio" ? previous.npm : undefined))
 		)
 			throw new Error("Catalog provenance cannot be assigned manually");
-		const launchChanged = ["command", "args", "cwd", "env", "url", "headers", "transport"].some(
-			(key) =>
-				key in patch &&
-				JSON.stringify(patch[key]) !==
-					JSON.stringify((previous as unknown as Record<string, unknown>)[key]),
-		);
+		const changed = (keys: string[]) =>
+			keys.some(
+				(key) =>
+					key in patch &&
+					JSON.stringify(patch[key]) !==
+						JSON.stringify((previous as unknown as Record<string, unknown>)[key]),
+			);
+		// npm packages are identified by version alone, so settings edits keep their receipt;
+		// catalog bundles are reviewed with their settings, so any launch edit detaches them.
+		const npmSourced = previous.transport === "stdio" && !!previous.npm;
+		const launchChanged =
+			changed(["command", "args", "cwd", "url", "transport"]) ||
+			(!npmSourced && changed(["env", "headers"]));
 		const merged: Record<string, unknown> = { ...previous, ...patch };
-		// Launch edits detach the connector from its catalog or npm receipt.
 		if (launchChanged) delete merged.npm;
 		const config = serverConfig.parse({
 			...merged,

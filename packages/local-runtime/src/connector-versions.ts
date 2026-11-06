@@ -86,6 +86,7 @@ export class NpmConnectors {
 			version: string;
 			bin?: string;
 			args?: string[];
+			env?: Record<string, string>;
 			enabled?: boolean;
 		},
 		authorize?: () => void,
@@ -102,6 +103,7 @@ export class NpmConnectors {
 				transport: "stdio",
 				command: launch.command,
 				args: [...launch.args, ...(input.args ?? [])],
+				env: input.env ?? {},
 				npm: source,
 				identity: `npm:${source.package}@${source.version}`,
 			});

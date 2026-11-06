@@ -121,9 +121,12 @@ const definitions = {
 				version: z.string().min(1).max(100).default("latest"),
 				bin: z.string().min(1).max(214).optional(),
 				args: z.array(z.string().max(8000)).max(50).optional(),
+				env: z
+					.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().max(32000))
+					.optional(),
 			})
 			.strict(),
-		"Add a connector published on npm. Desktop installs the exact version (a dist-tag such as latest is resolved now) with lifecycle scripts disabled and runs it under the Laplace Runtime. Does not replace an existing ID. Never pass secrets in args; configure credentials in Desktop.",
+		"Add a connector published on npm. Laplace publishes @withlaplace/msoutlook-mcp (Outlook on the web; optional env MSOUTLOOK_BROWSER=chrome or edge) and @withlaplace/canvas-session-mcp (Canvas; env CANVAS_URL is the school's Canvas HTTPS address, optional CANVAS_MCP_DOWNLOADS folder); other npm MCP servers also work. Desktop installs the exact version (a dist-tag such as latest is resolved now) with lifecycle scripts disabled and runs it under the Laplace Runtime. Does not replace an existing ID. env holds non-secret settings only; never pass passwords or tokens in args or env. Use local_connectors_list to see each connector's npm package and version.",
 	],
 	local_connectors_versions: [
 		z.object({ id }).strict(),
@@ -243,7 +246,10 @@ export class ConnectorManagement {
 			? this.manager.clientToolAllowed(clientId, "local_connectors_authenticate") ||
 					this.manager.clientToolAllowed(clientId, "local_connectors_manage") ||
 					this.manager.clientToolAllowed(clientId, "local_connectors_migrate")
-			: this.manager.clientToolAllowed(clientId, tool);
+			: npmTools.includes(tool)
+				? this.manager.clientToolAllowed(clientId, tool) ||
+					this.manager.clientToolAllowed(clientId, "local_connectors_manage")
+				: this.manager.clientToolAllowed(clientId, tool);
 	}
 	private authorize(clientId: string, tool: string) {
 		this.manager.client(clientId);
@@ -264,15 +270,20 @@ export class ConnectorManagement {
 	private servers() {
 		return this.manager
 			.listServers()
-			.map(({ id, name, transport, enabled, status, linkMode, access }) => ({
-				id,
-				name,
-				transport,
-				enabled,
-				status,
-				linkMode,
-				access,
-			}));
+			.map(({ id, name, transport, enabled, status, linkMode, access }) => {
+				const config = this.manager.getServerConfig(id);
+				const npm = config.transport === "stdio" ? config.npm : undefined;
+				return {
+					id,
+					name,
+					transport,
+					enabled,
+					status,
+					linkMode,
+					access,
+					...(npm ? { npm: { package: npm.package, version: npm.version } } : {}),
+				};
+			});
 	}
 	async call(clientId: string, name: string, input: Record<string, unknown>) {
 		this.authorize(clientId, name);

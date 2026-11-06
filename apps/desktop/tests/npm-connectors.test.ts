@@ -229,10 +229,14 @@ it("adds, upgrades, downgrades offline, restores a failing version, and holds ne
 		package: "laplace-npm-fixture",
 		version: "1.0.0",
 		args: ["--flag"],
+		env: { FIXTURE_MODE: "test" },
 	});
 	expect(added).toMatchObject({ version: "1.0.0", status: "online" });
 	const config = manager.getServerConfig("fixture");
-	expect(config).toMatchObject({ identity: "npm:laplace-npm-fixture@1.0.0" });
+	expect(config).toMatchObject({
+		identity: "npm:laplace-npm-fixture@1.0.0",
+		env: { FIXTURE_MODE: "test" },
+	});
 	expect(config.transport === "stdio" && config.args.at(-1)).toBe("--flag");
 
 	expect(await npm.versions("fixture")).toMatchObject({
@@ -297,6 +301,17 @@ it("drops the npm receipt when the launch command is edited by hand", async () =
 			},
 		}),
 	).rejects.toThrow("provenance");
+	// Settings edits keep the npm version receipt; code edits drop it.
+	await manager.updateServer("fixture", { env: { FIXTURE_SETTING: "on" } });
+	expect(manager.getServerConfig("fixture")).toMatchObject({
+		identity: "npm:laplace-npm-fixture@1.0.0",
+		npm: { version: "1.0.0" },
+		env: { FIXTURE_SETTING: "on" },
+	});
+	expect((await npm.setVersion("fixture", "2.0.0")).version).toBe("2.0.0");
+	expect(manager.getServerConfig("fixture")).toMatchObject({
+		env: { FIXTURE_SETTING: "on" },
+	});
 	const launch = manager.getServerConfig("fixture") as { args: string[] };
 	await manager.updateServer("fixture", {
 		args: [...launch.args, "--edited"],
@@ -309,9 +324,9 @@ it("drops the npm receipt when the launch command is edited by hand", async () =
 	);
 }, 120_000);
 
-it("offers the npm tools to AI clients only when npm connectors are enabled", async () => {
-	const names = async (enabled: boolean) => {
-		vi.stubEnv("LAPLACE_NPM_CONNECTORS_V1", enabled ? "true" : "");
+it("offers the npm tools on macOS unless switched off, and elsewhere only when switched on", async () => {
+	const names = async (flag: string) => {
+		vi.stubEnv("LAPLACE_NPM_CONNECTORS_V1", flag);
 		vi.resetModules();
 		const { connectorManagementTools } =
 			await import("@repo/local-runtime/connector-tools");
@@ -322,9 +337,72 @@ it("offers the npm tools to AI clients only when npm connectors are enabled", as
 		"local_connectors_versions",
 		"local_connectors_set_version",
 	];
-	expect(await names(false)).not.toEqual(
+	expect(await names("false")).not.toEqual(
 		expect.arrayContaining([npmTools[0]]),
 	);
-	expect(await names(true)).toEqual(expect.arrayContaining(npmTools));
+	expect(await names("true")).toEqual(expect.arrayContaining(npmTools));
+	const unset = await names("");
+	if (process.platform === "darwin")
+		expect(unset).toEqual(expect.arrayContaining(npmTools));
+	else expect(unset).not.toEqual(expect.arrayContaining([npmTools[0]]));
 	vi.unstubAllEnvs();
 });
+
+it("lets AI clients with connector management add, list and switch npm connectors", async () => {
+	vi.stubEnv("LAPLACE_NPM_CONNECTORS_V1", "true");
+	const { manager, npm } = await managerFixture();
+	const { ConnectorManagement } =
+		await import("@repo/local-runtime/connector-tools");
+	const installer = {
+		list: async () => [],
+		jobs: () => [],
+		cancel: () => undefined,
+	} as never;
+	const tools = new ConnectorManagement(
+		manager,
+		installer,
+		undefined,
+		undefined,
+		undefined,
+		npm,
+	);
+	const manage = await manager.registerClient("Manager");
+	await manager.setClientTools(manage.id, [
+		"local_connectors_manage",
+		"local_connectors_list",
+	]);
+	const viewer = await manager.registerClient("Viewer");
+	await manager.setClientTools(viewer.id, ["local_connectors_list"]);
+	const add = {
+		id: "fixture",
+		name: "Fixture",
+		package: "laplace-npm-fixture",
+		version: "1.0.0",
+	};
+	await expect(
+		tools.call(viewer.id, "local_connectors_add_npm", add),
+	).rejects.toThrow("disabled for this client");
+	await tools.call(manage.id, "local_connectors_add_npm", add);
+	const switched = await tools.call(
+		manage.id,
+		"local_connectors_set_version",
+		{
+			id: "fixture",
+			version: "latest",
+		},
+	);
+	expect(JSON.parse(switched.content[0]!.text)).toMatchObject({
+		version: "2.0.0",
+	});
+	const listed = JSON.parse(
+		(await tools.call(viewer.id, "local_connectors_list", {})).content[0]!
+			.text,
+	);
+	expect(listed.installed).toEqual([
+		expect.objectContaining({
+			id: "fixture",
+			npm: { package: "laplace-npm-fixture", version: "2.0.0" },
+		}),
+	]);
+	vi.unstubAllEnvs();
+}, 180_000);

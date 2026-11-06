@@ -128,6 +128,7 @@ export const helperInputs = {
 			version: z.string().min(1).max(100).default("latest"),
 			bin: z.string().min(1).max(214).optional(),
 			args: z.array(z.string().max(8000)).max(50).optional(),
+			env: z.record(z.string(), z.string().max(32000)).optional(),
 		})
 		.strict(),
 	"npm.versions": z.object({ id }).strict(),
