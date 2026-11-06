@@ -16,10 +16,12 @@ import { BrokerStart } from "./BrokerStart";
 import { CatalogConnectButton } from "./CatalogConnectButton";
 import { connectionName } from "./connection-name";
 import { ConnectionIcon } from "./ConnectionIcon";
+import { ConnectorUpdateControl } from "./ConnectorUpdateButton";
 import { ConnectorUpdatesPanel } from "./ConnectorUpdatesPanel";
 import { Modal } from "./Dialogs";
 import { PortableSetup } from "./PortableSetup";
 import type { CatalogEntry } from "./types";
+import { useConnectorUpdates } from "./useConnectorUpdates";
 
 /** Connections on this computer; workspace connections live in Laplace itself. */
 export function LocalConnectionsPage({
@@ -57,6 +59,7 @@ export function LocalConnectionsPage({
 }) {
 	const [catalogDetails, setCatalogDetails] = useState<CatalogEntry>();
 	const [updateServer, setUpdateServer] = useState<ServerSnapshot>();
+	const updates = useConnectorUpdates();
 	const installedCatalog = new Map(
 		catalog
 			.filter((entry) => entry.installed && entry.serverId)
@@ -73,7 +76,8 @@ export function LocalConnectionsPage({
 	);
 	const available = catalog.filter(
 		(entry) =>
-			!entry.installed && matches(connectionName(entry.name, entry.browserMode), entry.description),
+			!entry.installed &&
+			matches(connectionName(entry.name, entry.browserMode), entry.description),
 	);
 	return (
 		<ConnectionsPageView
@@ -117,8 +121,13 @@ export function LocalConnectionsPage({
 				<>
 					<PortableSetup />
 					{updateServer && (
-						<Modal title={`${updateServer.name} updates`} close={() => setUpdateServer(undefined)}>
-							<div className="dialog-body"><ConnectorUpdatesPanel id={updateServer.id} /></div>
+						<Modal
+							title={`${updateServer.name} updates`}
+							close={() => setUpdateServer(undefined)}
+						>
+							<div className="dialog-body">
+								<ConnectorUpdatesPanel id={updateServer.id} />
+							</div>
 						</Modal>
 					)}
 					{catalogDetails && (
@@ -134,7 +143,11 @@ export function LocalConnectionsPage({
 							<div className="dialog-body stack">
 								<p>{catalogDetails.description}</p>
 								{catalogDetails.setupUrl && (
-									<a href={catalogDetails.setupUrl} target="_blank" rel="noreferrer">
+									<a
+										href={catalogDetails.setupUrl}
+										target="_blank"
+										rel="noreferrer"
+									>
 										Setup instructions
 									</a>
 								)}
@@ -161,14 +174,18 @@ export function LocalConnectionsPage({
 								title: "This device",
 								content: (
 									<>
-										<ul className="connector-row-list" aria-label="Local connections">
+										<ul
+											className="connector-row-list"
+											aria-label="Local connections"
+										>
 											{local.map((server) => (
 												<ConnectionTile
 													key={server.id}
 													className="desktop-connection"
 													title={connectionName(
 														server.name,
-														installedCatalog.get(server.id)?.installedBrowserMode,
+														installedCatalog.get(server.id)
+															?.installedBrowserMode,
 													)}
 													subtitle={`${installedCatalog.has(server.id) ? (installedCatalog.get(server.id)?.installedBrowserMode === "tethered" ? "Tethered" : "Background Browser") : "Custom"} · ${server.tools.length} tools`}
 													onDetails={() => details(server)}
@@ -180,48 +197,94 @@ export function LocalConnectionsPage({
 													connected={server.status === "online"}
 													icon={<ConnectionIcon />}
 												>
-													{installedCatalog.get(server.id) && server.status !== "online" && (
-														<BrokerStart
-															entries={[installedCatalog.get(server.id)!]}
-															label="Reconnect"
+													{installedCatalog.has(server.id) && (
+														<ConnectorUpdateControl
+															row={updates.rows.find(
+																(row) => row.id === server.id,
+															)}
+															busy={updates.busy}
+															error={updates.error}
+															run={updates.run}
 														/>
 													)}
+													{installedCatalog.get(server.id) &&
+														server.status !== "online" && (
+															<BrokerStart
+																entries={[
+																	installedCatalog.get(
+																		server.id,
+																	)!,
+																]}
+																label="Reconnect"
+															/>
+														)}
 													<DropdownMenu>
 														<DropdownMenuTrigger
-															render={<Button variant="outline" size="icon" />}
+															render={
+																<Button
+																	variant="outline"
+																	size="icon"
+																/>
+															}
 															aria-label={`Options for ${server.name} (${server.id})`}
 														>
-															<ChevronDown className="size-4" aria-hidden="true" />
+															<ChevronDown
+																className="size-4"
+																aria-hidden="true"
+															/>
 														</DropdownMenuTrigger>
 														<DropdownMenuContent align="end">
 															{installedCatalog.has(server.id) && (
-																<DropdownMenuItem onClick={() => setUpdateServer(server)}>
+																<DropdownMenuItem
+																	onClick={() =>
+																		setUpdateServer(server)
+																	}
+																>
 																	Connector updates
 																</DropdownMenuItem>
 															)}
-															<DropdownMenuItem onClick={() => details(server)}>
+															<DropdownMenuItem
+																onClick={() => details(server)}
+															>
 																View details
 															</DropdownMenuItem>
 															{installedCatalog.get(server.id) && (
 																<DropdownMenuItem
-																	onClick={() => setCatalogDetails(installedCatalog.get(server.id))}
+																	onClick={() =>
+																		setCatalogDetails(
+																			installedCatalog.get(
+																				server.id,
+																			),
+																		)
+																	}
 																>
 																	Reconnect with assistant
 																</DropdownMenuItem>
 															)}
-															<DropdownMenuItem onClick={() => edit(server)}>
+															<DropdownMenuItem
+																onClick={() => edit(server)}
+															>
 																Edit connection
 															</DropdownMenuItem>
 															<DropdownMenuSeparator />
 															<DropdownMenuItem
 																disabled={busy}
-																onClick={() => control(server, server.enabled ? "stop" : "start")}
+																onClick={() =>
+																	control(
+																		server,
+																		server.enabled
+																			? "stop"
+																			: "start",
+																	)
+																}
 															>
 																{server.enabled ? "Stop" : "Start"}
 															</DropdownMenuItem>
 															<DropdownMenuItem
 																disabled={busy}
-																onClick={() => control(server, "restart")}
+																onClick={() =>
+																	control(server, "restart")
+																}
 															>
 																Restart
 															</DropdownMenuItem>
@@ -257,12 +320,18 @@ export function LocalConnectionsPage({
 								title: "Available to connect",
 								content: (
 									<>
-										<ul className="connector-row-list" aria-label="Available connections">
+										<ul
+											className="connector-row-list"
+											aria-label="Available connections"
+										>
 											{available.map((entry) => (
 												<ConnectionTile
 													key={entry.id}
 													className="desktop-connection desktop-catalog-connection"
-													title={connectionName(entry.name, entry.browserMode)}
+													title={connectionName(
+														entry.name,
+														entry.browserMode,
+													)}
 													onDetails={() => setCatalogDetails(entry)}
 													statusLabel={
 														entry.demoOnly
@@ -276,7 +345,11 @@ export function LocalConnectionsPage({
 													<CatalogConnectButton
 														entry={entry}
 														busy={busy}
-														manual={() => (entry.importOnly ? importFile() : install(entry))}
+														manual={() =>
+															entry.importOnly
+																? importFile()
+																: install(entry)
+														}
 													/>
 												</ConnectionTile>
 											))}

@@ -59,6 +59,8 @@ export interface ConnectorUpdateStatus {
 	availableVersion?: string;
 	pinned: boolean;
 	message?: string;
+	/** True when `message` describes something that prevents installing (not just a retry hint). */
+	blocked?: boolean;
 	name?: string;
 	phase?: "downloading" | "installing" | "idle";
 }
@@ -158,7 +160,9 @@ export class ConnectorUpdates {
 				}
 				throw cause;
 			}
-			throw Error("Another connector updater owns this installation; retry after it completes.");
+			throw Error(
+				"Another connector updater owns this installation; retry after it completes.",
+			);
 		}
 		await writeFile(join(path, "pid"), String(process.pid), { mode: 0o600, flag: "wx" });
 		try {
@@ -179,7 +183,10 @@ export class ConnectorUpdates {
 		await this.store.mutate((state) => {
 			assertIndexSuccessor(state.index, index);
 			state.index = index;
-			state.proof = { payload: bytes.toString("base64"), signature: signature.toString("base64") };
+			state.proof = {
+				payload: bytes.toString("base64"),
+				signature: signature.toString("base64"),
+			};
 		});
 		return this.status();
 	}
@@ -241,7 +248,9 @@ export class ConnectorUpdates {
 		const [state, policy] = await Promise.all([this.store.read(), this.policy.read()]);
 		return state.installations.map((installed) => {
 			const candidate = this.candidate(installed, state.index);
+			const interrupted = state.journal?.previous.id === installed.id;
 			return {
+				blocked: interrupted || (!!candidate && !!this.reason(installed, candidate)),
 				id: installed.id,
 				name: installed.config.name,
 				phase: this.installing.has(installed.id)
@@ -252,15 +261,14 @@ export class ConnectorUpdates {
 				version: installed.release.version,
 				availableVersion: candidate?.version,
 				pinned: !!policy.pins[updateInstanceKey(this.host.root, installed.id)],
-				message:
-					state.journal?.previous.id === installed.id
-						? "Interrupted update requires recovery."
-						: candidate
-							? (this.reason(installed, candidate) ??
-								(state.failed[installed.id] === candidate.version
-									? "Previous update failed. Use manual update to retry."
-									: undefined))
-							: undefined,
+				message: interrupted
+					? "Interrupted update requires recovery."
+					: candidate
+						? (this.reason(installed, candidate) ??
+							(state.failed[installed.id] === candidate.version
+								? "Previous update failed. Use manual update to retry."
+								: undefined))
+						: undefined,
 			};
 		});
 	}
@@ -278,9 +286,11 @@ export class ConnectorUpdates {
 				if (entry.isDirectory()) await walk(path);
 				else if (
 					!expected.has(path) &&
-					![".laplace-release.json", ".laplace-retained.json", ".laplace-bundle.json"].includes(
-						path,
-					)
+					![
+						".laplace-release.json",
+						".laplace-retained.json",
+						".laplace-bundle.json",
+					].includes(path)
 				)
 					throw Error(
 						"Connector bundle contains unverified files; enrollment requires an exact published artifact.",
@@ -296,7 +306,8 @@ export class ConnectorUpdates {
 				throw Error("Linked connector directory rejected");
 			for (const part of file.path.split("/")) {
 				current = join(current, part);
-				if ((await lstat(current)).isSymbolicLink()) throw Error("Linked connector file rejected");
+				if ((await lstat(current)).isSymbolicLink())
+					throw Error("Linked connector file rejected");
 			}
 			const bytes = await readFile(path);
 			if (bytes.length !== file.size || sha256(bytes) !== file.sha256)
@@ -392,7 +403,8 @@ export class ConnectorUpdates {
 				maintenance = await this.host.maintenance(id);
 				if (!maintenance) throw Error("Connector is busy; retry enrollment shortly");
 				const retained = await this.host.retainForEnrollment(config);
-				if (retained.transport !== "stdio") throw Error("Invalid retained connector transport");
+				if (retained.transport !== "stdio")
+					throw Error("Invalid retained connector transport");
 				if (retained !== config) {
 					config = retained;
 					source = dirname(retained.args[0]!);
@@ -451,7 +463,10 @@ export class ConnectorUpdates {
 					this.fetcher,
 				);
 				if (file.compressed) {
-					if (bytes.length !== file.compressed.size || sha256(bytes) !== file.compressed.sha256)
+					if (
+						bytes.length !== file.compressed.size ||
+						sha256(bytes) !== file.compressed.sha256
+					)
 						throw Error("Compressed connector download failed integrity verification");
 					bytes = gunzipSync(bytes, { maxOutputLength: Math.max(1, file.size) });
 				}
@@ -543,8 +558,14 @@ export class ConnectorUpdates {
 			),
 		);
 	}
-	private async applyLocked(id: string, automatic: boolean, signal: AbortSignal, retain: boolean) {
-		if (automatic && !automaticUpdatesEnabled()) throw Error("Automatic updates are not activated");
+	private async applyLocked(
+		id: string,
+		automatic: boolean,
+		signal: AbortSignal,
+		retain: boolean,
+	) {
+		if (automatic && !automaticUpdatesEnabled())
+			throw Error("Automatic updates are not activated");
 		if (this.active) throw Error("A connector update is already running");
 		this.active = true;
 		let unlock: (() => void) | undefined;
@@ -558,7 +579,10 @@ export class ConnectorUpdates {
 			const reason = this.reason(installed, release);
 			if (reason) throw Error(reason);
 			const policy = await this.policy.read();
-			if (automatic && ((await (this.host.idleSeconds?.() ?? computerIdleSeconds())) ?? -1) < 900)
+			if (
+				automatic &&
+				((await (this.host.idleSeconds?.() ?? computerIdleSeconds())) ?? -1) < 900
+			)
 				return;
 			if (
 				automatic &&
@@ -576,7 +600,9 @@ export class ConnectorUpdates {
 			if (!unlock) throw Error("Connector is busy; update deferred");
 			const current = (await this.host.configurations()).find((c) => c.id === id);
 			if (JSON.stringify(current) !== JSON.stringify(installed.config))
-				throw Error("Connector configuration changed; enroll its reviewed configuration again");
+				throw Error(
+					"Connector configuration changed; enroll its reviewed configuration again",
+				);
 			const latestPolicy = await this.policy.read();
 			if (
 				automatic &&
@@ -613,7 +639,9 @@ export class ConnectorUpdates {
 					previousTools &&
 					this.host.toolNames?.(id).some((tool) => !previousTools.includes(tool))
 				)
-					throw Error("This connector adds tools that require explicit permission review.");
+					throw Error(
+						"This connector adds tools that require explicit permission review.",
+					);
 				await this.store.mutate((s) => {
 					s.installations = s.installations.map((i) => (i.id === id ? candidate : i));
 					delete s.journal;
@@ -624,7 +652,9 @@ export class ConnectorUpdates {
 				if (JSON.stringify(observed) === JSON.stringify(candidate.config))
 					await this.host.replace(installed.config, candidate.config);
 				else if (JSON.stringify(observed) !== JSON.stringify(installed.config))
-					throw Error("Connector changed during update; recovery journal retained for review.");
+					throw Error(
+						"Connector changed during update; recovery journal retained for review.",
+					);
 				await this.store.mutate((s) => {
 					delete s.journal;
 					s.failed[id] = release.version;

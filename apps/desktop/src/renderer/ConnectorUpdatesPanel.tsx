@@ -1,33 +1,8 @@
-import type { ConnectorUpdateStatus } from "@repo/local-mcp-core/connector-updates";
 import { Button } from "@repo/ui/components/button";
-import { useEffect, useState } from "react";
 
-import { invoke } from "./types";
+import { useConnectorUpdates } from "./useConnectorUpdates";
 export function ConnectorUpdatesPanel({ id }: { id?: string }) {
-	const [rows, setRows] = useState<ConnectorUpdateStatus[]>([]);
-	const [error, setError] = useState<string>();
-	const [busy, setBusy] = useState(false);
-	const run = async (method: string, input?: unknown) => {
-		setBusy(true);
-		setError(undefined);
-		try {
-			const value = await invoke<ConnectorUpdateStatus[]>(method, input);
-			setRows(Array.isArray(value) ? value : []);
-		} catch (error) {
-			setError(error instanceof Error ? error.message : "Connector update failed");
-		} finally {
-			setBusy(false);
-		}
-	};
-	useEffect(() => {
-		void run("updates.connectors");
-		const timer = setInterval(() => {
-			void invoke<ConnectorUpdateStatus[]>("updates.connectors")
-				.then((value) => setRows(Array.isArray(value) ? value : []))
-				.catch(() => {});
-		}, 15000);
-		return () => clearInterval(timer);
-	}, []);
+	const { rows, error, busy, run } = useConnectorUpdates();
 	return (
 		<div className="stack">
 			{!id && (
@@ -54,21 +29,28 @@ export function ConnectorUpdatesPanel({ id }: { id?: string }) {
 								disabled={busy}
 								checked={row.pinned}
 								onChange={(event) =>
-									void run("updates.pin", { id: row.id, pinned: event.target.checked })
+									void run("updates.pin", {
+										id: row.id,
+										pinned: event.target.checked,
+									})
 								}
 							/>{" "}
 							Keep this version
 						</label>
 						{row.message && <p role="status">{row.message}</p>}
 						{row.phase === "downloading" && (
-							<Button onClick={() => void run("updates.cancelConnector", { id: row.id })}>
+							<Button
+								onClick={() => void run("updates.cancelConnector", { id: row.id })}
+							>
 								Cancel download
 							</Button>
 						)}
-						{row.phase === "installing" && <p role="status">Installing and checking connector…</p>}
+						{row.phase === "installing" && (
+							<p role="status">Installing and checking connector…</p>
+						)}
 						{row.availableVersion && (
 							<Button
-								disabled={busy}
+								disabled={busy || row.blocked}
 								onClick={() => void run("updates.applyConnector", { id: row.id })}
 							>
 								Update connector

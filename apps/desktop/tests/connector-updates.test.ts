@@ -195,6 +195,7 @@ it("restores the previous configuration when candidate startup fails", async () 
 	await expect(f.updates.apply("canvas")).rejects.toThrow("startup failed");
 	expect(f.getConfig()).toEqual(previous);
 	expect(f.releaseLock).toHaveBeenCalledOnce();
+	expect((await f.updates.status())[0]).toMatchObject({ blocked: false });
 	expect((await f.updates.status())[0]?.message).toContain("Previous update failed");
 });
 it("honors both opt-in and pins for automatic application", async () => {
@@ -224,6 +225,10 @@ it("does not silently change permission revisions", async () => {
 	});
 	f.changeIndex(index);
 	await f.updates.check();
+	expect((await f.updates.status())[0]).toMatchObject({
+		availableVersion: "0.3.0",
+		blocked: true,
+	});
 	await expect(f.updates.apply("canvas")).rejects.toThrow("permission approval");
 	expect(f.replace).not.toHaveBeenCalled();
 });
@@ -277,7 +282,9 @@ it("cancels downloads when automation is disabled", async () => {
 	vi.mocked(f.fetcher).mockImplementation(async (_url, options) => {
 		entered();
 		return new Promise<Response>((_resolve, reject) =>
-			options?.signal?.addEventListener("abort", () => reject(Error("cancelled")), { once: true }),
+			options?.signal?.addEventListener("abort", () => reject(Error("cancelled")), {
+				once: true,
+			}),
 		);
 	});
 	const pending = f.updates.prepare("canvas", undefined, true);
@@ -301,9 +308,9 @@ it("accepts separate platform artifacts but rejects overlapping versions", async
 	).toHaveLength(3);
 	index.releases.push(second);
 	const duplicate = Buffer.from(JSON.stringify(index));
-	expect(() => verifyConnectorIndex(duplicate, sign(null, duplicate, f.privateKey), f.key)).toThrow(
-		"Duplicate",
-	);
+	expect(() =>
+		verifyConnectorIndex(duplicate, sign(null, duplicate, f.privateKey), f.key),
+	).toThrow("Duplicate");
 });
 
 it("retains a verified tethered entry before enrolling a shared helper directory", async () => {
@@ -339,7 +346,9 @@ it.each([false, true])(
 		await f.updates.check();
 		vi.mocked(f.fetcher).mockImplementation(async (url) => {
 			if (String(url).endsWith(".gz"))
-				return new Response(new Uint8Array(tampered ? Buffer.alloc(packed.length) : packed));
+				return new Response(
+					new Uint8Array(tampered ? Buffer.alloc(packed.length) : packed),
+				);
 			throw Error("Unexpected artifact request");
 		});
 		if (tampered) {
