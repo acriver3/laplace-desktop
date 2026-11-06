@@ -11,9 +11,11 @@ import { localManagementRequest } from "@repo/project-protocol/portable-connecto
 import { z } from "zod";
 
 import { browserAuthorizer, type BrowserApprovals } from "./browser-approvals";
+import type { NpmConnectors } from "./connector-versions";
 import type { CatalogInstaller, CatalogJob } from "./catalog";
 import { normalizeManualConfiguration, previewManualConfiguration } from "./imports";
 import type { DesktopManager } from "./manager";
+import { npmConnectorsEnabled, packageName } from "./npm-source";
 import type { PortableConnectors } from "./portable";
 import { BROWSER_APPROVAL_URI } from "./shared/browser-approval";
 
@@ -110,13 +112,40 @@ const definitions = {
 		z.object({ jobId: z.string().uuid() }).strict(),
 		"Cancel a Desktop catalog setup job. Poll status until cancellation completes.",
 	],
+	local_connectors_add_npm: [
+		z
+			.object({
+				id,
+				name: z.string().min(1).max(120),
+				package: packageName,
+				version: z.string().min(1).max(100).default("latest"),
+				bin: z.string().min(1).max(214).optional(),
+				args: z.array(z.string().max(8000)).max(50).optional(),
+			})
+			.strict(),
+		"Add a connector published on npm. Desktop installs the exact version (a dist-tag such as latest is resolved now) with lifecycle scripts disabled and runs it under the Laplace Runtime. Does not replace an existing ID. Never pass secrets in args; configure credentials in Desktop.",
+	],
+	local_connectors_versions: [
+		z.object({ id }).strict(),
+		"List published npm versions and dist-tags for an npm-installed connector, with its current version.",
+	],
+	local_connectors_set_version: [
+		z.object({ id, version: z.string().min(1).max(100) }).strict(),
+		"Switch an npm-installed connector to an exact published version or dist-tag (upgrade or downgrade). The previous version is restored if the new one fails to start. Tools introduced by the new version stay disabled until the user approves them in Desktop.",
+	],
 } as const;
+const npmTools: string[] = [
+	"local_connectors_add_npm",
+	"local_connectors_versions",
+	"local_connectors_set_version",
+];
 export type ConnectorToolName = keyof typeof definitions;
 export const connectorManagementTools: Tool[] = Object.entries(definitions)
 	.filter(
 		([name]) =>
-			browserEnabled() ||
-			!["local_connectors_migrate", "local_connectors_migration_rollback"].includes(name),
+			(browserEnabled() ||
+				!["local_connectors_migrate", "local_connectors_migration_rollback"].includes(name)) &&
+			(npmConnectorsEnabled() || !npmTools.includes(name)),
 	)
 	.map(([name, [schema, description]]) => ({
 		name,
@@ -150,6 +179,7 @@ export const connectorManagementTools: Tool[] = Object.entries(definitions)
 				"local_connectors_list",
 				"local_connectors_status",
 				"local_connectors_preview_custom",
+				"local_connectors_versions",
 			].includes(name),
 			destructiveHint: name === "local_connectors_manage",
 			openWorldHint: true,
@@ -206,6 +236,7 @@ export class ConnectorManagement {
 		private portable?: PortableConnectors,
 		readonly browserApprovals?: BrowserApprovals,
 		private openBrowserApproval?: (requestId: string) => void,
+		private npm?: NpmConnectors,
 	) {}
 	canCall(clientId: string, tool: string) {
 		return tool.startsWith("local_connectors_browser_")
@@ -317,6 +348,20 @@ export class ConnectorManagement {
 			this.owners.set(job.id, { clientId, tool: name });
 			this.permissionsChanged();
 			result = jobSummary(job);
+		} else if (npmTools.includes(name)) {
+			if (!this.npm || !npmConnectorsEnabled())
+				throw new Error("npm connectors are not enabled on this computer.");
+			if (name === "local_connectors_add_npm") {
+				const value = args as z.infer<(typeof definitions.local_connectors_add_npm)[0]>;
+				if (this.servers().some((s) => s.id === value.id))
+					throw new Error("Connector ID already exists. Inspect its status; it was not replaced.");
+				result = await this.npm.add(value, authorize);
+			} else if (name === "local_connectors_versions")
+				result = await this.npm.versions((args as { id: string }).id);
+			else {
+				const value = args as { id: string; version: string };
+				result = await this.npm.setVersion(value.id, value.version, authorize);
+			}
 		} else if (name === "local_connectors_manage") {
 			if (!this.portable) throw new Error("Update Desktop to manage portable connectors");
 			result = await this.portable.manage(args, authorize);

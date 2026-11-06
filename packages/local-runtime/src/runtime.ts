@@ -32,6 +32,8 @@ import {
 	configurePluginBridge,
 } from "./client-registration";
 import { ConnectionBroker } from "./connection-broker";
+import { NpmConnectors } from "./connector-versions";
+import { npmConnectorsEnabled } from "./npm-source";
 import { ConnectorManagement } from "./connector-tools";
 import { CredentialSetupError } from "./credential-errors";
 import { CredentialBroker } from "./credentials";
@@ -213,6 +215,7 @@ export async function createRuntime(options: RuntimeOptions) {
 			send({ event: "snapshot", data: manager.status() });
 		}, 100);
 	});
+	const npmConnectors = new NpmConnectors(manager);
 	let server: Awaited<ReturnType<typeof startMcpServer>>;
 	try {
 		await manager.initialize(false);
@@ -224,8 +227,13 @@ export async function createRuntime(options: RuntimeOptions) {
 			manager,
 			hosted,
 			credentials,
-			new ConnectorManagement(manager, catalog, portable, browserApprovals, (requestId) =>
-				send({ event: "browser-approval", requestId }),
+			new ConnectorManagement(
+				manager,
+				catalog,
+				portable,
+				browserApprovals,
+				(requestId) => send({ event: "browser-approval", requestId }),
+				npmConnectors,
 			),
 			(section) => send({ event: "desktop-open", section }),
 			options.control,
@@ -629,6 +637,17 @@ export async function createRuntime(options: RuntimeOptions) {
 					break;
 				case "server.remove":
 					result = await manager.removeServer(input.id);
+					break;
+				case "npm.add":
+				case "npm.versions":
+				case "npm.setVersion":
+					if (!npmConnectorsEnabled()) throw new Error("npm connectors are not enabled.");
+					result =
+						request.method === "npm.add"
+							? await npmConnectors.add(input)
+							: request.method === "npm.versions"
+								? await npmConnectors.versions(input.id)
+								: await npmConnectors.setVersion(input.id, input.version);
 					break;
 				case "server.start":
 					result = await manager.setEnabled(input.id, true);

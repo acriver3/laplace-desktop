@@ -122,9 +122,35 @@ export async function runLauncher(args = process.argv.slice(2)): Promise<unknown
 			await runBridge();
 			return undefined;
 		}
+		case "connectors": {
+			// Same operations AI clients reach over MCP, for agents that only have a shell.
+			const [, action, id, value, extra] = args;
+			const descriptor = await readRuntimeDescriptor(options.root);
+			if (!descriptor) throw new Error("Laplace Runtime is not running. Run laplace-runtime start.");
+			if (action === "versions" && id)
+				return controlRequest(descriptor, "npm.versions", { id });
+			if (action === "set-version" && id && value)
+				return controlRequest(descriptor, "npm.setVersion", { id, version: value }, 300_000);
+			if (action === "add-npm" && id && value)
+				return controlRequest(
+					descriptor,
+					"npm.add",
+					{
+						id,
+						name: option(args, "--name") ?? id,
+						package: value,
+						version: extra && !extra.startsWith("--") ? extra : "latest",
+						bin: option(args, "--bin"),
+					},
+					300_000,
+				);
+			throw new Error(
+				"Use laplace-runtime connectors versions <id> | set-version <id> <version|tag> | add-npm <id> <package> [version] [--name <name>] [--bin <command>]",
+			);
+		}
 		default:
 			throw new Error(
-				"Use laplace-runtime start|stop|status|enable|disable|install [--profile hosted|local]",
+				"Use laplace-runtime start|stop|status|enable|disable|install|connectors [--profile hosted|local]",
 			);
 	}
 }

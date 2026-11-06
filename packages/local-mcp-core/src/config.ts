@@ -39,6 +39,26 @@ const common = {
 	identity: z.string().max(200).optional(),
 	enabledTools: z.array(toolName).max(300).optional(),
 };
+/** Runtime-installed npm package receipt; launch fields are derived from it, never supplied. */
+export const npmSource = z
+	.object({
+		package: z
+			.string()
+			.max(214)
+			.regex(/^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/),
+		version: z
+			.string()
+			.max(100)
+			.regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/),
+		bin: z
+			.string()
+			.min(1)
+			.max(214)
+			.regex(/^[A-Za-z0-9@._-]+$/),
+		integrity: z.string().regex(/^sha512-[A-Za-z0-9+/]+=*$/),
+	})
+	.strict();
+export type NpmSource = z.infer<typeof npmSource>;
 export const serverConfig = z.discriminatedUnion("transport", [
 	z
 		.object({
@@ -68,6 +88,7 @@ export const serverConfig = z.discriminatedUnion("transport", [
 						.refine((s) => !s.includes("\0")),
 				)
 				.default({}),
+			npm: npmSource.optional(),
 		})
 		.strict(),
 	z

@@ -324,10 +324,10 @@ export async function previewManualConfiguration(
 	previous?: ServerConfig,
 ) {
 	const patch = object(input);
-	if (patch.identity !== undefined)
+	if (patch.identity !== undefined || patch.npm !== undefined)
 		throw new Error("Catalog provenance cannot be assigned manually.");
 	const config = normalizeManualConfiguration(
-		previous ? { ...previous, ...patch, id: previous.id, identity: undefined } : patch,
+		previous ? withoutProvenance({ ...previous, ...patch, id: previous.id }) : patch,
 	);
 	return previewLaunch(config, options);
 }
@@ -420,9 +420,14 @@ export async function importSelectedFile(
 	});
 }
 
+function withoutProvenance(value: Record<string, unknown>) {
+	const { identity: _identity, npm: _npm, ...rest } = value;
+	return rest;
+}
+
 export function normalizeManualConfiguration(input: unknown): ServerConfig {
 	const value = object(input);
-	if (value.identity !== undefined)
+	if (value.identity !== undefined || value.npm !== undefined)
 		throw new Error("Catalog provenance is assigned only by the guided installer.");
 	const config = serverConfig.parse(value);
 	if (reserved.has(config.id)) throw new Error("Choose a name other than a Laplace bridge name.");

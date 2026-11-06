@@ -120,6 +120,18 @@ export const helperInputs = {
 	"server.preview": z.object({ id: id.optional(), config: z.unknown() }).strict(),
 	"server.update": z.object({ id, config: z.unknown() }).strict(),
 	"server.remove": z.object({ id }).strict(),
+	"npm.add": z
+		.object({
+			id,
+			name: z.string().min(1).max(120),
+			package: z.string().min(1).max(214),
+			version: z.string().min(1).max(100).default("latest"),
+			bin: z.string().min(1).max(214).optional(),
+			args: z.array(z.string().max(8000)).max(50).optional(),
+		})
+		.strict(),
+	"npm.versions": z.object({ id }).strict(),
+	"npm.setVersion": z.object({ id, version: z.string().min(1).max(100) }).strict(),
 	"server.start": z.object({ id }).strict(),
 	"server.stop": z.object({ id }).strict(),
 	"server.restart": z.object({ id }).strict(),

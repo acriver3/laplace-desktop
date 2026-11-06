@@ -597,7 +597,12 @@ export class DesktopManager {
 	async updateServer(id: string, value: unknown) {
 		const previous = this.getServerConfig(id);
 		const patch = z.record(z.string(), z.unknown()).parse(value);
-		if ("identity" in patch && patch.identity !== previous.identity)
+		if (
+			("identity" in patch && patch.identity !== previous.identity) ||
+			("npm" in patch &&
+				JSON.stringify(patch.npm) !==
+					JSON.stringify(previous.transport === "stdio" ? previous.npm : undefined))
+		)
 			throw new Error("Catalog provenance cannot be assigned manually");
 		const launchChanged = ["command", "args", "cwd", "env", "url", "headers", "transport"].some(
 			(key) =>
@@ -605,9 +610,11 @@ export class DesktopManager {
 				JSON.stringify(patch[key]) !==
 					JSON.stringify((previous as unknown as Record<string, unknown>)[key]),
 		);
+		const merged: Record<string, unknown> = { ...previous, ...patch };
+		// Launch edits detach the connector from its catalog or npm receipt.
+		if (launchChanged) delete merged.npm;
 		const config = serverConfig.parse({
-			...previous,
-			...patch,
+			...merged,
 			id,
 			identity: launchChanged ? undefined : previous.identity,
 			generation: randomUUID(),
