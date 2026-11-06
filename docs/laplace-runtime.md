@@ -56,3 +56,24 @@ laplace-runtime status | start | stop | enable | disable [--profile hosted|local
 
 Headless installations link through browser approval (`link.start` / `link.poll`). Builds are
 not code-signed; macOS quarantine attributes are removed from the installed tree.
+
+## Local and remote access
+
+- Direct local calls follow local policy only: the registered AI client, its allowed tools, the
+  connector's local tools, and provider/browser approval. They never wait on Laplace cloud, so
+  they keep working during an outage or after cloud sign-out. When the runtime first runs, each
+  linked connector keeps exactly the tools its last cloud permissions allowed; connectors without
+  them stay disabled for local review.
+- Remote use goes through the existing relay and is off by default. It requires the
+  installation's remote access switch, a connection marked available remotely, an explicitly
+  selected hosted AI client (its OAuth grant principal), and that client's scopes. Selection is
+  made by the user in Laplace → Devices; MCP tools cannot grant it.
+- The runtime announces relay protocol 2. Hosted Laplace refuses selected-client access through
+  older runtimes. Every relayed call carries the selected principal, which hosted Laplace checks
+  at dispatch and the runtime re-authorizes when the call leaves its queue.
+- Revoking a client, deselecting it, or turning remote access off fails queued and in-flight
+  remote work and cancels it where possible; dispatched provider actions cannot be rolled back.
+  Offline computers fail immediately and reconnects never replay calls.
+
+`laplace_status` and `laplace_setup` exist on both the local and the hosted MCP servers. The
+standalone CLI's `laplace_local_status` and `laplace_local_setup` remain as aliases.

@@ -417,3 +417,42 @@ it("preserves a pinned Slack bundle when refreshing installed connector configur
 	await f.manager.refresh();
 	expect(f.manager.getServerConfig("slack")).toMatchObject(config);
 });
+it("keeps linked tools usable locally during a cloud outage without widening them", async () => {
+	const f = await fixture();
+	await f.link();
+	await f.manager.addServers([f.config], false, { localOnly: false });
+	// The linked permission previously limited local use to `read`.
+	f.cloud.connections[0].enabledTools = ["read"];
+	await f.manager.refresh();
+	expect(f.manager.listServers()[0]!.linkMode).toBe("linked");
+	await f.manager.shutdown();
+
+	const outage: Array<{ path: string }> = [];
+	const runtime = new DesktopManager(
+		f.root,
+		resolve("resources"),
+		"https://connect.fixture.invalid",
+		{
+			entries: f.entries,
+			apiFactory: () => ({
+				async post(path: any) {
+					outage.push({ path });
+					throw new Error("Laplace cloud unavailable");
+				},
+			}),
+			separateLocalPolicy: true,
+		},
+	);
+	try {
+		await runtime.initialize();
+		const read = await runtime.call("fixture", "read", {}, new AbortController().signal);
+		expect(read.isError).not.toBe(true);
+		// Local calls do not ask the cloud to authorize them.
+		expect(outage.some((request) => request.path === "authorize")).toBe(false);
+		await expect(
+			runtime.call("fixture", "write", {}, new AbortController().signal),
+		).rejects.toThrow();
+	} finally {
+		await runtime.shutdown();
+	}
+});

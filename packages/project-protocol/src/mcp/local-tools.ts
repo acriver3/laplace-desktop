@@ -190,3 +190,32 @@ export const localBrowserApprovalTools = Object.entries(browserApprovalSchemas).
 		},
 	}),
 );
+
+/** Same names and intent as the hosted Laplace MCP discovery tools. */
+export const discoverySetupSchema = z.object({ target: z.enum(["local", "browser"]) }).strict();
+export const laplaceDiscoveryTools = [
+	{
+		name: "laplace_status",
+		description:
+			"Report what this computer's Laplace Runtime provides: connectors and their health, account linking, remote sharing, this AI client's hosted Laplace connection, and next setup steps.",
+		inputSchema: { type: "object", additionalProperties: false },
+		annotations: {
+			readOnlyHint: true,
+			destructiveHint: false,
+			idempotentHint: true,
+			openWorldHint: false,
+		},
+	},
+	{
+		name: "laplace_setup",
+		description:
+			"Start setup. target=browser links this computer to a Laplace account (browser approval) or, once linked, connects this AI client to hosted Laplace tools; target=local reports this runtime's installation. Sign-in and approvals stay with the user. Results say whether this MCP connection must be restarted.",
+		inputSchema: z.toJSONSchema(discoverySetupSchema, { io: "input" }),
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			idempotentHint: true,
+			openWorldHint: true,
+		},
+	},
+];

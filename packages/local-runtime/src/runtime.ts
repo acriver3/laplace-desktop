@@ -36,6 +36,7 @@ import { CredentialSetupError } from "./credential-errors";
 import { CredentialBroker } from "./credentials";
 import { startCredentialRelay } from "./credentials-relay";
 import { DeviceLink } from "./device-link";
+import { localDiscovery } from "./discovery";
 import { HostedConnections } from "./hosted-oauth";
 import {
 	previewImportFile,
@@ -96,6 +97,8 @@ export type RuntimeOptions = {
 	control?: ControlServer;
 	/** Stable node/bridge entries from an installed runtime home (macOS and Linux). */
 	stableBridge?: { node: string; bridge: string };
+	/** Direct local calls follow local policy only (runtime service mode). */
+	separateLocalPolicy?: boolean;
 	/** Background services may hold an idle-sleep assertion while sharing remotely. */
 	keepAwake?: boolean;
 };
@@ -114,10 +117,13 @@ export async function createRuntime(options: RuntimeOptions) {
 	const nodePath = options.nodePath ?? process.execPath;
 	const release = await acquireLock(root);
 	const send = options.emit;
-	const manager = new DesktopManager(root, resources, origin);
+	const manager = new DesktopManager(root, resources, origin, {
+		separateLocalPolicy: options.separateLocalPolicy,
+	});
 	const bridgeRegistration = options.stableBridge
 		? { nodePath: options.stableBridge.node, bridgePath: options.stableBridge.bridge }
 		: await stableBridge(root, nodePath, options.bridgePath);
+	const deviceLink = new DeviceLink(manager);
 	const credentials = new CredentialBroker(
 		root,
 		resources,
@@ -217,6 +223,9 @@ export async function createRuntime(options: RuntimeOptions) {
 			),
 			(section) => send({ event: "desktop-open", section }),
 			options.control,
+			localDiscovery(manager, hosted, deviceLink, origin, (url) =>
+				send({ event: "open-url", url }),
+			),
 		);
 	} catch (error) {
 		credentials.close();
@@ -342,7 +351,6 @@ export async function createRuntime(options: RuntimeOptions) {
 		return rows;
 	};
 	void connectorUpdates.recover().catch(() => {});
-	const deviceLink = new DeviceLink(manager);
 	const approvalPages = new Map<string, { url: string; close(): Promise<void> }>();
 	const settingsPath = join(root, "runtime-settings.json");
 	const settingsSchema = z.object({ keepAwake: z.boolean().default(false) }).strict();

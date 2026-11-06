@@ -72,6 +72,9 @@ export const authorizationSchema = z
 		catalogRevision: revision,
 		permissionRevision: z.number().int().positive(),
 		remote: z.boolean().optional(),
+		/** Remote calls name the selected hosted client; the grant is re-checked at dispatch. */
+		principal: z.string().min(1).max(200).optional(),
+		grantRevision: z.number().int().positive().optional(),
 	})
 	.strict();
 export const heartbeatSchema = z

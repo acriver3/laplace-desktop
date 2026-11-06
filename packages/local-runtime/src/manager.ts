@@ -85,6 +85,8 @@ const desktopState = z
 		revocations: z
 			.array(z.object({ origin: connectorOriginSchema, key: z.string() }).strict())
 			.default([]),
+		/** 2: local calls follow local policy only; linked permissions govern remote use. */
+		localPolicy: z.literal(2).optional(),
 	})
 	.strict();
 type DesktopState = z.infer<typeof desktopState>;
@@ -105,8 +107,10 @@ export class DesktopManager {
 	private invocations = new WeakMap<Invocation, number>();
 	private setupInvocations = new WeakSet<Invocation>();
 	private remoteInvocations = new WeakSet<Invocation>();
+	private remoteGrants = new WeakMap<Invocation, { principal?: string; grantRevision?: number }>();
 	private invocationClients = new WeakMap<Invocation, string>();
 	private stopped = false;
+	private readonly separateLocalPolicy: boolean;
 	private explicitlyBlocked = false;
 	private blockGeneration = 0;
 	private listeners = new Set<() => void>();
@@ -127,8 +131,11 @@ export class DesktopManager {
 		options: {
 			entries?: EntryFactory;
 			apiFactory?: (origin: string, token: string) => Pick<LocalApi, "post">;
+			/** Runtime service mode: direct local calls never wait on Laplace cloud. */
+			separateLocalPolicy?: boolean;
 		} = {},
 	) {
+		this.separateLocalPolicy = options.separateLocalPolicy ?? false;
 		this.state = desktopState.parse({ origin });
 		this.entries = options.entries ?? ((name) => systemEntry(root, name));
 		this.store = new LocalStore(root, this.entries);
@@ -167,6 +174,7 @@ export class DesktopManager {
 					remoteEnabled: false,
 				};
 		});
+		if (this.separateLocalPolicy && this.state.localPolicy !== 2) await this.adoptLocalPolicy();
 		const startup = (async () => {
 			await Promise.allSettled(
 				this.configurations
@@ -322,11 +330,37 @@ export class DesktopManager {
 		});
 	}
 
+	/**
+	 * One-time conversion: each linked connector keeps exactly the local tools it had through
+	 * its last cloud permissions. Without them it stays disabled for local review; never widened.
+	 */
+	private async adoptLocalPolicy() {
+		await this.save((state) => {
+			for (const config of this.configurations) {
+				if (
+					!(state.mode === "linked" && !state.localOnly[config.id]) ||
+					state.localLimits[config.id]
+				)
+					continue;
+				const permission = state.lastPermissions?.connections.find((c) => c.localId === config.id);
+				state.localLimits[config.id] = permission
+					? { enabled: permission.enabled, tools: [...permission.enabledTools] }
+					: { enabled: false, tools: [] };
+			}
+			state.localPolicy = 2;
+		});
+	}
+	/** Linked permissions decide local calls only before the local-policy split. */
+	private cloudGovernsLocal(id: string) {
+		return this.isLinked(id) && !this.separateLocalPolicy;
+	}
 	listServers(): ServerSnapshot[] {
 		return this.configurations.map((config) => {
 			const runtime = this.supervisor.states().find((s) => s.id === config.id);
 			const allowed = this.effectiveTools(config.id);
-			const localLimit = !this.isLinked(config.id) ? this.state.localLimits[config.id] : undefined;
+			const localLimit = !this.cloudGovernsLocal(config.id)
+				? this.state.localLimits[config.id]
+				: undefined;
 			return {
 				id: config.id,
 				access: this.accessFor(config.id),
@@ -423,12 +457,15 @@ export class DesktopManager {
 		tool: string,
 		input: Record<string, unknown>,
 		signal: AbortSignal,
+		grant: { principal?: string; grantRevision?: number } = {},
 	) {
 		const tools = await this.remoteTools(id, revision);
 		if (!tools.some((t) => t.name === tool)) throw new Error("Remote tool access denied");
 		const invocation: Invocation = { localId: id, revision, tool, input };
 		this.invocations.set(invocation, this.epoch);
 		this.remoteInvocations.add(invocation);
+		// The selected hosted client is re-authorized when the call leaves the queue.
+		this.remoteGrants.set(invocation, grant);
 		const controller = new AbortController();
 		const abort = () => controller.abort();
 		signal.addEventListener("abort", abort, { once: true });
@@ -451,7 +488,7 @@ export class DesktopManager {
 			)
 			.filter((t) => !config.enabledTools || config.enabledTools.includes(t.name))
 			.map((t) => t.name);
-		if (!this.isLinked(id)) {
+		if (!this.cloudGovernsLocal(id)) {
 			const limit = this.state.localLimits[id];
 			return !limit
 				? tools
@@ -624,7 +661,7 @@ export class DesktopManager {
 		return this.serialize(async () => {
 			this.epoch++;
 			await this.save((state) => {
-				if (!linked && this.isLinked(id)) {
+				if (!linked && this.cloudGovernsLocal(id)) {
 					const permission = state.lastPermissions?.connections.find((c) => c.localId === id);
 					state.localLimits[id] = {
 						enabled: !!permission?.enabled,
@@ -830,7 +867,7 @@ export class DesktopManager {
 				!this.accessFor(invocation.localId).visible)
 		)
 			throw new Error("Remote access disabled");
-		if (!this.isLinked(invocation.localId) && !remote) return;
+		if (!this.cloudGovernsLocal(invocation.localId) && !remote) return;
 		const permission = this.cloud?.connections.find((c) => c.localId === invocation.localId);
 		if (!permission) throw new Error("Cloud permission unavailable");
 		try {
@@ -842,7 +879,7 @@ export class DesktopManager {
 				tool: invocation.tool,
 				catalogRevision: invocation.revision,
 				permissionRevision: permission.permissionRevision,
-				...(remote ? { remote: true } : {}),
+				...(remote ? { remote: true, ...this.remoteGrants.get(invocation) } : {}),
 			});
 			if (
 				!z

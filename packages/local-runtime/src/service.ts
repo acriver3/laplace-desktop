@@ -93,6 +93,7 @@ export async function startService(argv = process.argv) {
 		emit,
 		control,
 		keepAwake: true,
+		separateLocalPolicy: true,
 		stableBridge: installed ? { node: stable.node, bridge: stable.bridge } : undefined,
 	});
 	const active = runtime;

@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 
 import { WebSocket } from "@repo/local-mcp-core/api";
 import { canonicalJson } from "@repo/project-protocol/local-mcp";
-import { relayRequest } from "@repo/project-protocol/portable-connectors";
+import { RELAY_PROTOCOL, relayRequest } from "@repo/project-protocol/portable-connectors";
 
 import type { DesktopManager } from "./manager";
 import type { PortableConnectors } from "./portable";
+import { desktopVersion } from "./shared/version";
 
 /** Outbound transport only. A reconnect never resends a tool invocation. */
 export function startPortableRelay(manager: DesktopManager, portable: PortableConnectors) {
@@ -37,7 +38,11 @@ export function startPortableRelay(manager: DesktopManager, portable: PortableCo
 				const url = new URL("/api/local-mcp/relay", manager.status().origin);
 				url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 				const ws = new WebSocket(url, {
-					headers: { Authorization: `Bearer ${token}` },
+					headers: {
+						Authorization: `Bearer ${token}`,
+						// Announces selected-client support; hosted Laplace refuses older relays.
+						"Laplace-Relay-Protocol": String(RELAY_PROTOCOL),
+					},
 					followRedirects: false,
 					handshakeTimeout: 10_000,
 					maxPayload: 1_048_576,
@@ -78,6 +83,7 @@ export function startPortableRelay(manager: DesktopManager, portable: PortableCo
 									input.tool,
 									input.input,
 									controller.signal,
+									{ principal: input.principal, grantRevision: input.grantRevision },
 								);
 							else if (input.kind === "status")
 								result = await portable.remoteStatus(input.operationId);
@@ -119,7 +125,7 @@ export function startPortableRelay(manager: DesktopManager, portable: PortableCo
 				).post("heartbeat", {
 					runId: manager.runId,
 					client: "laplace-desktop",
-					version: "0.1.3",
+					version: desktopVersion,
 					connections: manager
 						.listServers()
 						.filter((s) => s.access?.visible)

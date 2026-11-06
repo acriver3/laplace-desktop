@@ -133,8 +133,14 @@ export const portableOperation = z
 	})
 	.strict();
 export type PortableOperation = z.infer<typeof portableOperation>;
+/** Relay generation; 2 adds the selected hosted client's grant to every remote tool request. */
+export const RELAY_PROTOCOL = 2;
+const remoteGrant = {
+	principal: z.string().min(1).max(200).optional(),
+	grantRevision: z.number().int().positive().optional(),
+};
 export const relayRequest = z.discriminatedUnion("kind", [
-	z.object({ kind: z.literal("tools"), localId, revision }).strict(),
+	z.object({ kind: z.literal("tools"), localId, revision, ...remoteGrant }).strict(),
 	z
 		.object({
 			kind: z.literal("call"),
@@ -142,6 +148,7 @@ export const relayRequest = z.discriminatedUnion("kind", [
 			revision,
 			tool: z.string().max(128),
 			input: z.record(z.string(), z.unknown()),
+			...remoteGrant,
 		})
 		.strict(),
 	z

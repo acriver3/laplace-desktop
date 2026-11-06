@@ -18,7 +18,12 @@ import { localCredentialTool } from "@repo/project-protocol/credentials";
 import { brokerApprovalResource } from "@repo/project-protocol/mcp/broker-approval-resource";
 import { browserApprovalResource } from "@repo/project-protocol/mcp/browser-approval-resource";
 import { ToolCatalog, type CatalogEntry } from "@repo/project-protocol/mcp/catalog";
-import { isLocalConnectorToolName } from "@repo/project-protocol/mcp/local-tools";
+import {
+	isLocalConnectorToolName,
+	laplaceDiscoveryTools,
+	discoverySetupSchema,
+	localBootstrapTools,
+} from "@repo/project-protocol/mcp/local-tools";
 import { ycUiResource } from "@repo/project-protocol/mcp/yc-resource";
 import { ycUiTools, YC_UI_URI } from "@repo/project-protocol/mcp/yc-schema";
 import { z } from "zod";
@@ -30,6 +35,7 @@ import {
 } from "./connector-tools";
 import type { CredentialBroker, CredentialPrincipal } from "./credentials";
 import { desktopManagementTool, manageDesktop, type DesktopSection } from "./desktop-tools";
+import type { Discovery } from "./discovery";
 import type { HostedConnections } from "./hosted-oauth";
 import type { DesktopManager } from "./manager";
 import { BROWSER_APPROVAL_URI } from "./shared/browser-approval";
@@ -69,6 +75,7 @@ export async function startMcpServer(
 	connectors?: ConnectorManagement,
 	openDesktop?: (section: DesktopSection) => void,
 	control?: ControlServer,
+	discovery?: Discovery,
 ) {
 	const principal = (clientId: string): CredentialPrincipal => ({
 		id: `local:${clientId}`,
@@ -114,6 +121,24 @@ export async function startMcpServer(
 					manager.clientToolAllowed(clientId, "local_credentials") &&
 					manager.clientToolAllowed(clientId, "local_connectors_manage"),
 			})),
+			...laplaceDiscoveryTools.map((tool) => ({
+				id: `laplace:${tool.name}`,
+				tool: ToolSchema.parse(tool),
+				route: { executor: "laplace", target: tool.name },
+				available: !!discovery,
+			})),
+			// Compatibility names from the standalone CLI, served by the shared runtime.
+			...localBootstrapTools
+				.filter((tool) => ["laplace_local_status", "laplace_local_setup"].includes(tool.name))
+				.map((tool) => ({
+					id: `laplace:${tool.name}`,
+					tool: ToolSchema.parse({
+						...tool,
+						inputSchema: { type: "object", additionalProperties: true },
+					}),
+					route: { executor: "laplace", target: tool.name },
+					available: !!discovery,
+				})),
 			...ycUiTools.map((tool) => ({
 				id: `yc-ui:${tool.name}`,
 				tool: ToolSchema.parse(tool),
@@ -307,6 +332,18 @@ export async function startMcpServer(
 										: { action: "broker", requestId: input.requestId, command: input.command },
 								);
 								return brokerMcpResult(result, input, route.target);
+							},
+							laplace: async (route, args) => {
+								const result =
+									route.target === "laplace_setup"
+										? await discovery!.setup(clientId, discoverySetupSchema.parse(args).target)
+										: route.target === "laplace_local_setup"
+											? await discovery!.setup(clientId, "browser")
+											: await discovery!.status(clientId);
+								return {
+									content: [{ type: "text" as const, text: JSON.stringify(result) }],
+									structuredContent: result as Record<string, unknown>,
+								};
 							},
 							"yc-ui": async (route, args) => {
 								const view = await desktopYcView(
