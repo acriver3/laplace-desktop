@@ -1,6 +1,6 @@
 {
 	"name": "@repo/desktop",
-	"version": "0.1.29",
+	"version": "0.1.30",
 	"private": true,
 	"description": "Laplace desktop and local MCP manager",
 	"license": "Apache-2.0",
@@ -15,6 +15,7 @@
 		"runtimes": "node scripts/runtimes.mjs",
 		"test": "node scripts/build.mjs && vitest run",
 		"test:electron": "node scripts/smoke.mjs",
+		"test:electron:legacy": "node scripts/smoke.mjs --legacy",
 		"test:cookie": "node scripts/cookie-smoke.mjs",
 		"test:native": "node scripts/native-smoke.mjs",
 		"type-check": "node ../../packages/project-protocol/scripts/build-mcp-ui.mjs && tsc --noEmit",

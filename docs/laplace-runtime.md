@@ -2,8 +2,8 @@
 
 The Laplace Runtime is the single local owner of connectors, credentials, browser approvals,
 AI-client registrations, and the relay to hosted Laplace. Desktop, the CLI, the local MCP bridge,
-and the hosted relay are clients of it. It is selected with `LAPLACE_UNIFIED_RUNTIME_V1=true`
-(disabled by default); without the flag Desktop keeps its Electron-owned helper.
+and the hosted relay are clients of it. It is the default since Desktop 0.1.30;
+`LAPLACE_UNIFIED_RUNTIME_V1=false` restores the Electron-owned helper as a kill switch.
 
 Source: `packages/local-runtime`. Builds: `helper/service.cjs` (background service),
 `helper/launcher.cjs` (stable command entry), `helper/bridge.cjs` (AI-client stdio bridge), and
@@ -94,6 +94,5 @@ standalone CLI's `laplace_local_status` and `laplace_local_setup` remain as alia
 
 ## Rollout and cleanup
 
-`LAPLACE_UNIFIED_RUNTIME_V1` stays off in production until native acceptance. After it is enabled
-and its rollback window passes, remove the Electron IPC host (`main.ts`, `HelperClient`),
+The runtime is on by default from Desktop 0.1.30. After its rollback window passes, remove the Electron IPC host (`main.ts`, `HelperClient`),
 `launcher.json` relaunch, Desktop's duplicate powerMonitor forwarding, and the flag itself.

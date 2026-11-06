@@ -33,16 +33,18 @@ const defaultExecutable = join(
 		? ["Laplace.app", "Contents", "MacOS", "Laplace"]
 		: ["Laplace.exe"]),
 );
-const packaged =
-	process.argv[2] === "--packaged" ? resolve(process.argv[3] ?? defaultExecutable) : undefined;
-if (process.argv.length > 2 && (!packaged || process.argv.length > 4))
-	throw new Error("Usage: node scripts/smoke.mjs [--packaged [executable]]");
+const args = process.argv.slice(2).filter((argument) => argument !== "--legacy");
+const packaged = args[0] === "--packaged" ? resolve(args[1] ?? defaultExecutable) : undefined;
+if (args.length > 0 && (!packaged || args.length > 2))
+	throw new Error("Usage: node scripts/smoke.mjs [--legacy] [--packaged [executable]]");
 await access(packaged ?? join(appRoot, "dist/main/index.cjs"));
 const testRoot = await mkdtemp(join(tmpdir(), "laplace-desktop-smoke-"));
+// --legacy exercises the Electron-owned helper kill switch; the default is the Laplace Runtime.
+const unified = !process.argv.includes("--legacy");
 const profileRoot = join(testRoot, "profiles/local");
 const keys = new Set(["config-key", "desktop:key"]);
 const clients = [];
-let app, upstreamPid, helperPid, endpoint, runtime, invoke;
+let app, upstreamPid, helperPid, endpoint, runtime, launcher, invoke;
 let step = "start synthetic server";
 let failed = false;
 let authenticated = false;
@@ -174,6 +176,7 @@ try {
 				: []),
 		],
 		env: testEnvironment({
+			LAPLACE_UNIFIED_RUNTIME_V1: unified ? "true" : "false",
 			LAPLACE_DESKTOP_TEST_ROOT: testRoot,
 			LAPLACE_DESKTOP_TEST_ORIGIN: origin,
 		}),
@@ -189,6 +192,9 @@ try {
 	assert.equal(location.packaged, !!packaged);
 	const resources = packaged ? join(location.resources, "runtime") : join(appRoot, "resources");
 	runtime = join(resources, "runtimes", process.platform === "win32" ? "node.exe" : "node");
+	launcher = packaged
+		? join(resources, "helper/launcher.cjs")
+		: join(appRoot, "dist/helper/launcher.cjs");
 	const bridge = packaged
 		? join(resources, "helper/bridge.cjs")
 		: join(appRoot, "dist/helper/bridge.cjs");
@@ -356,6 +362,16 @@ try {
 	});
 	await until(() => !alive(desktopPid), "Desktop did not exit while its window was hidden");
 	app = undefined;
+	if (unified) {
+		// Closing Desktop leaves the runtime serving AI clients until the user stops it.
+		assert.ok(alive(helperPid) && alive(upstreamPid), "Closing Desktop stopped the runtime");
+		assert.equal((await fetch(endpoint)).status, 401, "Runtime listener stopped with Desktop");
+		// The user-facing explicit stop (same path as the tray item and `laplace-runtime stop`).
+		await promisify(execFile)(runtime, [launcher, "stop", "--profile", "local"], {
+			env: testEnvironment({ LAPLACE_RUNTIME_ROOT: profileRoot }),
+			timeout: 30_000,
+		});
+	}
 	await until(
 		() => !alive(helperPid) && !alive(upstreamPid),
 		"Desktop quit left a helper or managed process running",
@@ -394,6 +410,12 @@ try {
 		}
 	}
 	if (app) await app.close().catch(() => {});
+	// A failed unified run must not leave the background runtime serving.
+	if (unified && alive(helperPid))
+		await promisify(execFile)(runtime, [launcher, "stop", "--profile", "local"], {
+			env: testEnvironment({ LAPLACE_RUNTIME_ROOT: profileRoot }),
+			timeout: 30_000,
+		}).catch(() => {});
 	server.closeAllConnections();
 	await new Promise((resolve) => server.close(resolve));
 	mark("remove owned temporary keychain entries");
@@ -422,5 +444,5 @@ try {
 if (failed) process.exitCode = 1;
 else
 	console.log(
-		"PASS Electron: local pages, signed-out catalog and custom import/add/clients, full-window Connect with On this device switching, session expiry, secure provider popup handoff, isolated web view, two stdio clients/one process, hide/restore, quit cleanup, and keychain cleanup.",
+		`PASS Electron (${unified ? "Laplace Runtime" : "legacy helper"}): local pages, signed-out catalog and custom import/add/clients, full-window Connect with On this device switching, session expiry, secure provider popup handoff, isolated web view, two stdio clients/one process, hide/restore, quit cleanup, and keychain cleanup.`,
 	);
