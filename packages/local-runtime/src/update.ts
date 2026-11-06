@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -27,6 +27,32 @@ export type SwapResult =
 	| { swapped: false; reason: "not-running" | "current" | "stopped" | "busy" | "not-stopped" }
 	| { swapped: true; from?: string; to: string }
 	| { swapped: false; reason: "restored"; from?: string; to: string; error: string };
+
+/**
+ * AI-client bridges restart a stopped runtime from service.json. Pointing it at the version being
+ * started first means a bridge that reconnects mid-swap starts that version, not the old one.
+ */
+async function recordLaunch(
+	root: string,
+	layout: { node: string; service: string; directory: string },
+	options: Pick<SwapOptions, "origin" | "nativeHost">,
+) {
+	const launch = join(root, "service.json"),
+		temporary = `${launch}.${process.pid}.swap.tmp`;
+	await writeFile(
+		temporary,
+		JSON.stringify({
+			version: 1,
+			node: layout.node,
+			service: layout.service,
+			resources: layout.directory,
+			origin: options.origin,
+			nativeHost: !!options.nativeHost,
+		}),
+		{ mode: 0o600 },
+	);
+	await rename(temporary, launch);
+}
 
 async function waitForExit(pid: number, timeout: number) {
 	const deadline = Date.now() + timeout;
@@ -73,6 +99,7 @@ export async function swapRunningRuntime(options: SwapOptions): Promise<SwapResu
 		if (!acquired) await delay(options.pollInterval ?? 5000);
 	}
 	if (!acquired) return { swapped: false, reason: "busy" };
+	await recordLaunch(options.root, target, options);
 	// Until the old process has exited, any failure must hand its maintenance lease back;
 	// otherwise it keeps refusing new calls as "not started" with nothing left to finish the swap.
 	const release = () => controlRequest(running, "updates.release", {}, 10_000).catch(() => {});
@@ -145,7 +172,10 @@ export async function swapRunningRuntime(options: SwapOptions): Promise<SwapResu
 		if (previousVersion) {
 			await selectRuntime(previousVersion, home);
 			const previous = await currentRuntime(home);
-			if (previous) await launch(previous, 20_000).catch(() => {});
+			if (previous) {
+				await recordLaunch(options.root, previous, options).catch(() => {});
+				await launch(previous, 20_000).catch(() => {});
+			}
 		}
 		// A late-starting new version can still win the profile lock during the restore. Keep the
 		// selection consistent with whatever actually runs, so later starts use the same version.

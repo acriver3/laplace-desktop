@@ -155,3 +155,37 @@ it.skipIf(process.platform === "win32")(
 		expect(await realpath(cwd)).not.toBe(await realpath(process.cwd()));
 	},
 );
+
+it.skipIf(process.platform === "win32")(
+	"starts the new version when an AI-client bridge restarts the runtime mid-swap",
+	async () => {
+		const { home, root } = await fixture();
+		const first = (await currentRuntime(home))!;
+		// Real runtimes record how AI-client bridges restart them.
+		await writeFile(
+			join(root, "service.json"),
+			JSON.stringify({
+				version: 1,
+				node: first.node,
+				service: first.service,
+				resources: first.directory,
+				origin: "https://connect.fixture.invalid",
+				nativeHost: false,
+			}),
+		);
+		await installRuntime(await tree("2.0.0"), "2.0.0", { home });
+		// Like bridge.ts: once the runtime disappears, start it again from service.json.
+		const bridge = (async () => {
+			while (await readRuntimeDescriptor(root)) await new Promise((r) => setTimeout(r, 5));
+			const { version: _, ...service } = JSON.parse(
+				await readFile(join(root, "service.json"), "utf8"),
+			);
+			await startRuntime({ root, ...service, explicit: false }).catch(() => {});
+		})();
+		const result = await swapRunningRuntime({ root, origin: "https://x.invalid", home });
+		await bridge;
+		expect(result).toMatchObject({ swapped: true, to: "2.0.0" });
+		expect(await version(root)).toBe("2.0.0");
+	},
+	30_000,
+);
