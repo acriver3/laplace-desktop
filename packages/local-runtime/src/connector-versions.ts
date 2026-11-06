@@ -4,6 +4,7 @@ import type { DesktopManager } from "./manager";
 import {
 	installNpmPackage,
 	npmMetadata,
+	NpmSourceError,
 	npmUserArguments,
 	publishedVersions,
 	resolveNpmVersion,
@@ -39,15 +40,13 @@ export class NpmConnectors {
 	private npmConfig(id: string): NpmConfig {
 		const config = this.manager.getServerConfig(id);
 		if (config.transport !== "stdio" || !config.npm)
-			throw new Error("This connector is not installed from npm.");
+			throw new NpmSourceError("not-npm", "This connector is not installed from npm.");
 		return config as NpmConfig;
 	}
 
 	private async exclusive<T>(id: string, task: () => Promise<T>) {
 		if (this.busy.has(id))
-			throw new Error(
-				"A version change for this connector is in progress.",
-			);
+			throw new NpmSourceError("busy", "A version change for this connector is in progress.");
 		this.busy.add(id);
 		try {
 			return await task();
@@ -74,7 +73,7 @@ export class NpmConnectors {
 			package: config.npm.package,
 			current: config.npm.version,
 			distTags: metadata["dist-tags"],
-			versions: publishedVersions(metadata),
+			versions: publishedVersions(metadata, config.npm.bin),
 		};
 	}
 
@@ -129,7 +128,8 @@ export class NpmConnectors {
 			authorize?.();
 			const current = this.npmConfig(id);
 			if (JSON.stringify(current) !== JSON.stringify(previous))
-				throw new Error(
+				throw new NpmSourceError(
+					"changed",
 					"Connector changed while the new version was downloading. Try again.",
 				);
 			const before = this.manager.listServers().find((s) => s.id === id);
@@ -153,7 +153,8 @@ export class NpmConnectors {
 				await this.manager
 					.replaceManagedUpdate(previous)
 					.catch(() => {});
-				throw new Error(
+				throw new NpmSourceError(
+					"start-failed",
 					`${source.package}@${source.version} failed to start; ${previous.npm.version} was restored.`,
 				);
 			}
@@ -162,7 +163,8 @@ export class NpmConnectors {
 				await this.manager
 					.replaceManagedUpdate(previous)
 					.catch(() => {});
-				throw new Error(
+				throw new NpmSourceError(
+					"start-failed",
 					`${source.package}@${source.version} failed to start; ${previous.npm.version} was restored.`,
 				);
 			}

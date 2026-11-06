@@ -129,6 +129,12 @@ beforeAll(async () => {
 			},
 		};
 	}
+	// npm's staged-publishing placeholder: published, but without the connector's command.
+	(packument.versions as Record<string, unknown>)["0.0.0-stage"] = {
+		name,
+		version: "0.0.0-stage",
+		dist: { tarball: `${url}/missing.tgz`, integrity: "sha512-AAAA" },
+	};
 	registry = { url, metadata: packument as NpmMetadata, requests: [] };
 	cleanup.length = 0;
 	return async () => {
@@ -402,6 +408,13 @@ it("lets AI clients with connector management add, list and switch npm connector
 	expect(JSON.parse(switched.content[0]!.text)).toMatchObject({
 		version: "2.0.0",
 	});
+	// Agents receive npm outcomes as codes they can act on.
+	await expect(
+		tools.call(manage.id, "local_connectors_set_version", { id: "fixture", version: "^1.0.0" }),
+	).rejects.toMatchObject({ code: "invalid-version" });
+	await expect(
+		tools.call(manage.id, "local_connectors_set_version", { id: "fixture", version: "3.0.0" }),
+	).rejects.toMatchObject({ code: "start-failed" });
 	const listed = JSON.parse(
 		(await tools.call(viewer.id, "local_connectors_list", {})).content[0]!
 			.text,

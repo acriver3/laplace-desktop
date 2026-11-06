@@ -40,7 +40,11 @@ export class NpmSourceError extends Error {
 			| "install"
 			| "integrity"
 			| "shrinkwrap"
-			| "cancelled",
+			| "cancelled"
+			| "not-npm"
+			| "busy"
+			| "changed"
+			| "start-failed",
 		message: string,
 	) {
 		super(message);
@@ -164,16 +168,19 @@ export function resolveNpmVersion(
 }
 
 /** Newest first, stable before prereleases of the same version. */
-export function publishedVersions(metadata: NpmMetadata, limit = 50) {
+export function publishedVersions(metadata: NpmMetadata, bin?: string, limit = 50) {
 	return Object.keys(metadata.versions)
 		.filter((version) => semver.valid(version))
+		.filter(
+			// Hides npm's staged-publishing placeholders and builds without this connector's command.
+			(version) =>
+				!bin || Object.hasOwn(binMap(metadata.name, metadata.versions[version]!.bin), bin),
+		)
 		.sort(semver.rcompare)
 		.slice(0, limit)
 		.map((version) => ({
 			version,
-			...(metadata.versions[version]!.deprecated
-				? { deprecated: true }
-				: {}),
+			...(metadata.versions[version]!.deprecated ? { deprecated: true } : {}),
 		}));
 }
 
@@ -193,6 +200,8 @@ export function npmEnvironment(
 		npm_config_update_notifier: "false",
 		npm_config_fund: "false",
 		npm_config_audit: "false",
+		npm_config_fetch_retries: "5",
+		npm_config_fetch_retry_mintimeout: "2000",
 	};
 }
 

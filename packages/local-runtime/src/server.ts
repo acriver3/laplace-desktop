@@ -38,6 +38,7 @@ import { desktopManagementTool, manageDesktop, type DesktopSection } from "./des
 import type { Discovery } from "./discovery";
 import type { HostedConnections } from "./hosted-oauth";
 import type { DesktopManager } from "./manager";
+import { NpmSourceError } from "./npm-source";
 import { BROWSER_APPROVAL_URI } from "./shared/browser-approval";
 import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
 import { desktopVersion } from "./shared/version";
@@ -365,7 +366,13 @@ export async function startMcpServer(
 							setup: async (route, args) => {
 								try {
 									return await connectors!.call(clientId, route.target, args);
-								} catch {
+								} catch (error) {
+									// npm outcomes are fixed messages without credentials; agents act on them.
+									if (error instanceof NpmSourceError)
+										return {
+											isError: true,
+											content: [{ type: "text", text: `${error.code}: ${error.message}` }],
+										};
 									return {
 										isError: true,
 										content: [
