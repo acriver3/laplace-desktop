@@ -1,16 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-	mkdir,
-	mkdtemp,
-	readFile,
-	readdir,
-	rm,
-	writeFile,
-} from "node:fs/promises";
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import type { EntryFactory } from "@repo/local-mcp-core/store";
 import { NpmConnectors } from "@repo/local-runtime/connector-versions";
@@ -29,7 +23,21 @@ afterEach(async () => {
 	for (const task of cleanup.splice(0).reverse()) await task();
 });
 
-const resources = resolve("resources");
+// Packaging downloads the bundled npm; before that, use the npm that ships with this Node.
+function testResources() {
+	const bundled = resolve("resources");
+	if (existsSync(join(bundled, "runtimes", "npm", "bin", "npm-cli.js"))) return bundled;
+	const npm = [
+		join(dirname(process.execPath), "..", "lib", "node_modules", "npm"),
+		join(dirname(process.execPath), "node_modules", "npm"),
+		join(execFileSync("npm", ["root", "-g"], { encoding: "utf8", shell: true }).trim(), "npm"),
+	].find((candidate) => existsSync(join(candidate, "bin", "npm-cli.js")))!;
+	const fallback = mkdtempSync(join(tmpdir(), "npm-resources-"));
+	mkdirSync(join(fallback, "runtimes"));
+	symlinkSync(npm, join(fallback, "runtimes", "npm"), "junction");
+	return fallback;
+}
+const resources = testResources();
 const npmCli = join(resources, "runtimes", "npm", "bin", "npm-cli.js");
 
 /** Dependency-free stdio MCP server; each version exposes its own tools. */
