@@ -2,6 +2,23 @@ import { contextBridge, ipcRenderer } from "electron";
 
 // Hosted content receives presentation and write-only clipboard bridges, never device operations.
 if (process.isMainFrame) {
+	// Keep the hosted sidebar's device links in the same order as LocalSidebar.
+	// Presentation only: no device APIs or credentials are exposed to the page.
+	window.addEventListener("DOMContentLoaded", () => {
+		const orderDeviceLinks = () => {
+			const sidebar = document.querySelector(".connector-main-sidebar");
+			const local = sidebar?.querySelector('a[href="/desktop/local"]')?.closest("li");
+			const credentials = sidebar?.querySelector('a[href="/desktop/credentials"]')?.closest("li");
+			if (local && credentials && local.parentElement === credentials.parentElement &&
+				(credentials.compareDocumentPosition(local) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+				credentials.before(local);
+			}
+		};
+		orderDeviceLinks();
+		const observer = new MutationObserver(orderDeviceLinks);
+		observer.observe(document.body, { childList: true, subtree: true });
+		window.addEventListener("unload", () => observer.disconnect(), { once: true });
+	}, { once: true });
 	contextBridge.exposeInMainWorld("laplaceShell", {
 		version: 1,
 		credentialsVersion: 1,

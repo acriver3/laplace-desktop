@@ -18,7 +18,6 @@ import { connectionName } from "./connection-name";
 import { ConnectionIcon } from "./ConnectionIcon";
 import { ConnectorUpdatesPanel } from "./ConnectorUpdatesPanel";
 import { Modal } from "./Dialogs";
-import { PortablePeers } from "./PortablePeers";
 import { PortableSetup } from "./PortableSetup";
 import type { CatalogEntry } from "./types";
 
@@ -57,6 +56,7 @@ export function LocalConnectionsPage({
 	onView: (value: string) => void;
 }) {
 	const [catalogDetails, setCatalogDetails] = useState<CatalogEntry>();
+	const [updateServer, setUpdateServer] = useState<ServerSnapshot>();
 	const installedCatalog = new Map(
 		catalog
 			.filter((entry) => entry.installed && entry.serverId)
@@ -116,7 +116,11 @@ export function LocalConnectionsPage({
 			notices={
 				<>
 					<PortableSetup />
-					<BrokerStart entries={available} label="Connect selected with assistant" batch />
+					{updateServer && (
+						<Modal title={`${updateServer.name} updates`} close={() => setUpdateServer(undefined)}>
+							<div className="dialog-body"><ConnectorUpdatesPanel id={updateServer.id} /></div>
+						</Modal>
+					)}
 					{catalogDetails && (
 						<Modal
 							title={connectionName(
@@ -157,7 +161,6 @@ export function LocalConnectionsPage({
 								title: "This device",
 								content: (
 									<>
-										<PortablePeers />
 										<ul className="connector-row-list" aria-label="Local connections">
 											{local.map((server) => (
 												<ConnectionTile
@@ -183,7 +186,6 @@ export function LocalConnectionsPage({
 															label="Reconnect"
 														/>
 													)}
-													<ConnectorUpdatesPanel id={server.id} />
 													<DropdownMenu>
 														<DropdownMenuTrigger
 															render={<Button variant="outline" size="icon" />}
@@ -192,6 +194,11 @@ export function LocalConnectionsPage({
 															<ChevronDown className="size-4" aria-hidden="true" />
 														</DropdownMenuTrigger>
 														<DropdownMenuContent align="end">
+															{installedCatalog.has(server.id) && (
+																<DropdownMenuItem onClick={() => setUpdateServer(server)}>
+																	Connector updates
+																</DropdownMenuItem>
+															)}
 															<DropdownMenuItem onClick={() => details(server)}>
 																View details
 															</DropdownMenuItem>
