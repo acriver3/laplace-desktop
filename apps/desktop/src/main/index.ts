@@ -48,7 +48,6 @@ import {
 	type Profile,
 	type ShellState,
 } from "../shared/shell-contracts";
-import { unifiedRuntimeEnabled } from "../shared/unified-runtime-feature";
 import { AutomaticUpdates } from "../update/automatic";
 import { acknowledgeUpdate } from "../update/installer";
 import { SourceUpdater } from "../update/source";
@@ -59,7 +58,6 @@ import {
 	requireStableAuthentication,
 	restorePersistedAccount,
 } from "./feature-access";
-import { HelperClient } from "./helper-client";
 import {
 	agentHandoffUrl,
 	connectClipboardWrite,
@@ -170,7 +168,7 @@ let contentLayout:
 	| { x: number; y: number; width: number; height: number; blocked: boolean }
 	| undefined;
 let tray: Tray;
-let helper: HelperClient | RuntimeClient | undefined;
+let helper: RuntimeClient | undefined;
 let signIn: BrowserSignIn | undefined;
 let startingSignIn = false;
 const popups = new Set<BrowserWindow>();
@@ -793,15 +791,7 @@ setInterval(() => {
 async function startHelper() {
 	state.helperError = undefined;
 	await mkdir(profileRoot(), { recursive: true, mode: 0o700 });
-	await writeFile(
-		join(profileRoot(), "launcher.json"),
-		JSON.stringify({
-			executable: process.execPath,
-			args: [...(app.isPackaged ? [] : [app.getAppPath()]), `--laplace-profile=${state.profile}`],
-		}),
-		{ mode: 0o600 },
-	);
-	const next = new (unifiedRuntimeEnabled() ? RuntimeClient : HelperClient)(
+	const next = new RuntimeClient(
 		(event) => {
 			if (event.event === "desktop-open") {
 				showLocal(event.section);
@@ -839,7 +829,7 @@ async function startHelper() {
 	try {
 		let runtime = resources,
 			helperDirectory = join(app.isPackaged ? resources : appRoot, "helper");
-		if (next instanceof RuntimeClient && app.isPackaged && !process.env.LAPLACE_DESKTOP_TEST_ROOT) {
+		if (app.isPackaged && !process.env.LAPLACE_DESKTOP_TEST_ROOT) {
 			next.nativeHost = true;
 			// Run from the stable per-user install so registrations survive Desktop updates and moves.
 			const installed = await installRuntime(resources, desktopVersion);
@@ -855,7 +845,7 @@ async function startHelper() {
 			if (swap?.swapped === false && swap.reason === "busy") scheduleRuntimeSwap();
 			if (state.profile === "hosted") void applyLoginPreference().catch(() => {});
 		}
-		await next.start(profileRoot(), runtime, state.origin, join(helperDirectory, "main.cjs"));
+		await next.start(profileRoot(), runtime, state.origin, join(helperDirectory, "service.cjs"));
 	} catch (error) {
 		state.helperError = (error as Error).message;
 	}
@@ -915,7 +905,6 @@ let trayItems: MenuItemConstructorOptions[] = [];
 let trayRefresh: Promise<void> | undefined;
 /** Separate Close Desktop, Stop/Start Runtime, Start at login, and Keep awake controls. */
 async function runtimeControls(): Promise<MenuItemConstructorOptions[]> {
-	if (!unifiedRuntimeEnabled()) return [];
 	const running = !!(await readRuntimeDescriptor(profileRoot()));
 	const items: MenuItemConstructorOptions[] = [
 		running
@@ -980,7 +969,7 @@ async function selectProfile(profile: Profile) {
 		signIn?.cancel();
 		signIn = undefined;
 		showLocal(undefined, true);
-		await (helper instanceof RuntimeClient ? helper.shutdown() : helper?.stop());
+		await helper?.shutdown();
 		state = { ...initialState(profile), section: "device" };
 		await startHelper();
 		restoreAccount();
@@ -1737,7 +1726,7 @@ void app
 					...trayItems,
 					{ type: "separator" },
 					{
-						label: unifiedRuntimeEnabled() ? "Close Laplace Desktop" : "Quit Laplace",
+						label: "Close Laplace Desktop",
 						click: () => setImmediate(quitLaplace),
 					},
 				]),

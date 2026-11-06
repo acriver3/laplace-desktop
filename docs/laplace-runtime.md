@@ -2,12 +2,11 @@
 
 The Laplace Runtime is the single local owner of connectors, credentials, browser approvals,
 AI-client registrations, and the relay to hosted Laplace. Desktop, the CLI, the local MCP bridge,
-and the hosted relay are clients of it. It is the default since Desktop 0.1.30;
-`LAPLACE_UNIFIED_RUNTIME_V1=false` restores the Electron-owned helper as a kill switch.
+and the hosted relay are clients of it. It is the only local owner since Desktop 0.1.30; the
+earlier Electron-owned helper and its `LAPLACE_UNIFIED_RUNTIME_V1` switch were removed.
 
 Source: `packages/local-runtime`. Builds: `helper/service.cjs` (background service),
-`helper/launcher.cjs` (stable command entry), `helper/bridge.cjs` (AI-client stdio bridge), and
-`helper/main.cjs` (legacy Electron IPC host).
+`helper/launcher.cjs` (stable command entry), and `helper/bridge.cjs` (AI-client stdio bridge).
 
 ## Processes and control
 
@@ -92,7 +91,9 @@ standalone CLI's `laplace_local_status` and `laplace_local_setup` remain as alia
   seven-day retention even when Desktop is closed. Capture, overlay, and clipboard remain
   Desktop OS adapters.
 
-## Rollout and cleanup
+## Rollout
 
-The runtime is on by default from Desktop 0.1.30. After its rollback window passes, remove the Electron IPC host (`main.ts`, `HelperClient`),
-`launcher.json` relaunch, Desktop's duplicate powerMonitor forwarding, and the flag itself.
+The runtime became the default in Desktop 0.1.30 and the only local owner afterwards: the Electron
+IPC host, `launcher.json` relaunch, and `LAPLACE_UNIFIED_RUNTIME_V1` switch are gone. To roll back,
+reinstall an earlier Desktop release. Desktop still forwards its own suspend and screen-lock events
+to lock credentials immediately, in addition to the runtime's monitor.

@@ -116,9 +116,9 @@ The default data directory is Electron's `userData` location for **Laplace**: no
 
 The Electron main process owns the window, the Connect view and its navigation boundary, browser handoff, and the trusted local renderer's IPC. Connect runs in a sandboxed view without Node access. Its narrow clipboard preload forwards text writes only; the main process validates the sender, frame, origin, payload type, and size. Native agent handoffs allow only the Codex, Claude, and Cursor draft/install routes used by Connect. A separate bundled Node helper owns encrypted state, MCP connections, process supervision, and the authenticated loopback listener. Each registered AI client connects through a small stdio bridge.
 
-Closing a window hides it. Reopen it through the tray/menu-bar icon or app activation. With the legacy helper (`LAPLACE_UNIFIED_RUNTIME_V1=false`), quitting stops the helper and managed stdio process trees and nothing starts at login; externally owned HTTP servers always remain running. If the helper exits unexpectedly, restart Laplace; in-flight calls are not retried.
+Closing a window hides it. Reopen it through the tray/menu-bar icon or app activation. **Stop Laplace Runtime** stops managed stdio process trees; externally owned HTTP servers always remain running. If the helper exits unexpectedly, restart Laplace; in-flight calls are not retried.
 
-Desktop runs the background **Laplace Runtime** by default: it installs its bundled runtime into a stable per-user location, connects to it (or starts it), and offers Close Laplace Desktop, Stop/Start Laplace Runtime, Start at login, and Keep awake controls. Closing Desktop leaves connectors available to AI clients. `LAPLACE_UNIFIED_RUNTIME_V1=false` restores the previous Electron-owned helper as a kill switch. See [Laplace Runtime](../../docs/laplace-runtime.md).
+Desktop runs the background **Laplace Runtime** by default: it installs its bundled runtime into a stable per-user location, connects to it (or starts it), and offers Close Laplace Desktop, Stop/Start Laplace Runtime, Start at login, and Keep awake controls. Closing Desktop leaves connectors available to AI clients. See [Laplace Runtime](../../docs/laplace-runtime.md).
 
 ## Build and test
 

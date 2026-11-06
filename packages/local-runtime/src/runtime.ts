@@ -99,7 +99,7 @@ export type RuntimeOptions = {
 	stableBridge?: { node: string; bridge: string };
 	/**
 	 * Background services start idle; a connected Desktop reports user activity through
-	 * updates.deviceActivity. The Electron-owned helper waits for Desktop's first report.
+	 * updates.deviceActivity.
 	 */
 	startIdle?: boolean;
 	/** Direct local calls follow local policy only (runtime service mode). */

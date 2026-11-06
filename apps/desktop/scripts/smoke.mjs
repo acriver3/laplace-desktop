@@ -33,14 +33,12 @@ const defaultExecutable = join(
 		? ["Laplace.app", "Contents", "MacOS", "Laplace"]
 		: ["Laplace.exe"]),
 );
-const args = process.argv.slice(2).filter((argument) => argument !== "--legacy");
+const args = process.argv.slice(2);
 const packaged = args[0] === "--packaged" ? resolve(args[1] ?? defaultExecutable) : undefined;
 if (args.length > 0 && (!packaged || args.length > 2))
-	throw new Error("Usage: node scripts/smoke.mjs [--legacy] [--packaged [executable]]");
+	throw new Error("Usage: node scripts/smoke.mjs [--packaged [executable]]");
 await access(packaged ?? join(appRoot, "dist/main/index.cjs"));
 const testRoot = await mkdtemp(join(tmpdir(), "laplace-desktop-smoke-"));
-// --legacy exercises the Electron-owned helper kill switch; the default is the Laplace Runtime.
-const unified = !process.argv.includes("--legacy");
 const profileRoot = join(testRoot, "profiles/local");
 const keys = new Set(["config-key", "desktop:key"]);
 const clients = [];
@@ -176,7 +174,6 @@ try {
 				: []),
 		],
 		env: testEnvironment({
-			LAPLACE_UNIFIED_RUNTIME_V1: unified ? "true" : "false",
 			LAPLACE_DESKTOP_TEST_ROOT: testRoot,
 			LAPLACE_DESKTOP_TEST_ORIGIN: origin,
 		}),
@@ -362,7 +359,7 @@ try {
 	});
 	await until(() => !alive(desktopPid), "Desktop did not exit while its window was hidden");
 	app = undefined;
-	if (unified) {
+	{
 		// Closing Desktop leaves the runtime serving AI clients until the user stops it.
 		assert.ok(alive(helperPid) && alive(upstreamPid), "Closing Desktop stopped the runtime");
 		assert.equal((await fetch(endpoint)).status, 401, "Runtime listener stopped with Desktop");
@@ -411,7 +408,7 @@ try {
 	}
 	if (app) await app.close().catch(() => {});
 	// A failed unified run must not leave the background runtime serving.
-	if (unified && alive(helperPid))
+	if (alive(helperPid))
 		await promisify(execFile)(runtime, [launcher, "stop", "--profile", "local"], {
 			env: testEnvironment({ LAPLACE_RUNTIME_ROOT: profileRoot }),
 			timeout: 30_000,
@@ -444,5 +441,5 @@ try {
 if (failed) process.exitCode = 1;
 else
 	console.log(
-		`PASS Electron (${unified ? "Laplace Runtime" : "legacy helper"}): local pages, signed-out catalog and custom import/add/clients, full-window Connect with On this device switching, session expiry, secure provider popup handoff, isolated web view, two stdio clients/one process, hide/restore, quit cleanup, and keychain cleanup.`,
+		`PASS Electron (Laplace Runtime): local pages, signed-out catalog and custom import/add/clients, full-window Connect with On this device switching, session expiry, secure provider popup handoff, isolated web view, two stdio clients/one process, hide/restore, quit cleanup, and keychain cleanup.`,
 	);

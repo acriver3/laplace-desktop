@@ -15,7 +15,6 @@
 		"runtimes": "node scripts/runtimes.mjs",
 		"test": "node scripts/build.mjs && vitest run",
 		"test:electron": "node scripts/smoke.mjs",
-		"test:electron:legacy": "node scripts/smoke.mjs --legacy",
 		"test:cookie": "node scripts/cookie-smoke.mjs",
 		"test:native": "node scripts/native-smoke.mjs",
 		"type-check": "node ../../packages/project-protocol/scripts/build-mcp-ui.mjs && tsc --noEmit",

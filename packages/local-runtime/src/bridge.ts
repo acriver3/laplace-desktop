@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve, join, isAbsolute } from "node:path";
@@ -6,7 +5,6 @@ import { resolve, join, isAbsolute } from "node:path";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { Server } from "@modelcontextprotocol/server";
 import { serveStdio, StdioServerTransport } from "@modelcontextprotocol/server/stdio";
-import { minimalEnvironment } from "@repo/local-mcp-core/config";
 import { systemEntry } from "@repo/local-mcp-core/store";
 import { z } from "zod";
 
@@ -14,7 +12,6 @@ import { BridgeConnection } from "./bridge-connection";
 import { bridgeConnectionMessage, bridgeCallMessage } from "./bridge-errors";
 import { startRuntime } from "./lifecycle";
 import { desktopVersion } from "./shared/version";
-import { updateLaunchBlocked, UpdateError } from "./update-guard";
 
 const descriptorSchema = z
 	.object({
@@ -76,39 +73,10 @@ async function endpoint(root: string) {
 		if (value) return value;
 		throw new Error("Laplace Runtime did not become available. Check `laplace-runtime status`.");
 	}
-	try {
-		const launcher = z
-			.object({
-				executable: z.string().refine(isAbsolute),
-				args: z.array(z.string().max(4096)).max(20),
-			})
-			.strict()
-			.parse(JSON.parse(await readFile(join(root, "launcher.json"), "utf8")));
-		if (await updateLaunchBlocked(launcher.executable))
-			throw new UpdateError(
-				"install",
-				"Laplace is installing an update. Reconnect after it finishes restarting.",
-			);
-		const child = spawn(launcher.executable, launcher.args, {
-			detached: true,
-			stdio: "ignore",
-			shell: false,
-			windowsHide: true,
-			env: minimalEnvironment(homedir(), { LAPLACE_DESKTOP_ROOT: root }),
-		});
-		child.on("error", () => {});
-		child.unref();
-	} catch (error) {
-		if (error instanceof UpdateError) throw error;
-		throw new Error("Open Laplace Desktop, then restart this MCP connection.");
-	}
-	const deadline = Date.now() + 20_000;
-	while (Date.now() < deadline) {
-		value = await discover(root);
-		if (value) return value;
-		await new Promise((r) => setTimeout(r, 250));
-	}
-	throw new Error("Laplace Desktop did not become available. Open the app and review its status.");
+	// Desktop records how to start the runtime the first time it runs it.
+	throw new Error(
+		"Open Laplace Desktop or run `laplace-runtime start`, then restart this MCP connection.",
+	);
 }
 export async function runBridge() {
 	const root = resolve(option("--root", join(homedir(), ".laplace-desktop"))!);

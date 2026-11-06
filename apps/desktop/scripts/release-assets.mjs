@@ -79,7 +79,6 @@ export function requiredArchiveEntries(platform) {
 	return [
 		mac ? "Laplace.app/Contents/MacOS/Laplace" : "Laplace.exe",
 		`${resources}/app.asar`,
-		`${runtime}/helper/main.cjs`,
 		`${runtime}/helper/service.cjs`,
 		`${runtime}/helper/launcher.cjs`,
 		`${runtime}/helper/bridge.cjs`,

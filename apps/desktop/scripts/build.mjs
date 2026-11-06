@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, copyFile, cp } from "node:fs/promises";
+import { mkdir, copyFile, cp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,9 +35,10 @@ await build({
 	external: ["electron", "@napi-rs/keyring"],
 	logLevel: "info",
 });
+// Removed entry points must not linger in packaged runtimes from earlier builds.
+await rm("dist/helper", { recursive: true, force: true });
 await build({
 	entryPoints: [
-		"../../packages/local-runtime/src/main.ts",
 		"../../packages/local-runtime/src/service.ts",
 		"../../packages/local-runtime/src/bridge.ts",
 		"../../packages/local-runtime/src/slack-browser.ts",
