@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename, rm, lstat, readdir, statfs } from "node:fs/promises";
-import { join, resolve, sep, basename, dirname } from "node:path";
+import { join, resolve, sep, basename, dirname, relative, isAbsolute } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 import { z } from "zod";
@@ -534,24 +534,27 @@ export class ConnectorUpdates {
 	private rebase(installed: Receipt, release: ConnectorRelease, directory: string): ServerConfig {
 		const config = structuredClone(installed.config);
 		if (config.transport !== "stdio") throw Error("Only managed stdio connectors can update");
+		// Compare as paths: Windows installs record entries like ...\0.1.0/bin/cli.js.
 		const replace = (value: string) =>
-			value === installed.directory
+			isAbsolute(value) && samePath(value, installed.directory)
 				? directory
-				: value.startsWith(installed.directory + sep)
-					? directory + value.slice(installed.directory.length)
+				: isAbsolute(value) && insidePath(value, installed.directory)
+					? join(directory, relative(installed.directory, value))
 					: value;
 		config.command = replace(config.command);
 		config.args = config.args.map(replace);
 		if (config.cwd) config.cwd = replace(config.cwd);
 		// Only rebase environment references to verified artifact files. Profile,
 		// credential and other mutable data paths must retain their original location.
-		const artifactPaths = new Set(
-			installed.release.files.map((file) => join(installed.directory, file.path)),
+		const artifactPaths = installed.release.files.map((file) =>
+			join(installed.directory, file.path),
 		);
 		config.env = Object.fromEntries(
 			Object.entries(config.env).map(([key, value]) => [
 				key,
-				artifactPaths.has(value) ? replace(value) : value,
+				isAbsolute(value) && artifactPaths.some((path) => samePath(path, value))
+					? replace(value)
+					: value,
 			]),
 		);
 		config.identity = `${release.id}@${release.version}`;
@@ -699,8 +702,49 @@ export class ConnectorUpdates {
 	async recover() {
 		return this.exclusive(() => this.recoverLocked());
 	}
+	/**
+	 * A launch argument that still points at a published file of an earlier version's directory,
+	 * mapped to the same file in the installed version. Desktop 0.1.36 left such entries behind
+	 * when a Windows install recorded them with mixed separators.
+	 */
+	private staleArtifact(value: string, installed: Receipt) {
+		if (!isAbsolute(value) || insidePath(value, installed.directory)) return undefined;
+		if (samePath(value, installed.directory)) return undefined;
+		const normalized = value.replace(/\\/g, "/");
+		const file = installed.release.files
+			.filter((f) => normalized.endsWith("/" + f.path))
+			.sort((a, b) => b.path.length - a.path.length)[0];
+		return file && join(installed.directory, file.path);
+	}
+	/** Best effort: re-point stale entries, never overriding a connection the user has edited. */
+	private async repairStalePaths() {
+		const state = await this.store.read();
+		for (const installed of state.installations) {
+			const config = installed.config;
+			if (config.transport !== "stdio" || config.managedBrowser) continue;
+			const args = config.args.map((arg) => this.staleArtifact(arg, installed) ?? arg);
+			if (args.every((arg, i) => arg === config.args[i])) continue;
+			const current = (await this.host.configurations()).find((c) => c.id === installed.id);
+			if (JSON.stringify(current) !== JSON.stringify(config)) continue;
+			const unlock = await this.host.maintenance(installed.id).catch(() => undefined);
+			if (!unlock) continue;
+			try {
+				const repaired = { ...structuredClone(config), args, generation: randomUUID() };
+				await this.host.replace(repaired, current);
+				await this.store.mutate((s) => {
+					const item = s.installations.find((i) => i.id === installed.id);
+					if (item) item.config = repaired;
+				});
+			} catch {
+				/* Retried on the next recovery pass. */
+			} finally {
+				unlock();
+			}
+		}
+	}
 	private async recoverLocked() {
 		await recoverUpdateCoordination(this.host.root);
+		await this.repairStalePaths();
 		const state = await this.store.read();
 		if (!state.journal) return;
 		const { previous, candidate } = state.journal;

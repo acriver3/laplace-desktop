@@ -1,7 +1,7 @@
 import { generateKeyPairSync, sign, createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { gzipSync } from "node:zlib";
 
 import { afterEach, expect, it, vi } from "vitest";
@@ -488,4 +488,43 @@ it("installs empty release files without downloading them", async () => {
 			String(call[0]).includes("3".repeat(40)),
 		),
 	).toBe(false);
+});
+
+it("moves entry paths written differently from the bundle path onto the updated version", async () => {
+	// Windows installs record entries like C:\\...\\0.1.0/server.mjs; any equivalent spelling must move.
+	const f = await fixture(false, {
+		launch: (directory) => ({
+			command: "node",
+			args: [`${directory}/../${basename(directory)}/server.mjs`],
+		}),
+	});
+	await f.updates.apply("canvas");
+	const config = f.getConfig();
+	expect(config.identity).toBe("canvas-session-mcp@0.2.0");
+	expect(config.transport === "stdio" && config.args[0]).toContain("managed-updates");
+	expect(config.transport === "stdio" && config.args[0]).not.toContain(`${basename(f.directory)}/server.mjs`);
+});
+it("repairs an entry left pointing at the previous version, unless the user edited it", async () => {
+	const f = await fixture();
+	await f.updates.apply("canvas");
+	const updated = f.getConfig();
+	if (updated.transport !== "stdio") throw Error("fixture is stdio");
+	const fixed = updated.args[0]!;
+	// Reproduce the state Desktop 0.1.36 could leave: receipt and live config share a stale entry.
+	const stale = { ...updated, args: [join(f.directory, "server.mjs")] };
+	await (f.updates as any).store.mutate((s: any) => {
+		s.installations[0].config = stale;
+	});
+	await f.replace(stale);
+	await f.updates.recover();
+	const repaired = f.getConfig();
+	expect(repaired.transport === "stdio" && repaired.args[0]).toBe(fixed);
+	// A connection edited by the user is left alone.
+	const edited = { ...stale, name: "Edited by user" };
+	await (f.updates as any).store.mutate((s: any) => {
+		s.installations[0].config = stale;
+	});
+	await f.replace(edited);
+	await f.updates.recover();
+	expect(f.getConfig()).toEqual(edited);
 });
