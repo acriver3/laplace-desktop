@@ -97,6 +97,19 @@ export class PointController {
 				process.platform !== "darwin" || systemPreferences.isTrustedAccessibilityClient(false),
 		};
 	}
+	/**
+	 * Whether Point is doing work an update would interrupt: selecting a snip, opening a
+	 * handoff, or watching an editor handoff. A retained snip or a finished result is not
+	 * activity; treating it as such kept updates deferred indefinitely after any capture.
+	 */
+	activeForUpdates() {
+		return (
+			this.busy ||
+			!!this.monitor ||
+			this.state.phase === "capturing" ||
+			this.state.phase === "opening"
+		);
+	}
 	async initialize() {
 		await this.captures.initialize();
 		this.current = [...this.captures.items.values()].sort((a, b) => b.createdAt - a.createdAt)[0];

@@ -132,8 +132,7 @@ function deviceUpdateBusy() {
 		!!signIn ||
 		startingSignIn ||
 		popups.size > 0 ||
-		!!point?.state.capture ||
-		(point?.state.phase !== undefined && point.state.phase !== "idle")
+		!!point?.activeForUpdates()
 	);
 }
 
@@ -1647,8 +1646,7 @@ void app
 					!!signIn ||
 					startingSignIn ||
 					popups.size > 0 ||
-					!!point?.state.capture ||
-					(point?.state.phase !== undefined && point.state.phase !== "idle"),
+					!!point?.activeForUpdates(),
 				acquireMaintenance: async () => {
 					const owner = helper;
 					if (!owner) return;
@@ -1718,7 +1716,7 @@ void app
 						!activityBusy &&
 						powerMonitor.getSystemIdleTime() >= 900 &&
 						policy.deferredUntil <= Date.now() &&
-						!point?.state.capture &&
+						!point?.activeForUpdates() &&
 						authenticationStable()
 					)
 						await helper.request("updates.automaticConnectors", {});

@@ -273,3 +273,33 @@ it("explains screen recording failures instead of reporting a handoff failure", 
 	expect(controller.state.capture).toBeUndefined();
 	expect(fixture.windows).toHaveLength(0);
 });
+
+it("only counts an active snip or handoff as update activity, not a retained snip", async () => {
+	await controller.configure({
+		enabled: true,
+		shortcut: "Control+L",
+		destination: "claude-browser",
+	});
+	expect(controller.activeForUpdates()).toBe(false);
+	await controller.capture();
+	expect(controller.activeForUpdates()).toBe(true);
+	await fixture.handler(eventFor(fixture.windows[0]), {
+		action: "select",
+		rect: { x: 0, y: 0, width: 10, height: 10 },
+	});
+	expect(controller.state.phase).toBe("ready-to-paste");
+	expect(controller.state.capture).toBeDefined();
+	expect(controller.activeForUpdates()).toBe(false);
+	// After a restart the last snip is retained for retry; that alone must not defer updates.
+	await controller.stop();
+	controller = new PointController({
+		resources: fixture.root,
+		appRoot: fixture.root,
+		uiUrl: "laplace-desktop://app/index.html",
+		changed: () => {},
+		attention: () => {},
+	});
+	await controller.initialize();
+	expect(controller.state.capture).toBeDefined();
+	expect(controller.activeForUpdates()).toBe(false);
+});

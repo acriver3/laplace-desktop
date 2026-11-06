@@ -1,6 +1,6 @@
 {
 	"name": "@repo/desktop",
-	"version": "0.1.34",
+	"version": "0.1.35",
 	"private": true,
 	"description": "Laplace desktop and local MCP manager",
 	"license": "Apache-2.0",
