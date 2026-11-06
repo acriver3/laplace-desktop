@@ -97,6 +97,11 @@ export type RuntimeOptions = {
 	control?: ControlServer;
 	/** Stable node/bridge entries from an installed runtime home (macOS and Linux). */
 	stableBridge?: { node: string; bridge: string };
+	/**
+	 * Background services start idle; a connected Desktop reports user activity through
+	 * updates.deviceActivity. The Electron-owned helper waits for Desktop's first report.
+	 */
+	startIdle?: boolean;
 	/** Direct local calls follow local policy only (runtime service mode). */
 	separateLocalPolicy?: boolean;
 	/** Background services may hold an idle-sleep assertion while sharing remotely. */
@@ -264,7 +269,7 @@ export async function createRuntime(options: RuntimeOptions) {
 	};
 	let updateRelease: (() => void) | undefined;
 	let activeHelperRequests = 0;
-	let deviceBusy = true;
+	let deviceBusy = !options.startIdle;
 	let recoverPending = true;
 	const updateBusy = () =>
 		deviceBusy ||
@@ -783,6 +788,9 @@ export async function createRuntime(options: RuntimeOptions) {
 					break;
 				case "link.prepare":
 					result = await manager.prepareLink(input.origin);
+					break;
+				case "runtime.info":
+					result = { version: desktopVersion, pid: process.pid, root };
 					break;
 				case "runtime.settings":
 					result = { ...settings, keepAwakeActive: keepAwake.active };

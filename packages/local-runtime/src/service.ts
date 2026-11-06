@@ -9,6 +9,7 @@ import {
 	type LocalRuntimeDescriptor,
 } from "@repo/project-protocol/local-runtime";
 
+import { scheduleConnectorUpdates, sweepPointCaptures } from "./background";
 import { stableLaunchers } from "./install";
 import { registerBrowserNativeHost } from "./native-host";
 import { runtimeHome } from "./paths";
@@ -94,6 +95,7 @@ export async function startService(argv = process.argv) {
 		control,
 		keepAwake: true,
 		separateLocalPolicy: true,
+		startIdle: true,
 		stableBridge: installed ? { node: stable.node, bridge: stable.bridge } : undefined,
 	});
 	const active = runtime;
@@ -102,10 +104,17 @@ export async function startService(argv = process.argv) {
 			.handle(event === "lock" ? "credentials.lock" : "browser.resumeRecovery", {})
 			.then((reply) => reply.changed && emit({ event: "snapshot", data: active.snapshot() }));
 	});
+	// Desktop schedules connector updates itself while it is connected to this runtime.
+	const connectorUpdates = scheduleConnectorUpdates(active.handle, () => listeners.size > 0);
+	void sweepPointCaptures().catch(() => {});
+	const retention = setInterval(() => void sweepPointCaptures().catch(() => {}), 3_600_000);
+	retention.unref();
 	const descriptor = join(root, localRuntimeDescriptorFile);
 	const stop = () =>
 		(stopping ??= (async () => {
 			session.stop();
+			connectorUpdates.stop();
+			clearInterval(retention);
 			await rm(descriptor, { force: true });
 			await runtime!.stop();
 			process.exit(0);

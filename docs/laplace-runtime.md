@@ -77,3 +77,23 @@ not code-signed; macOS quarantine attributes are removed from the installed tree
 
 `laplace_status` and `laplace_setup` exist on both the local and the hosted MCP servers. The
 standalone CLI's `laplace_local_status` and `laplace_local_setup` remain as aliases.
+
+## Updates and background work
+
+- Desktop installs its bundled runtime as a new version and moves a running older runtime onto it:
+  local work drains under the shared maintenance lease (new calls return "not started"), the old
+  process stops, the new version must report its version and status, and any failure restores
+  and restarts the previous version. Busy runtimes are retried every five minutes. Headless
+  `install` uses the same swap. Interrupted calls are never replayed.
+- Without a connected Desktop, the runtime runs the managed-connector update schedule itself
+  (opt-in preference, signed releases, 15 minutes of inactivity, deferral, and a wake delay),
+  exactly as the standalone CLI's `serve` did. Desktop keeps its own schedule while connected.
+- Point captures stay in the per-user Laplace data directory; the runtime enforces their
+  seven-day retention even when Desktop is closed. Capture, overlay, and clipboard remain
+  Desktop OS adapters.
+
+## Rollout and cleanup
+
+`LAPLACE_UNIFIED_RUNTIME_V1` stays off in production until native acceptance. After it is enabled
+and its rollback window passes, remove the Electron IPC host (`main.ts`, `HelperClient`),
+`launcher.json` relaunch, Desktop's duplicate powerMonitor forwarding, and the flag itself.

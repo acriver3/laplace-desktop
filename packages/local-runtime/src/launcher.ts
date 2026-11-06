@@ -12,6 +12,7 @@ import {
 	stopRuntime,
 } from "./lifecycle";
 import { profileRoot, runtimeProfile, runtimeProfiles, type RuntimeProfile } from "./paths";
+import { swapRunningRuntime } from "./update";
 
 /** The versioned runtime directory this launcher was installed in (versions/<v>). */
 const installation = () => dirname(__dirname);
@@ -93,11 +94,18 @@ export async function runLauncher(args = process.argv.slice(2)): Promise<unknown
 					profile,
 				});
 			}
-			await stopRuntime(options.root).catch(() => {});
-			await startRuntime({ ...launchOptions(profile, installed.directory), explicit: true });
+			// A running runtime drains and moves to the new version; otherwise start it.
+			const swap = await swapRunningRuntime({
+				root: options.root,
+				origin: options.origin,
+				nativeHost: true,
+			});
+			if (swap.swapped === false && swap.reason === "not-running")
+				await startRuntime({ ...launchOptions(profile, installed.directory), explicit: true });
 			return {
 				installed: installed.version,
 				launcher: installed.launcher,
+				update: swap,
 				...(await status(profile)),
 			};
 		}

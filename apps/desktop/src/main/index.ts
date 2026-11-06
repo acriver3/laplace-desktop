@@ -12,6 +12,7 @@ import {
 	stopRuntime,
 } from "@repo/local-runtime/lifecycle";
 import { desktopVersion } from "@repo/local-runtime/shared/version";
+import { swapRunningRuntime } from "@repo/local-runtime/update";
 import {
 	app,
 	clipboard,
@@ -844,6 +845,14 @@ async function startHelper() {
 			const installed = await installRuntime(resources, desktopVersion);
 			runtime = installed.directory;
 			helperDirectory = join(installed.directory, "helper");
+			// Move an already-running older runtime onto this version once its work drains.
+			const swap = await swapRunningRuntime({
+				root: profileRoot(),
+				origin: state.origin,
+				nativeHost: true,
+				drainTimeout: 30_000,
+			}).catch(() => undefined);
+			if (swap?.swapped === false && swap.reason === "busy") scheduleRuntimeSwap();
 			if (state.profile === "hosted") void applyLoginPreference().catch(() => {});
 		}
 		await next.start(profileRoot(), runtime, state.origin, join(helperDirectory, "main.cjs"));
@@ -854,6 +863,25 @@ async function startHelper() {
 	void refreshTray();
 }
 
+let runtimeSwapTimer: ReturnType<typeof setTimeout> | undefined;
+/** Retries a deferred runtime update every five minutes, then reconnects Desktop. */
+function scheduleRuntimeSwap() {
+	clearTimeout(runtimeSwapTimer);
+	runtimeSwapTimer = setTimeout(() => {
+		void swapRunningRuntime({
+			root: profileRoot(),
+			origin: state.origin,
+			nativeHost: true,
+			drainTimeout: 60_000,
+		})
+			.then((result) => {
+				if (result.swapped === false && result.reason === "busy") scheduleRuntimeSwap();
+				else if (result.swapped || result.reason === "restored") void startHelper();
+			})
+			.catch(() => scheduleRuntimeSwap());
+	}, 300_000);
+	runtimeSwapTimer.unref();
+}
 /** Start at login defaults on; an explicit user opt-out is remembered per OS user. */
 const loginPreference = () => join(app.getPath("userData"), "runtime-login.json");
 async function applyLoginPreference() {
