@@ -22,6 +22,7 @@ try {
 	process.exit(0);
 }
 writeFileSync(lock, String(process.pid));
+writeFileSync(join(root, `cwd-${process.pid}.txt`), process.cwd());
 const token = randomBytes(32).toString("base64url");
 const stop = () => {
 	rmSync(join(root, "runtime.json"), { force: true });

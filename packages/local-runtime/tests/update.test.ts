@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -141,5 +141,17 @@ it.skipIf(process.platform === "win32")(
 		expect(result).toEqual({ swapped: true, from: "1.0.0", to: "1.1.0" });
 		expect(await version(root)).toBe("1.1.0");
 		expect((await currentRuntime(home))?.version).toBe("1.1.0");
+	},
+);
+
+it.skipIf(process.platform === "win32")(
+	"starts the runtime from its own directory, not the caller's working directory",
+	async () => {
+		const { home, root } = await fixture();
+		const running = (await readRuntimeDescriptor(root))!;
+		const cwd = await readFile(join(root, `cwd-${running.pid}.txt`), "utf8");
+		const installed = (await currentRuntime(home))!;
+		expect(await realpath(cwd)).toBe(await realpath(installed.directory));
+		expect(await realpath(cwd)).not.toBe(await realpath(process.cwd()));
 	},
 );

@@ -73,7 +73,15 @@ export async function startRuntime(options: StartOptions) {
 			options.origin,
 			...(options.nativeHost ? ["--native-host"] : []),
 		],
-		{ detached: true, stdio: "ignore", windowsHide: true, env: helperEnvironment() },
+		// Run from the runtime's own directory: inheriting the caller's working directory would
+		// keep Desktop's application folder in use on Windows and block replacing it on update.
+		{
+			cwd: options.resources,
+			detached: true,
+			stdio: "ignore",
+			windowsHide: true,
+			env: helperEnvironment(),
+		},
 	);
 	let exited = false;
 	child.on("error", () => (exited = true));
