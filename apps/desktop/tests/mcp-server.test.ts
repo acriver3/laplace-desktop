@@ -902,6 +902,26 @@ it("rejects conflicting hosted and local tool names without executing either rou
 	expect(call).not.toHaveBeenCalled();
 });
 
+it("keeps the runtime's Laplace discovery tools when hosted Laplace serves the same names", async () => {
+	const call = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "hosted" }] });
+	const f = await fixture({
+		tools: () =>
+			["laplace_status", "laplace_setup", "remote_tool"].map((name) => ({
+				name,
+				inputSchema: { type: "object" as const },
+			})),
+		call,
+	});
+	const c = await f.connect("Hosted discovery");
+	const names = (await c.client.listTools()).tools.map((tool) => tool.name);
+	expect(names).toContain("remote_tool");
+	expect(names.filter((name) => name.startsWith("laplace_"))).toEqual([]);
+	expect((await c.client.callTool({ name: "laplace_status", arguments: {} })).isError).toBe(true);
+	expect(call).not.toHaveBeenCalled();
+	await c.client.callTool({ name: "remote_tool", arguments: {} });
+	expect(call).toHaveBeenCalledWith(c.id, "remote_tool", {}, expect.any(AbortSignal));
+});
+
 it.each(["disabled", "permissions", "offline"])(
 	"reserves local names when the connector becomes %s",
 	async (state) => {

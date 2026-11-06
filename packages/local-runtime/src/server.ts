@@ -89,7 +89,11 @@ export async function startMcpServer(
 	});
 	const catalog = (clientId: string) => {
 		manager.client(clientId);
-		const hostedTools = hosted.tools(clientId);
+		// Hosted Laplace serves its own laplace_status/laplace_setup; the runtime's versions
+		// already report hosted state, so they replace the hosted copies instead of conflicting.
+		const hostedTools = hosted
+			.tools(clientId)
+			.filter((tool) => !laplaceDiscoveryTools.some((local) => local.name === tool.name));
 		if (
 			hostedTools.some(
 				(tool) =>
