@@ -1,4 +1,5 @@
 import { createHash, verify, createPublicKey } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { z } from "zod";
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
@@ -92,16 +93,28 @@ export type ConnectorIndex = z.infer<typeof connectorIndex>;
 export const connectorReleaseKey = (r: ConnectorRelease) =>
 	`${r.id}/${r.mode}/${r.version}/${[...r.platforms].sort().join(",")}`;
 export const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+/** A download failure worth retrying: throttling, a server error, or a dropped connection. */
+export class TransientDownloadError extends Error {}
 export async function boundedDownload(
 	url: string,
 	limit: number,
 	signal: AbortSignal,
 	fetcher = fetch,
 ) {
-	const response = await fetcher(url, {
-		signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]),
-		redirect: "error",
-	});
+	let response: Response;
+	try {
+		response = await fetcher(url, {
+			signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]),
+			redirect: "error",
+		});
+	} catch (error) {
+		if (signal.aborted) throw error;
+		throw new TransientDownloadError("Verified update download is unavailable.");
+	}
+	if (response.status === 429 || response.status >= 500) {
+		await response.body?.cancel().catch(() => {});
+		throw new TransientDownloadError("Verified update download is unavailable.");
+	}
 	if (!response.ok || !response.body) throw new Error("Verified update download is unavailable.");
 	const chunks: Uint8Array[] = [];
 	let size = 0;
@@ -118,6 +131,31 @@ export async function boundedDownload(
 		await reader.cancel();
 	}
 	return Buffer.concat(chunks, size);
+}
+/**
+ * Downloads one immutable release file, retrying transient failures with backoff. Retries add a
+ * query string so a cached error at the CDN edge is bypassed; the bytes are still verified by the
+ * caller against the signed release, so the exact URL does not affect integrity.
+ */
+export async function retryingDownload(
+	url: string,
+	limit: number,
+	signal: AbortSignal,
+	fetcher = fetch,
+	{
+		attempts = 4,
+		wait = (ms: number): Promise<unknown> => delay(ms, undefined, { signal }),
+	}: { attempts?: number; wait?: (ms: number) => Promise<unknown> } = {},
+) {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			return await boundedDownload(attempt ? `${url}?attempt=${attempt}` : url, limit, signal, fetcher);
+		} catch (error) {
+			if (!(error instanceof TransientDownloadError) || attempt >= attempts - 1 || signal.aborted)
+				throw error;
+			await wait(1000 * 4 ** attempt);
+		}
+	}
 }
 export function verifyConnectorIndex(payload: Buffer, signature: Buffer, key: string) {
 	if (

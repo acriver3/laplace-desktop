@@ -13,6 +13,7 @@ import {
 	type ConnectorRelease,
 	type ConnectorIndex,
 	boundedDownload,
+	retryingDownload,
 	verifyConnectorIndex,
 	assertIndexSuccessor,
 	sha256,
@@ -481,12 +482,16 @@ export class ConnectorUpdates {
 			for (const file of release.files) {
 				signal.throwIfAborted();
 				const url = `https://raw.githubusercontent.com/acriver3/laplace-mcp-library/${release.commit}/${release.directory}/${file.path.split("/").map(encodeURIComponent).join("/")}${file.compressed ? ".gz" : ""}`;
-				let bytes = await boundedDownload(
-					url,
-					file.compressed?.size ?? file.size,
-					signal,
-					this.fetcher,
-				);
+				// Empty files need no transfer (the CDN intermittently answers 501 for them).
+				let bytes =
+					file.size === 0 && !file.compressed
+						? Buffer.alloc(0)
+						: await retryingDownload(
+								url,
+								file.compressed?.size ?? file.size,
+								signal,
+								this.fetcher,
+							);
 				if (file.compressed) {
 					if (
 						bytes.length !== file.compressed.size ||

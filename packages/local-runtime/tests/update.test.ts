@@ -126,3 +126,20 @@ it.skipIf(process.platform === "win32")(
 		expect(await controlRequest<boolean>(descriptor, "updates.acquire")).toBe(true);
 	},
 );
+
+it.skipIf(process.platform === "win32")(
+	"keeps a new version that starts late instead of leaving the selection inconsistent",
+	async () => {
+		const { home, root } = await fixture();
+		await installRuntime(await tree("1.1.0", "slow"), "1.1.0", { home });
+		const result = await swapRunningRuntime({
+			root,
+			origin: "https://x.invalid",
+			home,
+			startTimeout: 300,
+		});
+		expect(result).toEqual({ swapped: true, from: "1.0.0", to: "1.1.0" });
+		expect(await version(root)).toBe("1.1.0");
+		expect((await currentRuntime(home))?.version).toBe("1.1.0");
+	},
+);

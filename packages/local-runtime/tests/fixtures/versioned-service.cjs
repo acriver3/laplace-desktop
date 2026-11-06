@@ -8,9 +8,12 @@ const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
 const root = arg("--root"),
 	resources = arg("--resources");
 const version = readFileSync(join(resources, "VERSION"), "utf8").trim();
-const behavior = readFileSync(join(resources, "BEHAVIOR"), "utf8").trim();
+const [behavior, slowMs = "1500"] = readFileSync(join(resources, "BEHAVIOR"), "utf8")
+	.trim()
+	.split(":");
 if (behavior === "crash") process.exit(1);
-// "stubborn" ignores shutdown and SIGTERM; "busy" never grants the maintenance lease.
+// "stubborn" ignores shutdown and SIGTERM; "busy" never grants the maintenance lease;
+// "slow" holds the profile lock but publishes its descriptor late, like a cold first start.
 let leased = false;
 let lock;
 try {
@@ -69,7 +72,10 @@ server.listen(0, "127.0.0.1", () => {
 			token,
 		}),
 	);
-	renameSync(temporary, join(root, "runtime.json"));
+	setTimeout(
+		() => renameSync(temporary, join(root, "runtime.json")),
+		behavior === "slow" ? Number(slowMs) : 0,
+	);
 });
 process.on("SIGTERM", () => {
 	if (behavior !== "stubborn") stop();

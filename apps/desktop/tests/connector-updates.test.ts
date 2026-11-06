@@ -459,3 +459,33 @@ it("does not exempt generated Python paths for other connectors", async () => {
 		}),
 	).rejects.toThrow("unverified files");
 });
+
+it("installs empty release files without downloading them", async () => {
+	const f = await fixture();
+	const index = structuredClone(f.index);
+	index.sequence = 2;
+	index.releases.push({
+		...index.releases[1]!,
+		version: "0.3.0",
+		sequence: 3,
+		commit: "3".repeat(40),
+		files: [
+			{
+				path: "server.mjs",
+				sha256: createHash("sha256").update("").digest("hex"),
+				size: 0,
+				executable: false,
+			},
+		],
+	});
+	f.changeIndex(index);
+	await f.updates.check();
+	await f.updates.apply("canvas");
+	expect(f.getConfig().identity).toBe("canvas-session-mcp@0.3.0");
+	// The fixture CDN would answer "new" (3 bytes); an empty file must never be fetched.
+	expect(
+		(f.fetcher as unknown as { mock: { calls: unknown[][] } }).mock.calls.some((call) =>
+			String(call[0]).includes("3".repeat(40)),
+		),
+	).toBe(false);
+});

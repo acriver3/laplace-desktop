@@ -17,6 +17,11 @@ export type SwapOptions = {
 	pollInterval?: number;
 	/** How long to wait for the old process to exit after shutdown, before and after SIGTERM. */
 	stopTimeout?: number;
+	/**
+	 * How long the new version may take to start. A version installed moments earlier can start
+	 * slowly on Windows (its files are scanned on first use), so this is generous.
+	 */
+	startTimeout?: number;
 };
 export type SwapResult =
 	| { swapped: false; reason: "not-running" | "current" | "stopped" | "busy" | "not-stopped" }
@@ -92,7 +97,10 @@ export async function swapRunningRuntime(options: SwapOptions): Promise<SwapResu
 		throw error;
 	}
 	if (await explicitlyStopped(options.root)) return { swapped: false, reason: "stopped" };
-	const launch = (layout: { node: string; service: string; directory: string }) =>
+	const launch = (
+		layout: { node: string; service: string; directory: string },
+		timeout = options.startTimeout ?? 120_000,
+	) =>
 		startRuntime({
 			root: options.root,
 			node: layout.node,
@@ -101,7 +109,17 @@ export async function swapRunningRuntime(options: SwapOptions): Promise<SwapResu
 			origin: options.origin,
 			nativeHost: options.nativeHost,
 			explicit: true,
+			timeout,
 		});
+	const runningVersion = async () => {
+		const descriptor = await readRuntimeDescriptor(options.root);
+		if (!descriptor) return undefined;
+		return (
+			await controlRequest<{ version?: string }>(descriptor, "runtime.info", {}, 15_000).catch(
+				() => ({ version: undefined }),
+			)
+		).version;
+	};
 	try {
 		const started = await launch(target);
 		const health = await controlRequest<{ version?: string }>(
@@ -115,6 +133,9 @@ export async function swapRunningRuntime(options: SwapOptions): Promise<SwapResu
 		await controlRequest(started, "status", {}, 15_000);
 		return { swapped: true, from: info.version, to: target.version };
 	} catch (error) {
+		// The new version may simply have come up late; if it is answering, keep it.
+		if ((await runningVersion()) === target.version)
+			return { swapped: true, from: info.version, to: target.version };
 		// Restore the previous selection and process; nothing interrupted is replayed.
 		const descriptor = await readRuntimeDescriptor(options.root);
 		if (descriptor) {
@@ -124,7 +145,13 @@ export async function swapRunningRuntime(options: SwapOptions): Promise<SwapResu
 		if (previousVersion) {
 			await selectRuntime(previousVersion, home);
 			const previous = await currentRuntime(home);
-			if (previous) await launch(previous).catch(() => {});
+			if (previous) await launch(previous, 20_000).catch(() => {});
+		}
+		// A late-starting new version can still win the profile lock during the restore. Keep the
+		// selection consistent with whatever actually runs, so later starts use the same version.
+		if ((await runningVersion()) === target.version) {
+			await selectRuntime(target.version, home);
+			return { swapped: true, from: info.version, to: target.version };
 		}
 		return {
 			swapped: false,
