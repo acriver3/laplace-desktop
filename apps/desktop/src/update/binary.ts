@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { writeFile, constants } from "node:fs/promises";
 import { userInfo } from "node:os";
-import { dirname, join, resolve, relative, isAbsolute } from "node:path";
+import { dirname, join, resolve, relative, isAbsolute, posix } from "node:path";
 
 import { fromBuffer, type ZipFile, type Entry } from "yauzl";
 
@@ -110,7 +110,7 @@ export async function inspectApplicationZip(bytes: Buffer) {
 						const chunks: Buffer[] = [];
 						for await (const chunk of stream) chunks.push(Buffer.from(chunk));
 						const target = Buffer.concat(chunks).toString("utf8");
-						const resolved = relative("/archive", resolve("/archive", dirname(name), target));
+						const resolved = posix.relative("/archive", posix.resolve("/archive", posix.dirname(name), target));
 						if (
 							isAbsolute(target) ||
 							/[\\:\x00-\x1f]/.test(target) ||

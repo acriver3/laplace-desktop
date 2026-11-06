@@ -273,7 +273,10 @@ it.skipIf(
 				const action = await row.getByRole("button", { name: /More setup options/ }).boundingBox();
 				const bounds = await row.boundingBox();
 				expect(action!.x).toBeGreaterThanOrEqual(bounds!.x);
-				expect(action!.y).toBeGreaterThanOrEqual(name!.y + name!.height);
+				expect(action!.y).toBeGreaterThanOrEqual(bounds!.y);
+				expect(action!.y + action!.height).toBeLessThanOrEqual(bounds!.y + bounds!.height);
+				expect(action!.x >= name!.x + name!.width || action!.y >= name!.y + name!.height).toBe(true);
+				expect(bounds!.height).toBeLessThan(180);
 				expect(action!.x + action!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width);
 			}
 			await page.setViewportSize({ width: 1280, height: 900 });
@@ -390,20 +393,10 @@ it.skipIf(
 				page.getByRole("status").filter({ hasText: "Opening Laplace" }),
 			).toBeVisible();
 
-			// Native Desktop also exposes a copy dropdown for offline Keep local sources.
+			// Local connections show only this runtime, without legacy CLI/Desktop peers.
 			await test({ mode: "local", section: "servers" });
-			const peers = page.getByRole("region", { name: "Connectors on your other devices" });
-			await browserExpect(peers).toContainText("Laptop A (Offline)");
-			await peers.getByText("Actions", { exact: true }).click();
-			await peers.getByRole("button", { name: "Make local copy", exact: true }).click();
-			expect(
-				(await history()).some(
-					(entry: any) =>
-						entry.method === "portable.copy" &&
-						entry.input.sourceId === "22222222-2222-4222-8222-222222222222",
-				),
-			).toBe(true);
-			await browserExpect(peers.getByRole("status")).toContainText("fresh sign-in");
+			await browserExpect(page.getByRole("region", { name: "Connectors on your other devices" })).toHaveCount(0);
+			await browserExpect(page.getByRole("button", { name: "Connect selected with assistant" })).toHaveCount(0);
 
 			// Load failures return to local pages with a retry, keeping local tools usable.
 			await test({

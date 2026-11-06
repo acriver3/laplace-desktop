@@ -25,7 +25,9 @@ it("installs versions beside each other and keeps the previous one for rollback"
 	const first = await installRuntime(await source("0.1.1"), "0.1.1", { home });
 	expect(first.service).toBe(join(home, "versions", "0.1.1", "helper", "service.cjs"));
 	const launcher = await readFile(first.launcher, "utf8");
-	expect(launcher).toContain("versions/$version/helper/launcher.cjs");
+	expect(launcher).toContain(process.platform === "win32"
+		? "versions\\%version%\\helper\\launcher.cjs"
+		: "versions/$version/helper/launcher.cjs");
 	if (process.platform !== "win32") expect((await stat(first.launcher)).mode & 0o100).toBeTruthy();
 
 	// Reinstalling the same version reuses the completed tree.
