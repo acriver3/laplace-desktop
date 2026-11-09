@@ -16,8 +16,9 @@ See the [Desktop guide](apps/desktop/README.md) for native packaging and the
 [source updater guide](apps/desktop/SOURCE-UPDATES.md) for installation and releases.
 The existing update channel remains in service while the public release and bridge are being prepared.
 
-Connector bundles are distributed through the
-[Laplace MCP Library](https://github.com/acriver3/laplace-mcp-library).
+Catalog connectors are reviewed in the
+[Laplace MCP Library](https://github.com/acriver3/laplace-mcp-library) and
+distributed as `@withlaplace/<connector>` npm packages.
 
 Laplace Desktop is licensed under [Apache 2.0](LICENSE). Bundled third-party
 materials retain their existing license terms and notices.

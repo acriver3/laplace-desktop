@@ -43,8 +43,9 @@ provider-specific read. Catalog adapters retain their provider sign-in checks.
 
 ## Portable data
 
-Snapshots include a schema version, bundle identity/version, integrity hashes,
-compatibility, and approved nonsensitive settings. Catalog settings are limited
+Snapshots include a schema version, connector identity/version (the npm package
+and exact version for catalog connectors, the archive hash for custom MCPB
+bundles), compatibility, and approved nonsensitive settings. Catalog settings are limited
 to workspace/provider identity, with credential-bearing URLs rejected. Custom
 settings are recollected. Session directories, browser profiles, cookies,
 credentials, local files, launch environment, and device paths never enter the
@@ -56,8 +57,9 @@ Custom archives live in the existing storage abstraction's private
 URLs expire after 60 seconds. Ready-to-copy requires a synced snapshot and
 artifact. A visible source may be offline or Keep local; the target must be
 online. Hiding/removing the source prevents new remote copies. Existing copies
-remain independent. V1 uses the reviewed pinned catalog snapshot and rejects
-unavailable versions instead of substituting an upgrade.
+remain independent. Catalog copies install the snapshot's exact npm version;
+snapshots from earlier Desktop releases, which pinned MCPB archives, install the
+catalog's current npm release.
 
 ## Remote execution and agents
 
