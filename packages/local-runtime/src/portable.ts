@@ -13,12 +13,14 @@ import {
 	portableOperation,
 	portableSnapshot,
 	type PortableOperation,
+	type PortableSnapshot,
 } from "@repo/project-protocol/portable-connectors";
 import { satisfies, valid, validRange } from "semver";
 import { z } from "zod";
 
-import { CatalogInstaller, extractBundle } from "./catalog";
+import type { CatalogInstaller } from "./catalog";
 import { bundleCatalog } from "./library-catalog";
+import { extractBundle } from "./mcpb-archive";
 import type { DesktopManager } from "./manager";
 
 const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
@@ -106,6 +108,15 @@ const stateSchema = z.object({
 type State = z.infer<typeof stateSchema>;
 
 /** Durable receipts contain no credentials, launch configuration, or tool payloads. */
+/** The exact npm version a catalog snapshot copied, when it names the catalog's package. */
+function pinnedVersion(
+	entry: (typeof bundleCatalog)[number] | undefined,
+	bundle: PortableSnapshot["bundle"],
+) {
+	return bundle.kind === "catalog" && bundle.package && entry?.npm?.package === bundle.package
+		? bundle.version
+		: undefined;
+}
 export class PortableConnectors {
 	private store: EncryptedStore<State>;
 	private state: State = { operations: [], instances: {}, commands: {}, requests: {} };
@@ -323,20 +334,11 @@ export class PortableConnectors {
 			request.catalogId ?? (source?.kind === "catalog" ? source.catalogId : undefined);
 		if (catalogId) {
 			const entry = bundleCatalog.find((e) => e.id === catalogId);
-			if (!entry || (source && source.version !== entry.version))
+			// npm snapshots pin the copied version; legacy bundle snapshots follow today's catalog.
+			const version = source?.kind === "catalog" ? pinnedVersion(entry, source) : undefined;
+			if (!entry || (source?.kind === "catalog" && !entry.npm && source.version !== entry.version))
 				throw new Error("Pinned catalog version unavailable");
 			op.name = entry.name;
-			if (
-				source?.kind === "catalog" &&
-				source.artifacts &&
-				entry.artifacts.some(
-					(artifact) =>
-						!source.artifacts!.some(
-							(pinned) => pinned.sha256 === artifact.sha256 && pinned.size === artifact.size,
-						),
-				)
-			)
-				throw new Error("Artifact checksum mismatch");
 			// Catalog snapshots carry only workspace/provider identity; session paths are always new.
 			const config = { ...request.snapshot?.configuration, ...request.configuration };
 			for (const key of ["profile_dir", "session_dir", "token_file", "storage_dir"])
@@ -352,12 +354,8 @@ export class PortableConnectors {
 					bundle: {
 						kind: "catalog",
 						catalogId,
-						version: entry.version,
-						artifacts: entry.artifacts.map(({ sha256, size, platforms }) => ({
-							sha256,
-							size,
-							platforms,
-						})),
+						version: version ?? entry.version,
+						...(entry.npm ? { package: entry.npm.package } : {}),
 					},
 					configuration: reusableConnectorSettings(config),
 				},
@@ -368,7 +366,7 @@ export class PortableConnectors {
 				return;
 			}
 			const job = await this.catalog.install(
-				{ catalogId, serverId: op.connectorId, configuration: config },
+				{ catalogId, serverId: op.connectorId, configuration: config, version },
 				{ localOnly: true, authorize: check },
 			);
 			op.catalogJobId = job.id;
@@ -684,6 +682,7 @@ export class PortableConnectors {
 					op.message = "Settings saved. Complete sign-in if required, then verify.";
 				}
 			} else if (item.snapshot.bundle.kind === "catalog") {
+				const catalogBundle = item.snapshot.bundle;
 				if (this.manager.listServers().some((server) => server.id === command.id)) {
 					await this.catalog.configure(command.id, command.configuration, authorize);
 					item.snapshot = {
@@ -705,6 +704,10 @@ export class PortableConnectors {
 						catalogId: item.snapshot.bundle.catalogId,
 						serverId: command.id,
 						configuration: { ...item.snapshot.configuration, ...command.configuration },
+						version: pinnedVersion(
+							bundleCatalog.find((e) => e.id === catalogBundle.catalogId),
+							catalogBundle,
+						),
 					},
 					{ authorize, localOnly: true },
 				);
@@ -855,7 +858,10 @@ export class PortableConnectors {
 					)
 				: {},
 		);
-		row.receipt = { status: safe.some((v) => "id" in v) ? "accepted" : "completed", items: safe };
+		row.receipt = {
+			status: safe.some((v) => "id" in v) ? "accepted" : "completed",
+			items: safe,
+		};
 		if (
 			result &&
 			typeof result === "object" &&

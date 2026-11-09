@@ -215,7 +215,9 @@ export async function createRuntime(options: RuntimeOptions) {
 			send({ event: "snapshot", data: manager.status() });
 		}, 100);
 	});
-	const npmConnectors = new NpmConnectors(manager);
+	const npmConnectors = new NpmConnectors(manager, {
+		prepare: (source, directory, signal) => catalog.prepareNpmPackage(source, directory, signal),
+	});
 	let server: Awaited<ReturnType<typeof startMcpServer>>;
 	try {
 		await manager.initialize(false);
@@ -323,7 +325,26 @@ export async function createRuntime(options: RuntimeOptions) {
 				?.tools.map((t) => t.name) ?? [],
 		bundledRuntime: (command) =>
 			bundledRuntimeKind(command, [process.execPath, nodePath, resources]),
+		npm: {
+			targets: () => catalog.npmUpdateTargets(),
+			latest: (id, signal) => catalog.latestNpmVersion(id, signal),
+			stage: (id, version, signal) => catalog.stageNpmVersion(id, version, signal),
+			apply: (id, version, signal) => catalog.applyNpmVersion(id, version, signal),
+		},
 	});
+	// Catalog connectors still running a legacy bundle move to npm once local work is idle.
+	let migratePending = true,
+		migrating: Promise<unknown> | undefined;
+	const migrateLegacy = () => {
+		if (!migratePending || migrating || updateBusy()) return;
+		migratePending = false;
+		migrating = connectorUpdates
+			.migrate()
+			.catch(() => {})
+			.finally(() => {
+				migrating = undefined;
+			});
+	};
 	catalog.updateResolver = async (id) => {
 		const installed = await connectorUpdates.installed(id);
 		if (installed) return installed;
@@ -366,7 +387,10 @@ export async function createRuntime(options: RuntimeOptions) {
 		}
 		return rows;
 	};
-	void connectorUpdates.recover().catch(() => {});
+	void connectorUpdates
+		.recover()
+		.catch(() => {})
+		.then(() => migrateLegacy());
 	const approvalPages = new Map<string, { url: string; close(): Promise<void> }>();
 	const settingsPath = join(root, "runtime-settings.json");
 	const settingsSchema = z.object({ keepAwake: z.boolean().default(false) }).strict();
@@ -433,8 +457,15 @@ export async function createRuntime(options: RuntimeOptions) {
 				case "updates.connectors":
 					result = await connectorStatus();
 					break;
-				case "updates.checkConnectors":
-					result = await connectorUpdates.check();
+				case "updates.checkConnectors": {
+					let failure: unknown;
+					try {
+						await connectorUpdates.check();
+					} catch (error) {
+						// npm results are recorded even when the signed feed is unreachable.
+						failure = error;
+					}
+					await connectorUpdates.migrate();
 					for (const entry of await catalog.list()) {
 						if (
 							!entry.serverId ||
@@ -455,8 +486,10 @@ export async function createRuntime(options: RuntimeOptions) {
 							);
 						}
 					}
+					if (failure) throw failure;
 					result = await connectorStatus();
 					break;
+				}
 				case "updates.prepareConnectors":
 					if (automaticUpdatesEnabled())
 						for (const row of await connectorUpdates.status())
@@ -497,6 +530,7 @@ export async function createRuntime(options: RuntimeOptions) {
 						await connectorUpdates.recover();
 						recoverPending = false;
 					}
+					if (!deviceBusy) migrateLegacy();
 					result = true;
 					break;
 				case "updates.activity":
@@ -785,7 +819,10 @@ export async function createRuntime(options: RuntimeOptions) {
 					if (request.method === "client.install") {
 						const token = (await manager.entries(`client:${input.clientId}`)).getPassword();
 						if (!token || !manager.endpoint) throw new Error("Client verification unavailable");
-						const check = new Client({ name: "Desktop setup verification", version: "1" });
+						const check = new Client({
+							name: "Desktop setup verification",
+							version: "1",
+						});
 						const transport = new StreamableHTTPClientTransport(new URL(manager.endpoint), {
 							requestInit: { headers: { Authorization: `Bearer ${token}` } },
 						});
@@ -856,7 +893,10 @@ export async function createRuntime(options: RuntimeOptions) {
 						: error instanceof z.ZodError
 							? "invalid"
 							: "failed";
-				return { result: { error: { code, message: credentialMessages[code] } }, changed: false };
+				return {
+					result: { error: { code, message: credentialMessages[code] } },
+					changed: false,
+				};
 			}
 			return {
 				changed: false,

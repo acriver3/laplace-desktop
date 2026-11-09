@@ -20,6 +20,10 @@ async function canonical(path: string): Promise<string> {
 	}
 	return process.platform === "win32" ? value.toLowerCase() : value;
 }
+/** The Outlook catalog connector, installed from npm or from a legacy bundle. */
+export const outlookIdentity = (identity?: string) =>
+	!!identity &&
+	(identity.startsWith("msoutlook-mcp@") || identity.startsWith("npm:@withlaplace/msoutlook-mcp@"));
 async function resources(config: ServerConfig, cwd: string) {
 	if (config.transport !== "stdio") return [];
 	const paths = [cwd];
@@ -41,7 +45,7 @@ async function resources(config: ServerConfig, cwd: string) {
 			isAbsolute(value)
 		)
 			paths.push(value);
-	if (config.identity?.startsWith("msoutlook-mcp@"))
+	if (outlookIdentity(config.identity))
 		paths.push(
 			process.platform === "win32"
 				? join(process.env.APPDATA ?? homedir(), "msoutlook-mcp-server")

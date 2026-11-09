@@ -36,7 +36,7 @@ import { connectorManagementTools } from "./connector-tools";
 import { desktopManagementTool } from "./desktop-tools";
 import { configurationSummary } from "./imports";
 import { assertLegacyProcessesStopped } from "./legacy-processes";
-import { allBundleCatalog } from "./library-catalog";
+import { catalogEntryForConfig } from "./library-catalog";
 import type { ClientSnapshot, DesktopSnapshot, ServerSnapshot } from "./shared/helper-contracts";
 import { slackSetupNames } from "./shared/slack-browser";
 import { ycBrowserIdentity, ycSetupNames } from "./shared/yc-browser";
@@ -426,7 +426,11 @@ export class DesktopManager {
 			if (this.state.mode === "linked" && !this.explicitlyBlocked) {
 				await (
 					await this.api()
-				).post("portable-access", { localId: id, access, enabledTools: this.effectiveTools(id) });
+				).post("portable-access", {
+					localId: id,
+					access,
+					enabledTools: this.effectiveTools(id),
+				});
 				await this.refresh();
 			}
 			this.changed();
@@ -798,9 +802,7 @@ export class DesktopManager {
 		const stage = this.browserStages.get(id);
 		if (stage) return stage.call(tool, input, signal);
 		const config = this.getServerConfig(id);
-		const entry = allBundleCatalog.find(
-			(entry) => config.identity === `${entry.id}@${entry.version}`,
-		);
+		const entry = catalogEntryForConfig(config)?.entry;
 		const managed = config.managedBrowser
 			? await verifyBrowserConfiguration(this.resources, config)
 			: undefined;

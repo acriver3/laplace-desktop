@@ -110,7 +110,10 @@ it("keeps agent-added servers local in a linked profile and rechecks queued setu
 		throw new Error("Revoked");
 	});
 	await expect(
-		f.manager.addServers([{ ...f.config, id: "revoked" }], false, { localOnly: true, authorize }),
+		f.manager.addServers([{ ...f.config, id: "revoked" }], false, {
+			localOnly: true,
+			authorize,
+		}),
 	).rejects.toThrow("Revoked");
 	expect(f.manager.listServers().map((s) => s.id)).toEqual([f.config.id]);
 	await expect(f.manager.addServers([f.config], false, { localOnly: true })).rejects.toThrow(
@@ -208,9 +211,17 @@ it("preserves cloud restrictions as local caps on unlink without rewriting confi
 it("limits private catalog setup to pinned identities, exact tools, and empty arguments", async () => {
 	const f = await fixture();
 	const canvas = bundleCatalog.find((c) => c.recipe === "canvas")!;
-	await f.manager.addServers([{ ...f.config, identity: `${canvas.id}@${canvas.version}` }], false, {
-		localOnly: false,
-	});
+	const npm = {
+		package: canvas.npm.package,
+		version: canvas.version,
+		bin: canvas.npm.bin,
+		integrity: "sha512-" + Buffer.alloc(64, 1).toString("base64"),
+	};
+	await f.manager.addServers(
+		[{ ...f.config, npm, identity: `npm:${npm.package}@${npm.version}` } as typeof f.config],
+		false,
+		{ localOnly: false },
+	);
 	await f.link();
 	f.cloud.connections[0].enabled = false;
 	await f.manager.refresh();

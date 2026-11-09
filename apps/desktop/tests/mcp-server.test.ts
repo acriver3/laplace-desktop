@@ -158,7 +158,10 @@ it.each([false, true])(
 );
 
 async function setupCall(client: Client, name: string, args: Record<string, unknown> = {}) {
-	const result: any = await client.callTool({ name: `local_connectors_${name}`, arguments: args });
+	const result: any = await client.callTool({
+		name: `local_connectors_${name}`,
+		arguments: args,
+	});
 	expect(result.isError, JSON.stringify(result)).not.toBe(true);
 	return JSON.parse(result.content[0].text);
 }
@@ -538,15 +541,13 @@ it("previews and adds custom servers, reports saved startup failure, and never r
 async function downloadFixture() {
 	const entry = bundleCatalog.find((e) => e.recipe === "canvas")!;
 	const platform = `${process.platform}-${process.arch}` as any;
-	let artifact = entry.artifacts.find((a) => a.platforms.includes(platform) && bundleAvailable(a));
-	if (!artifact) {
-		artifact = entry.artifacts.find(bundleAvailable)!;
-		const candidate = artifact.candidate;
-		artifact.candidate = true;
-		artifact.platforms.push(platform);
+	if (!bundleAvailable(entry, platform)) {
+		const { candidate, platforms } = entry;
+		entry.candidate = true;
+		entry.platforms = [...platforms, platform];
 		cleanup.push(async () => {
-			artifact!.candidate = candidate;
-			artifact!.platforms = artifact!.platforms.filter((p) => p !== platform);
+			entry.candidate = candidate;
+			entry.platforms = platforms;
 		});
 	}
 	return { catalogId: entry.id, configuration: { canvas_url: "https://canvas.fixture.invalid" } };
@@ -628,7 +629,11 @@ it.each(["app", "chat"])(
 				revision: randomUUID(),
 				profileId: randomUUID(),
 				profileLabel: "Chrome fixture",
-				identity: { workspace: "https://fixture.slack.com", teamId: "T123456", userId: "U123456" },
+				identity: {
+					workspace: "https://fixture.slack.com",
+					teamId: "T123456",
+					userId: "U123456",
+				},
 			};
 		await post("/review", {
 			code,
@@ -836,8 +841,7 @@ it("rejects unavailable catalog platforms without starting a job", async () => {
 	const f = await fixture(undefined, {}),
 		a = await f.connect("Unsupported platform");
 	const entry = bundleCatalog.find((e) => e.recipe === "canvas")!;
-	const artifacts = entry.artifacts;
-	entry.artifacts = [];
+	entry.published = false;
 	try {
 		expect(
 			(await setupCall(a.client, "list")).catalog.find((e: any) => e.id === entry.id).available,
@@ -855,7 +859,7 @@ it("rejects unavailable catalog platforms without starting a job", async () => {
 		).toBe(true);
 		expect(f.installer.jobs()).toHaveLength(0);
 	} finally {
-		entry.artifacts = artifacts;
+		entry.published = true;
 	}
 });
 

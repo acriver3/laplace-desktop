@@ -67,8 +67,12 @@ it("binds one-use approval to the extension origin and requested workspace", asy
 		).status,
 	).toBe(403);
 	expect(
-		(await post("/pair", { code, identity: { ...identity, workspace: "https://other.slack.com" } }))
-			.status,
+		(
+			await post("/pair", {
+				code,
+				identity: { ...identity, workspace: "https://other.slack.com" },
+			})
+		).status,
 	).toBe(400);
 	expect((await post("/describe", { code })).status).toBe(200);
 	const { token } = await (await approveBrowser(relay, post, code, identity)).json();
@@ -171,7 +175,10 @@ it("keeps extension identity stable and never requests cookie or debugger access
 	]);
 	expect(manifest.externally_connectable).toBeUndefined();
 	expect(
-		redactBrowserResult({ authorization: "secret", nested: { cookie: "secret", text: "read" } }),
+		redactBrowserResult({
+			authorization: "secret",
+			nested: { cookie: "secret", text: "read" },
+		}),
 	).toEqual({ nested: { text: "read" } });
 });
 it("upgrades only catalog Slack, preserves tool restrictions, and disables old startup", () => {
@@ -292,6 +299,8 @@ it("does not convert existing catalog metadata to the opt-in browser adapter", a
 		getServerConfig: () => ({
 			...slackBrowserConfig(identity.workspace, "/resources", "/node"),
 			identity: legacySlackIdentity,
+			// Extracted bundles ran from their own directory.
+			cwd: join(root, "connectors", "slack-mcp-server", "1.1.0-laplace.1"),
 		}),
 		setEnabled: vi.fn(),
 		restartServer: vi.fn(),

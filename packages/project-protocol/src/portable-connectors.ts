@@ -27,7 +27,14 @@ export const portableSnapshot = z
 				.object({
 					kind: z.literal("catalog"),
 					catalogId: localId,
+					/** Installed npm version of `package`. */
 					version: z.string().max(80),
+					package: z
+						.string()
+						.max(214)
+						.regex(/^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/)
+						.optional(),
+					/** Legacy MCPB pins from Desktop 0.1.42 and earlier; accepted but no longer used. */
 					artifacts: z
 						.array(
 							z

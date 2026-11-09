@@ -6,7 +6,6 @@ import catalogData from "./local-mcp-bundles.json" with { type: "json" };
 import { localConnectorMetadata } from "./local-mcp-setup";
 
 const identifier = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/);
-const digest = z.string().regex(/^[a-f0-9]{64}$/);
 export const bundlePlatform = z.enum(["win32-x64", "darwin-x64", "darwin-arm64", "linux-x64"]);
 export type BundlePlatform = z.infer<typeof bundlePlatform>;
 export const bundlePlatformLabels: Record<BundlePlatform, string> = {
@@ -38,31 +37,62 @@ const repositoryUrl = z
 		);
 	}, "Use a GitHub repository HTTPS URL without credentials, a branch path, or query parameters.");
 
-export const bundleArtifactSchema = z
+const relativeDirectory = z
+	.string()
+	.max(300)
+	.refine(
+		(value) =>
+			value === "" ||
+			(/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(value) &&
+				!value.split("/").some((part) => part === "." || part === "..")),
+		"Use a relative source directory without traversal.",
+	);
+/** Placeholders resolved locally: `${user_config.<key>}` and `${package_dir}`. */
+const npmLaunchValue = z
+	.string()
+	.max(8000)
+	.refine(
+		(value) =>
+			!value.includes("\0") &&
+			!value.replace(/\$\{(?:user_config\.[a-z_]+|package_dir)\}/g, "").includes("${"),
+		"Use only ${user_config.<key>} and ${package_dir} placeholders.",
+	);
+/** How a catalog connector is published on npm. The reviewed version is the entry's `version`. */
+export const bundleNpmSchema = z
 	.object({
-		name: z.string().regex(/^[a-z0-9][a-z0-9._-]*\.mcpb$/),
-		sha256: digest,
-		storagePrefix: identifier,
-		size: z
-			.number()
-			.int()
-			.positive()
-			.max(32 * 1024 * 1024),
-		platforms: z.array(bundlePlatform).min(1),
-		published: z.boolean(),
-		acceptance: z.array(
-			z
-				.object({
-					platform: bundlePlatform,
-					archiveSha256: digest,
-					acceptedAt: z.string().datetime(),
-					evidence: z.string().min(1),
-				})
-				.strict(),
-		),
+		package: z
+			.string()
+			.max(214)
+			.regex(/^@withlaplace\/[a-z0-9][a-z0-9._~-]*$/),
+		/** Updates follow this dist-tag; it must never be a version or range. */
+		distTag: z
+			.string()
+			.regex(/^[A-Za-z][A-Za-z0-9._-]{0,63}$/)
+			.refine((value) => !/^v\d/.test(value), "A dist-tag cannot look like a version."),
+		bin: z
+			.string()
+			.min(1)
+			.max(214)
+			.regex(/^[A-Za-z0-9@._-]+$/),
+		args: z.array(npmLaunchValue).max(50),
+		env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), npmLaunchValue),
 	})
 	.strict();
-export type BundleArtifact = z.infer<typeof bundleArtifactSchema>;
+export type BundleNpm = z.infer<typeof bundleNpmSchema>;
+export const npmVersion = z
+	.string()
+	.max(100)
+	.regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
+export const bundleAcceptanceSchema = z
+	.object({
+		platform: bundlePlatform,
+		/** The connector version this platform acceptance was recorded for. */
+		version: npmVersion,
+		acceptedAt: z.string().datetime(),
+		evidence: z.string().min(1),
+	})
+	.strict();
+export type BundleAcceptance = z.infer<typeof bundleAcceptanceSchema>;
 export const bundleEntrySchema = z
 	.object({
 		id: identifier,
@@ -72,18 +102,13 @@ export const bundleEntrySchema = z
 		description: z.string().min(1),
 		capabilities: z.array(z.string().min(1)).min(1),
 		repository: repositoryUrl,
-		sourceSubdirectory: z
+		// Informational provenance; installation follows `npm`.
+		sourceSubdirectory: relativeDirectory.optional(),
+		sourceDirectory: relativeDirectory.optional(),
+		upstreamCommit: z
 			.string()
-			.max(300)
-			.refine(
-				(value) =>
-					value === "" ||
-					(/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(value) &&
-						!value.split("/").some((part) => part === "." || part === "..")),
-				"Use a relative source directory without traversal.",
-			)
+			.regex(/^[a-f0-9]{40}$/)
 			.optional(),
-		upstreamCommit: z.string().regex(/^[a-f0-9]{40}$/),
 		upstreamVersion: identifier,
 		version: identifier,
 		license: z.string().min(1),
@@ -94,7 +119,12 @@ export const bundleEntrySchema = z
 		reviewEvidence: z.array(z.string().min(1)).min(1),
 		prerequisites: z.array(z.string().min(1)).min(1),
 		authentication: z.array(z.string().min(1)).min(1),
-		artifacts: z.array(bundleArtifactSchema).min(1),
+		npm: bundleNpmSchema,
+		platforms: z.array(bundlePlatform).min(1),
+		published: z.boolean(),
+		/** Candidates are offered on their declared platforms before acceptance is recorded. */
+		candidate: z.boolean(),
+		acceptance: z.array(bundleAcceptanceSchema),
 	})
 	.strict();
 export type BundleCatalogEntry = z.infer<typeof bundleEntrySchema>;
@@ -105,54 +135,62 @@ export const bundleCatalogSchema = z.array(bundleEntrySchema).superRefine((entri
 		if (versions.has(key))
 			context.addIssue({ code: "custom", message: `Duplicate bundle version: ${key}` });
 		versions.add(key);
-		const names = new Set<string>();
-		for (const artifact of entry.artifacts) {
-			if (names.has(artifact.name))
-				context.addIssue({ code: "custom", message: `Duplicate artifact: ${artifact.name}` });
-			names.add(artifact.name);
-			if (new Set(artifact.platforms).size !== artifact.platforms.length)
-				context.addIssue({ code: "custom", message: "Duplicate artifact platform" });
-		}
+		if (new Set(entry.platforms).size !== entry.platforms.length)
+			context.addIssue({ code: "custom", message: "Duplicate catalog platform" });
+		if (!npmVersion.safeParse(entry.version).success)
+			context.addIssue({
+				code: "custom",
+				message: `Catalog version is not an npm version: ${key}`,
+			});
 	}
 });
 export const bundleCatalog = bundleCatalogSchema
 	.parse(catalogData)
 	.map((entry) => ({ ...entry, ...localConnectorMetadata(entry.id) }));
 
-export function verifiedBundlePlatforms(artifact: BundleArtifact) {
+type Availability = Pick<
+	BundleCatalogEntry,
+	"platforms" | "published" | "candidate" | "acceptance"
+>;
+/** Declared platforms with a recorded acceptance (for any reviewed version of the package). */
+export function verifiedBundlePlatforms(entry: Pick<Availability, "platforms" | "acceptance">) {
+	return entry.platforms.filter((platform) =>
+		entry.acceptance.some((result) => result.platform === platform),
+	);
+}
+export function bundleAcceptanceComplete(entry: Pick<Availability, "platforms" | "acceptance">) {
+	return verifiedBundlePlatforms(entry).length === entry.platforms.length;
+}
+/** Published, declared, and either accepted on that platform or explicitly offered as a candidate. */
+export function bundlePlatformAvailable(entry: Availability, platform: string) {
+	return (
+		entry.published &&
+		entry.platforms.includes(platform as BundlePlatform) &&
+		(entry.candidate || entry.acceptance.some((result) => result.platform === platform))
+	);
+}
+export function bundleAvailablePlatforms(entry: Availability) {
+	return entry.platforms.filter((platform) => bundlePlatformAvailable(entry, platform));
+}
+/** Without a platform: available on at least one declared platform. */
+export function bundleAvailable(entry: Availability, platform?: string) {
+	return platform === undefined
+		? bundleAvailablePlatforms(entry).length > 0
+		: bundlePlatformAvailable(entry, platform);
+}
+/** The exact reviewed npm package specification, never a range or dist-tag. */
+export function bundleNpmSpec(entry: Pick<BundleCatalogEntry, "npm" | "version">) {
+	return `${entry.npm.package}@${entry.version}`;
+}
+/** Keys a user supplies locally for this connector's `${user_config.<key>}` placeholders. */
+export function bundleConfigurationKeys(entry: Pick<BundleCatalogEntry, "npm">) {
 	return [
 		...new Set(
-			artifact.acceptance
-				.filter(
-					(result) =>
-						result.archiveSha256 === artifact.sha256 &&
-						artifact.platforms.includes(result.platform),
-				)
-				.map((result) => result.platform),
+			[...entry.npm.args, ...Object.values(entry.npm.env)].flatMap((value) =>
+				[...value.matchAll(/\$\{user_config\.([a-z_]+)\}/g)].map((match) => match[1]!),
+			),
 		),
 	];
-}
-export function bundleAcceptanceComplete(artifact: BundleArtifact) {
-	const verified = verifiedBundlePlatforms(artifact);
-	return artifact.platforms.every((platform) => verified.includes(platform));
-}
-export function bundleAvailable(artifact: BundleArtifact) {
-	return artifact.published && bundleAcceptanceComplete(artifact);
-}
-export function findBundleArtifact(id: string, version: string, name: string) {
-	const entry = bundleCatalog.find((entry) => entry.id === id && entry.version === version);
-	const artifact = entry?.artifacts.find((artifact) => artifact.name === name);
-	return entry && artifact ? { entry, artifact } : undefined;
-}
-export function bundleObjectKey(entry: BundleCatalogEntry, artifact: BundleArtifact) {
-	return `bundles/${entry.id}/${entry.version}/${artifact.name}`;
-}
-/** Pin the hosting namespace so newer wrapper releases cannot break older bundles. */
-export function bundleStorageKey(entry: BundleCatalogEntry, artifact: BundleArtifact) {
-	return `${artifact.storagePrefix}/${bundleObjectKey(entry, artifact)}`;
-}
-export function bundleDownloadPath(entry: BundleCatalogEntry, artifact: BundleArtifact) {
-	return `/api/local-mcp/${bundleObjectKey(entry, artifact)}`;
 }
 export function bundleMatches(entry: BundleCatalogEntry, query: string) {
 	return [entry.name, entry.description, entry.repository, entry.license, ...entry.capabilities]
@@ -220,36 +258,37 @@ Use my existing authorized local Git credentials for a private repository. Pass 
 Install and build locally using the selected repository's instructions. Let me complete browser login or supply credentials through local secure entry. Put sessions outside the checkout and normalize its launch configuration for Laplace Local. The website does not fetch, build, authenticate or save this repository. Do not silently switch commits, install a published substitute, or enable automatic upgrades. Record the actual commit and tests in a local setup note. This connector is user-added and is not Laplace-vetted.`;
 }
 
-export function bundleSetupPrompt(
-	entry: BundleCatalogEntry,
-	artifact: BundleArtifact,
-	origin: string,
-) {
+export function bundleSetupPrompt(entry: BundleCatalogEntry, origin: string) {
 	const base = connectorOriginSchema.parse(origin);
 	if (!["canvas", "linkedin", "yale-som-ems", "outlook"].includes(entry.recipe))
 		throw new Error("Unsupported bundle recipe");
+	const spec = bundleNpmSpec(entry);
+	const keys = bundleConfigurationKeys(entry);
+	const launch = [entry.npm.bin, ...entry.npm.args].join(" ");
+	const environment = Object.entries(entry.npm.env)
+		.map(([key, value]) => `${key}=${value}`)
+		.join(", ");
 	const connectorSteps =
 		entry.recipe === "outlook"
-			? `Outlook: Node dependencies and the compiled server are included; do not run npm install or substitute the published package. Resolve user_config.browser to an installed Chrome or Edge channel (chrome or msedge), or leave it empty for automatic detection. Keep MSOUTLOOK_SKIP_COOKIE_IMPORT=false to enable automatic session import from the selected browser. Let me approve any Keychain/keyring prompt; do not approve it on my behalf. Session data stays outside the bundle in ~/.msoutlook-mcp-server on macOS or %APPDATA%/msoutlook-mcp-server on Windows; preserve existing sessions and never set HOME or APPDATA to the bundle. Run outlook_login to try automatic session import first; let me complete Microsoft sign-in/MFA in its dedicated browser if needed; do not close the window manually. Use outlook_status and outlook_list_folders for read checks. Do not send mail, modify calendars or test deletion. Select the server ID outlook.`
+			? `Outlook: the package includes the compiled server; its production dependencies are locked by its npm-shrinkwrap.json. Resolve user_config.browser to an installed Chrome or Edge channel (chrome or msedge), or leave it empty for automatic detection. Keep MSOUTLOOK_SKIP_COOKIE_IMPORT=false to enable automatic session import from the selected browser. Let me approve any Keychain/keyring prompt; do not approve it on my behalf. Session data stays outside the installed package in ~/.msoutlook-mcp-server on macOS or %APPDATA%/msoutlook-mcp-server on Windows; preserve existing sessions and never set HOME or APPDATA to the package directory. Run outlook_login to try automatic session import first; let me complete Microsoft sign-in/MFA in its dedicated browser if needed; do not close the window manually. Use outlook_status and outlook_list_folders for read checks. Do not send mail, modify calendars or test deletion. Select the server ID outlook.`
 			: entry.recipe === "yale-som-ems"
-				? `Yale SOM EMS: Node production dependencies are included; do not run npm install or substitute another package. Choose Chrome or Edge (manifest browser values chrome or msedge) and a dedicated profile outside the versioned bundle, defaulting to ~/.laplace-local/sessions/yale-som-ems/profile. Resolve manifest user_config locally. Run node <bundle directory>/dist/cli.js login --profile-dir <profile> --browser <browser> and let me complete Yale SSO/MFA in the dedicated browser. Then run status with the same options. Use ems_session_status and ems_list_templates for harmless authenticated read checks. Select the server ID yale-som-ems. Do not create, edit or cancel a booking during setup. Student breakout rooms, interview rooms and Fit for Thought are supported; recurring reservations, services and remote check-in are excluded. Show a complete ems_prepare_change preview and obtain my confirmation before ems_commit_change. Never replay an uncertain submission; inspect My Events and acknowledge it using the bundled status --acknowledge-uncertain command with the same profile before making another change.`
+				? `Yale SOM EMS: choose Chrome or Edge (user_config.browser values chrome or msedge) and a dedicated profile outside the installed package, defaulting to ~/.laplace-local/sessions/yale-som-ems/profile. Run the package's ${entry.npm.bin} command with login --profile-dir <profile> --browser <browser> and let me complete Yale SSO/MFA in the dedicated browser. Then run status with the same options. Use ems_session_status and ems_list_templates for harmless authenticated read checks. Select the server ID yale-som-ems. Do not create, edit or cancel a booking during setup. Student breakout rooms, interview rooms and Fit for Thought are supported; recurring reservations, services and remote check-in are excluded. Show a complete ems_prepare_change preview and obtain my confirmation before ems_commit_change. Never replay an uncertain submission; inspect My Events and acknowledge it using the package's status --acknowledge-uncertain command with the same profile before making another change.`
 				: entry.recipe === "canvas"
-					? `Canvas: Node dependencies are included; do not run npm install or replace them. Ask me for my institution's Canvas HTTPS URL, my course-download folder and a dedicated session directory outside the bundle. Resolve manifest user_config values locally. Run the bundled bin/cli.js login --url <my Canvas URL> with the resolved environment and let me complete SSO/MFA. Do not use the upstream setup command, which registers clients directly. Use canvas_whoami and canvas_list_courses for read checks. Select the server ID canvas-session.`
-					: `LinkedIn: Use the included uv runtime to run uv sync --locked --no-dev --python 3.13 in the extracted bundle, installing this project rather than its published package. Choose a dedicated session root outside the bundle and use its profile subdirectory for manifest user_config.profile_dir. Launch with the manifest configuration and let get_my_profile try automatic browser-session import first. If no usable session exists, let me complete login/MFA in the dedicated browser. For explicit login when needed, run uv run --locked --no-dev --python 3.13 --project <bundle directory> -m linkedin_mcp_server --login --auto-import --no-daemon --user-data-dir <profile directory>. Use get_my_profile for the read check; do not send messages or connection requests. Select the server ID linkedin.`;
-	return `Set up the Laplace ${entry.name} MCP bundle ${entry.version}.
-Download: ${base}${bundleDownloadPath(entry, artifact)}
-SHA-256: ${artifact.sha256}
-Size: ${artifact.size} bytes
-Upstream: ${entry.repository} at ${entry.upstreamCommit} (version ${entry.upstreamVersion}).
-Verified bundle setup: ${
-		verifiedBundlePlatforms(artifact)
+					? `Canvas: ask me for my institution's Canvas HTTPS URL, my course-download folder and a dedicated session directory outside the installed package. Run the package's ${entry.npm.bin} command with login --url <my Canvas URL> and the resolved environment, and let me complete SSO/MFA. Do not use the upstream setup command, which registers clients directly. Use canvas_whoami and canvas_list_courses for read checks. Select the server ID canvas-session.`
+					: `LinkedIn: the ${entry.npm.bin} command is a Node launcher for the locked Python project inside the package. Run uv sync --locked --no-dev --python 3.13 in the installed package directory with the wrapper's included uv, and set LAPLACE_UV to that uv executable in the connector environment. Choose a dedicated session root outside the installed package and use its profile subdirectory for user_config.profile_dir. Launch with the configuration above and let get_my_profile try automatic browser-session import first. If no usable session exists, let me complete login/MFA in the dedicated browser. For explicit login when needed, run the ${entry.npm.bin} command with --login --auto-import --no-daemon --user-data-dir <profile directory>. Use get_my_profile for the read check; do not send messages or connection requests. Select the server ID linkedin.`;
+	return `Set up the Laplace ${entry.name} connector ${entry.version} from npm.
+Package: ${spec} (use this exact package and version)
+Command: ${launch}${environment ? `\nEnvironment: ${environment}` : ""}
+Upstream: ${entry.repository}${entry.upstreamCommit ? ` at ${entry.upstreamCommit}` : ""} (version ${entry.upstreamVersion}).
+Verified setup: ${
+		verifiedBundlePlatforms(entry)
 			.map((platform) => bundlePlatformLabels[platform])
 			.join(", ") || "acceptance pending"
-	}. Linux setup is unverified. ${artifact.published ? "" : "This bundle is not yet published; stop if the download is unavailable."}
+	}. Other platforms are unverified. ${entry.published ? "" : "This version is not yet published; stop if npm does not have it."}
 ${wrapperInstructions(origin)}
-Verify the exact bundle's size and SHA-256 before extraction or execution. Inspect its manifest.json and platform/runtime requirements. Reject absolute/traversing archive paths and links escaping the extraction directory. Extract it into a persistent versioned directory; keep the bundle and its dependencies unchanged. Stop on a checksum mismatch, unsupported manifest or unavailable artifact.
-Read server.mcp_config from the manifest, apply the selected platform override if present, and resolve __dirname and user_config placeholders to local values. Resolve HOME/DOCUMENTS defaults locally. Do not leave unresolved placeholders in the configuration. Use the manifest's command, args and env to create the selected local stdio JSON entry; set cwd to the extracted bundle directory. The wrapper's uv alias resolves its included runtime. Review the resolved configuration before attachment.
+Install it into a persistent directory dedicated to this version (for example ~/.laplace-local/npm/${entry.id}/${entry.version}) with the wrapper's included npm: npm install --ignore-scripts --prefix <that directory> ${spec}. Do not install globally, from a range or dist-tag, or with lifecycle scripts. The package directory is <that directory>/node_modules/${entry.npm.package}. Stop if npm cannot install this exact version.
+Read the ${entry.npm.bin} entry of the package's package.json bin map and launch it with the wrapper's node alias: command node, args [<absolute path of that bin file>, ${entry.npm.args.length ? entry.npm.args.join(", ") : "no further arguments"}]. ${keys.length ? `Resolve \${user_config.<key>} placeholders (${keys.join(", ")}) to local values` : "There are no user settings to resolve"} and \${package_dir} to the package directory. Resolve HOME/DOCUMENTS defaults locally. Do not leave unresolved placeholders in the configuration. Create the selected local stdio JSON entry from this command, arguments and environment, and review it before attachment.
 ${connectorSteps}
 After successful setup, keep sensitive values in the OS keychain/encrypted wrapper configuration. If a temporary import file contains credentials, restrict it to the current user and remove that temporary file after successful import; preserve original client configurations. Review notes: ${entry.reviewNotes.join(" ")}
-Review applies to this identified bundle and recorded tests; external-service changes and any dependency downloads can affect operation. Do not infer vetting from a connector's reported version, modify bundled source, or silently substitute another package or release.`;
+Review applies to this package version and its recorded tests; external-service changes can affect operation. Do not infer vetting from a connector's reported version or modify the installed package.`;
 }

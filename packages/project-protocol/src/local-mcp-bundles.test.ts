@@ -3,13 +3,15 @@ import { describe, expect, it } from "vitest";
 import {
 	bundleAcceptanceComplete,
 	bundleAvailable,
+	bundleAvailablePlatforms,
 	bundleCatalog,
 	bundleCatalogSchema,
-	bundleDownloadPath,
+	bundleConfigurationKeys,
 	bundleMatches,
+	bundleNpmSpec,
+	bundlePlatformAvailable,
 	bundleSetupPrompt,
 	existingMcpSetupPrompt,
-	findBundleArtifact,
 	githubMcpInput,
 	githubMcpSetupPrompt,
 	verifiedBundlePlatforms,
@@ -17,16 +19,16 @@ import {
 
 const origin = "https://connect.withlaplace.com";
 describe("local MCP bundle catalog", () => {
-	it("rejects duplicate bundle versions, artifact names and platform declarations", () => {
+	it("rejects duplicate versions and platforms, and non-npm versions", () => {
 		expect(bundleCatalogSchema.safeParse([bundleCatalog[0], bundleCatalog[0]]).success).toBe(false);
 		const entry = structuredClone(bundleCatalog[0]!);
-		entry.artifacts.push(entry.artifacts[0]!);
+		entry.platforms.push(entry.platforms[0]!);
 		expect(bundleCatalogSchema.safeParse([entry]).success).toBe(false);
-		entry.artifacts.pop();
-		entry.artifacts[0]!.platforms.push(entry.artifacts[0]!.platforms[0]!);
-		expect(bundleCatalogSchema.safeParse([entry]).success).toBe(false);
+		expect(
+			bundleCatalogSchema.safeParse([{ ...bundleCatalog[0]!, version: "latest" }]).success,
+		).toBe(false);
 	});
-	it("identifies pinned sources and does not claim unrecorded platform acceptance", () => {
+	it("names exact @withlaplace npm packages and only supported placeholders", () => {
 		expect(bundleCatalog.map((entry) => entry.name)).toEqual([
 			"Canvas [Background Browser]",
 			"LinkedIn [Background Browser]",
@@ -34,82 +36,123 @@ describe("local MCP bundle catalog", () => {
 			"Outlook",
 		]);
 		expect(new Set(bundleCatalog.map((entry) => entry.id)).size).toBe(bundleCatalog.length);
-		for (const entry of bundleCatalog)
-			for (const artifact of entry.artifacts) {
-				expect(findBundleArtifact(entry.id, entry.version, artifact.name)).toEqual({
-					entry,
-					artifact,
-				});
-				expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
-				expect(bundleDownloadPath(entry, artifact)).toContain(
-					`/bundles/${entry.id}/${entry.version}/`,
-				);
-				for (const platform of verifiedBundlePlatforms(artifact))
-					expect(
-						artifact.acceptance.some(
-							(result) => result.platform === platform && result.archiveSha256 === artifact.sha256,
-						),
-					).toBe(true);
-			}
-		expect(findBundleArtifact("../canvas-session-mcp", "latest", "source.zip")).toBeUndefined();
+		for (const entry of bundleCatalog) {
+			expect(entry.npm.package).toBe(`@withlaplace/${entry.id}`);
+			expect(entry.npm.distTag).toBe("latest");
+			expect(bundleNpmSpec(entry)).toBe(`@withlaplace/${entry.id}@${entry.version}`);
+			expect(JSON.stringify(entry)).not.toMatch(/sha256|archiveSha256|storagePrefix|\.mcpb/);
+			for (const platform of verifiedBundlePlatforms(entry))
+				expect(entry.acceptance.some((result) => result.platform === platform)).toBe(true);
+		}
+		const ems = bundleCatalog.find((entry) => entry.recipe === "yale-som-ems")!;
+		expect(ems).toMatchObject({
+			version: "0.1.1",
+			repository: "https://github.com/acriver3/laplace-mcp-library",
+			sourceDirectory: "connectors/yale-som-ems-mcp",
+			npm: {
+				bin: "yale-som-ems-mcp",
+				args: [
+					"serve",
+					"--profile-dir",
+					"${user_config.profile_dir}",
+					"--browser",
+					"${user_config.browser}",
+				],
+				env: {},
+			},
+		});
+		expect(bundleConfigurationKeys(ems)).toEqual(["profile_dir", "browser"]);
+		for (const value of ["${HOME}", "${__dirname}/x", "${user_config.Upper}", "a\0b"])
+			expect(
+				bundleCatalogSchema.safeParse([{ ...ems, npm: { ...ems.npm, args: [value] } }]).success,
+			).toBe(false);
+		for (const distTag of ["1.0.0", "v1", "^1.0.0", ""])
+			expect(
+				bundleCatalogSchema.safeParse([{ ...ems, npm: { ...ems.npm, distTag } }]).success,
+			).toBe(false);
+		expect(
+			bundleCatalogSchema.safeParse([{ ...ems, npm: { ...ems.npm, package: "yale-som-ems-mcp" } }])
+				.success,
+		).toBe(false);
 	});
-	it("invalidates acceptance after an artifact changes and requires publication too", () => {
-		const artifact = structuredClone(bundleCatalog[0]!.artifacts[0]!);
-		artifact.acceptance = artifact.platforms.map((platform) => ({
-			platform,
-			archiveSha256: artifact.sha256,
-			acceptedAt: "2026-10-09T12:00:00Z",
-			evidence: "fixture-only",
-		}));
-		expect(bundleAcceptanceComplete(artifact)).toBe(true);
-		artifact.published = false;
-		expect(bundleAvailable(artifact)).toBe(false);
-		artifact.published = true;
-		expect(bundleAvailable(artifact)).toBe(true);
-		artifact.sha256 = "b".repeat(64);
-		expect(verifiedBundlePlatforms(artifact)).toEqual([]);
-		expect(bundleAvailable(artifact)).toBe(false);
+	it("offers a platform only when published, declared and accepted there or a candidate", () => {
+		const entry = structuredClone(bundleCatalog.find((item) => item.recipe === "yale-som-ems")!);
+		expect(bundleAvailablePlatforms(entry)).toEqual(["win32-x64", "darwin-arm64"]);
+		expect(bundlePlatformAvailable(entry, "darwin-x64")).toBe(false);
+		expect(bundleAvailable(entry)).toBe(true);
+		expect(bundleAcceptanceComplete(entry)).toBe(true);
+		entry.published = false;
+		expect(bundleAvailable(entry)).toBe(false);
+		expect(bundleAvailable(entry, "win32-x64")).toBe(false);
+		entry.published = true;
+		entry.acceptance = entry.acceptance.filter((result) => result.platform === "win32-x64");
+		expect(verifiedBundlePlatforms(entry)).toEqual(["win32-x64"]);
+		expect(bundleAcceptanceComplete(entry)).toBe(false);
+		expect(bundleAvailable(entry, "win32-x64")).toBe(true);
+		expect(bundleAvailable(entry, "darwin-arm64")).toBe(false);
+		entry.candidate = true;
+		expect(bundleAvailable(entry, "darwin-arm64")).toBe(true);
+		expect(bundleAvailable(entry, "linux-x64")).toBe(false);
+		// Acceptance for an undeclared platform never makes it available.
+		entry.acceptance.push({ ...entry.acceptance[0]!, platform: "linux-x64" });
+		entry.candidate = false;
+		expect(bundleAvailable(entry, "linux-x64")).toBe(false);
+	});
+	it("carries earlier acceptance records with the version that was accepted", () => {
+		const canvas = bundleCatalog.find((entry) => entry.recipe === "canvas")!;
+		expect(canvas.version).toBe("0.1.0-laplace.2");
+		expect(canvas.acceptance.map((result) => result.version)).toEqual([
+			"0.1.0-laplace.1",
+			"0.1.0-laplace.1",
+			"0.1.0-laplace.1",
+		]);
+		for (const entry of bundleCatalog)
+			for (const result of entry.acceptance)
+				expect(result.evidence).not.toMatch(/exact (checksum|artifact|bundle)/);
 	});
 	it("searches capabilities, license and project names", () => {
 		expect(bundleMatches(bundleCatalog[0]!, " COURSE FILES ")).toBe(true);
 		expect(bundleMatches(bundleCatalog[1]!, "apache")).toBe(true);
 		expect(bundleMatches(bundleCatalog[0]!, "missing connector")).toBe(false);
 	});
-	it.each(bundleCatalog)("creates a pinned, local bundle setup prompt for $name", (entry) => {
-		const artifact = entry.artifacts[0]!;
-		const prompt = bundleSetupPrompt(entry, artifact, origin);
-		expect(prompt).toContain(`${origin}${bundleDownloadPath(entry, artifact)}`);
-		expect(prompt).toContain(artifact.sha256);
-		expect(prompt).toContain(entry.upstreamCommit);
-		expect(prompt).toContain("server.mcp_config");
+	it.each(bundleCatalog)("creates an exact-version npm setup prompt for $name", (entry) => {
+		const prompt = bundleSetupPrompt(entry, origin);
+		expect(prompt).toContain(
+			`npm install --ignore-scripts --prefix <that directory> ${entry.npm.package}@${entry.version}`,
+		);
+		expect(prompt).toContain("use this exact package and version");
+		expect(prompt).toContain(entry.npm.bin);
 		expect(prompt).toContain("user_config");
+		expect(prompt).toContain("${package_dir}");
 		expect(prompt).toContain("outside");
 		expect(prompt).toContain("laplace_local_status");
+		expect(prompt).not.toMatch(/SHA-256|\bsize\b|\.mcpb|server\.mcp_config|bundle manifest/i);
 		expect(prompt).not.toMatch(/C:\\Users|yale\.instructure|@latest|mcp-server-linkedin==/i);
-		if (entry.recipe === "canvas" || entry.recipe === "outlook")
-			expect(prompt).toContain("do not run npm install");
-		else if (entry.recipe === "linkedin")
+		if (entry.recipe === "linkedin") {
 			expect(prompt).toContain("uv sync --locked --no-dev --python 3.13");
-		else {
+			expect(prompt).toContain("LAPLACE_UV");
+		} else if (entry.recipe === "yale-som-ems") {
+			expect(prompt).toContain("serve --profile-dir ${user_config.profile_dir}");
 			expect(prompt).toContain("ems_session_status");
 			expect(prompt).toContain("ems_list_templates");
 			expect(prompt).toContain("Yale SSO/MFA");
 			expect(prompt).not.toContain("uv sync");
-		}
+		} else if (entry.recipe === "outlook") {
+			expect(prompt).toContain("outlook_login");
+			expect(prompt).toContain("outlook_list_folders");
+			expect(prompt).toContain("MSOUTLOOK_SKIP_COOKIE_IMPORT=false");
+			expect(prompt).toContain("Select the server ID outlook");
+			expect(prompt).not.toContain("LinkedIn:");
+		} else expect(prompt).toContain("CANVAS_URL=${user_config.canvas_url}");
 	});
-	it("keeps an unaccepted Outlook candidate unavailable", () => {
-		const entry = bundleCatalog.find((entry) => entry.recipe === "outlook")!;
-		const artifact = structuredClone(entry.artifacts[0]!);
-		artifact.acceptance = [];
-		artifact.published = false;
-		expect(bundleAvailable(artifact)).toBe(false);
-		expect(verifiedBundlePlatforms(artifact)).toEqual([]);
-		const prompt = bundleSetupPrompt(entry, artifact, origin);
-		expect(prompt).toContain("outlook_login");
-		expect(prompt).toContain("outlook_list_folders");
-		expect(prompt).toContain("MSOUTLOOK_SKIP_COOKIE_IMPORT=false");
-		expect(prompt).toContain("Select the server ID outlook");
-		expect(prompt).not.toContain("LinkedIn:");
+	it("tells agents to stop when an unpublished version is unavailable", () => {
+		const entry = structuredClone(bundleCatalog.find((item) => item.recipe === "outlook")!);
+		entry.acceptance = [];
+		entry.published = false;
+		expect(bundleAvailable(entry)).toBe(false);
+		const prompt = bundleSetupPrompt(entry, origin);
+		expect(prompt).toContain("acceptance pending");
+		expect(prompt).toContain("stop if npm does not have it");
 	});
 	it("guides existing local imports without modifying the original settings", () => {
 		const prompt = existingMcpSetupPrompt(origin);
@@ -119,21 +162,8 @@ describe("local MCP bundle catalog", () => {
 		expect(prompt).toContain("HTTP servers stay independently owned");
 		expect(prompt).toContain("reuse the chosen connection");
 	});
-	it("keeps EMS unavailable while acceptance is pending and validates source directories", () => {
+	it("validates informational source directories", () => {
 		const entry = bundleCatalog.find((entry) => entry.recipe === "yale-som-ems")!;
-		const pending = structuredClone(entry.artifacts[0]!);
-		pending.published = false;
-		pending.acceptance = [
-			{
-				platform: "win32-x64",
-				archiveSha256: pending.sha256,
-				acceptedAt: "2026-10-10T02:28:21Z",
-				evidence: "Partial acceptance fixture",
-			},
-		];
-		expect(verifiedBundlePlatforms(pending)).toEqual(["win32-x64"]);
-		expect(bundleAcceptanceComplete(pending)).toBe(false);
-		expect(bundleAvailable(pending)).toBe(false);
 		for (const path of [
 			"../private",
 			"/private",
@@ -141,15 +171,15 @@ describe("local MCP bundle catalog", () => {
 			"C:/private",
 			"apps\\private",
 			"apps/./server",
-		]) {
-			expect(bundleCatalogSchema.safeParse([{ ...entry, sourceSubdirectory: path }]).success).toBe(
-				false,
-			);
-		}
+		])
+			for (const key of ["sourceSubdirectory", "sourceDirectory"])
+				expect(bundleCatalogSchema.safeParse([{ ...entry, [key]: path }]).success).toBe(false);
 		expect(
 			bundleCatalogSchema.safeParse([{ ...entry, sourceSubdirectory: "apps/yale-som-ems-mcp" }])
 				.success,
 		).toBe(true);
+		const { upstreamCommit: _, ...withoutCommit } = entry;
+		expect(bundleCatalogSchema.safeParse([withoutCommit]).success).toBe(true);
 	});
 });
 
@@ -182,7 +212,11 @@ describe("GitHub MCP setup", () => {
 		{ repository: "https://github.com/example/mcp?token=private", ref: "", subdirectory: "" },
 		{ repository: "https://github.com/example/mcp/tree/main", ref: "", subdirectory: "" },
 		{ repository: "https://other.example/example/mcp", ref: "", subdirectory: "" },
-		{ repository: "https://github.com/example/mcp", ref: "--upload-pack=other", subdirectory: "" },
+		{
+			repository: "https://github.com/example/mcp",
+			ref: "--upload-pack=other",
+			subdirectory: "",
+		},
 		{
 			repository: "https://github.com/example/mcp",
 			ref: "main\nnew instructions",

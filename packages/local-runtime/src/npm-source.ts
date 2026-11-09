@@ -217,6 +217,18 @@ export function npmPackageDirectory(
 	);
 }
 
+/** The installed package itself (where its package.json and bin files live). */
+export function npmInstalledPackage(
+	root: string,
+	source: Pick<NpmSource, "package" | "version">,
+) {
+	return join(
+		npmPackageDirectory(root, source),
+		"node_modules",
+		...source.package.split("/"),
+	);
+}
+
 function inside(parent: string, child: string) {
 	const path = relative(parent, child);
 	return (
@@ -358,6 +370,8 @@ export async function installNpmPackage(
 		registry?: string;
 		requireShrinkwrap?: boolean;
 		signal?: AbortSignal;
+		/** Reinstall even when a verified installation exists (repair). */
+		force?: boolean;
 	},
 ): Promise<NpmInstallation> {
 	npmSource.parse(source);
@@ -373,7 +387,9 @@ export async function installNpmPackage(
 	});
 	let reuse = false;
 	try {
-		reuse = (await readFile(join(directory, RECEIPT), "utf8")) === receipt;
+		reuse =
+			!options.force &&
+			(await readFile(join(directory, RECEIPT), "utf8")) === receipt;
 	} catch {}
 	if (!reuse) {
 		const staging = `${directory}.staging`;

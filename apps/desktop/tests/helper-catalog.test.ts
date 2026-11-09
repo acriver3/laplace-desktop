@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,13 +5,12 @@ import { join } from "node:path";
 import type { ServerConfig } from "@repo/local-mcp-core/config";
 import {
 	CatalogInstaller,
-	extractBundle,
-	safeArchivePath,
-	downloadBundle,
 	catalogConfiguration,
-	resolveManifestConfiguration,
+	npmCatalogConfig,
 } from "@repo/local-runtime/catalog";
 import { bundleCatalog } from "@repo/local-runtime/library-catalog";
+import { extractBundle, safeArchivePath } from "@repo/local-runtime/mcpb-archive";
+import { npmPackageDirectory } from "@repo/local-runtime/npm-source";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 
 const folders: string[] = [];
@@ -101,68 +99,53 @@ it("extracts regular files and rejects traversal, links and case-colliding entri
 		expect(() => safeArchivePath(name)).toThrow();
 });
 
-it("verifies downloaded bytes before returning them and stops mismatched or cancelled downloads", async () => {
-	const bytes = Buffer.from("reviewed bytes"),
-		artifact = { size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
-	const controller = new AbortController();
-	const fetcher = (async () => new Response(bytes)) as typeof fetch;
-	expect(
-		await downloadBundle("https://example.com/bundle", artifact, controller.signal, fetcher),
-	).toEqual(bytes);
-	await expect(
-		downloadBundle(
-			"https://example.com/bundle",
-			{ ...artifact, sha256: "0".repeat(64) },
-			controller.signal,
-			fetcher,
-		),
-	).rejects.toThrow("checksum");
-	await expect(
-		downloadBundle(
-			"https://example.com/bundle",
-			{ ...artifact, size: 1 },
-			controller.signal,
-			fetcher,
-		),
-	).rejects.toThrow("exceeds");
-	controller.abort();
-	await expect(
-		downloadBundle("https://example.com/bundle", artifact, controller.signal, fetcher),
-	).rejects.toThrow("cancelled");
+const integrity = "sha512-" + Buffer.alloc(64, 1).toString("base64");
+const source = (entry: (typeof bundleCatalog)[number]) => ({
+	package: entry.npm!.package,
+	version: entry.version,
+	bin: entry.npm!.bin,
+	integrity,
 });
 
-it("resolves pinned Canvas manifest settings without leaving placeholders or storing sessions inside source", () => {
+it("resolves Canvas npm settings without leaving placeholders or storing sessions inside the package", () => {
 	const entry = bundleCatalog.find((candidate) => candidate.recipe === "canvas")!;
 	const configuration = catalogConfiguration(
 		entry,
 		{ canvas_url: "https://canvas.example.edu" },
 		"/tmp/desktop",
-		"/tmp/bundle",
+		"/tmp/desktop/npm-packages",
 	);
-	const manifest = {
-		name: entry.id,
-		version: entry.version,
-		server: {
-			mcp_config: {
-				command: "node",
-				args: ["${__dirname}/bin/cli.js"],
-				env: {
-					CANVAS_URL: "${user_config.canvas_url}",
-					CANVAS_MCP_HOME: "${user_config.session_dir}",
-				},
-			},
+	const result = npmCatalogConfig(
+		entry,
+		source(entry),
+		{ command: "node", args: ["/pkg/bin/cli.js"] },
+		configuration,
+		"/pkg",
+	);
+	expect(result).toMatchObject({
+		enabled: false,
+		id: "canvas-session",
+		command: "node",
+		args: ["/pkg/bin/cli.js"],
+		env: {
+			CANVAS_URL: "https://canvas.example.edu",
+			CANVAS_MCP_HOME: configuration.session_dir,
+			CANVAS_MCP_BROWSER: "chrome",
 		},
-	};
-	const result = resolveManifestConfiguration(manifest, entry, "/tmp/bundle", configuration);
-	expect(result.enabled).toBe(false);
-	expect(result.id).toBe("canvas-session");
+		identity: `npm:@withlaplace/canvas-session-mcp@${entry.version}`,
+		npm: source(entry),
+	});
+	expect(result.cwd).toBeUndefined();
 	expect(JSON.stringify(result)).not.toContain("${");
 	expect(() =>
 		catalogConfiguration(
 			entry,
-			{ canvas_url: "https://canvas.example.edu", session_dir: "/tmp/bundle/profile" },
+			{
+				canvas_url: "https://canvas.example.edu",
+				session_dir: "/tmp/desktop/npm-packages/profile",
+			},
 			"/tmp/desktop",
-			"/tmp/bundle",
+			"/tmp/desktop/npm-packages",
 		),
 	).toThrow("outside");
 	expect(() =>
@@ -170,18 +153,62 @@ it("resolves pinned Canvas manifest settings without leaving placeholders or sto
 			entry,
 			{ canvas_url: "https://user:pass@canvas.example.edu" },
 			"/tmp/desktop",
-			"/tmp/bundle",
+			"/tmp/desktop/npm-packages",
 		),
 	).toThrow("credentials");
-	expect(() =>
-		resolveManifestConfiguration(
-			{ ...manifest, version: "different" },
+	// Substituted values are never expanded again.
+	expect(
+		npmCatalogConfig(
 			entry,
-			"/tmp/bundle",
+			source(entry),
+			{ command: "node", args: ["/pkg/bin/cli.js"] },
+			{ ...configuration, downloads_dir: "/tmp/${package_dir}" },
+			"/pkg",
+		).env.CANVAS_MCP_DOWNLOADS,
+	).toBe("/tmp/${package_dir}");
+	expect(() =>
+		npmCatalogConfig(
+			entry,
+			{ ...source(entry), package: "@withlaplace/other" },
+			{ command: "node", args: [] },
 			configuration,
+			"/pkg",
 		),
-	).toThrow("identity");
+	).toThrow("npm");
 });
+
+/** A verified npm installation, so catalog installs need only registry metadata. */
+async function seedPackage(root: string, entry: (typeof bundleCatalog)[number], file: string) {
+	const directory = npmPackageDirectory(root, source(entry));
+	const packageDirectory = join(directory, "node_modules", ...entry.npm!.package.split("/"));
+	await mkdir(join(packageDirectory, file, ".."), { recursive: true });
+	await writeFile(
+		join(packageDirectory, "package.json"),
+		JSON.stringify({
+			name: entry.npm!.package,
+			version: entry.version,
+			bin: { [entry.npm!.bin]: file },
+		}),
+	);
+	await writeFile(join(packageDirectory, file), "process.exit(0);\n");
+	await writeFile(
+		join(directory, ".laplace-npm.json"),
+		JSON.stringify({ package: entry.npm!.package, version: entry.version, integrity }),
+	);
+	return packageDirectory;
+}
+function registry(entry: (typeof bundleCatalog)[number], file: string) {
+	return vi.fn(async (url: string | URL | Request) => {
+		expect(String(url)).toContain(entry.npm!.package.replace("/", "%2F"));
+		return Response.json({
+			name: entry.npm!.package,
+			"dist-tags": { latest: entry.version },
+			versions: {
+				[entry.version]: { bin: { [entry.npm!.bin]: file }, dist: { integrity } },
+			},
+		});
+	}) as unknown as typeof fetch;
+}
 
 it.each([
 	["canvas", false],
@@ -197,28 +224,8 @@ it.each([
 	folders.push(root);
 	const entry = bundleCatalog.find((candidate) => candidate.recipe === recipe)!;
 	const id = recipe === "canvas" ? "canvas-session" : "slack";
-	const directory = join(root, "connectors", entry.id, entry.version);
-	await mkdir(join(directory, "bin"), { recursive: true });
-	await writeFile(
-		join(directory, ".laplace-bundle.json"),
-		JSON.stringify({
-			sha256: entry.artifacts.find((item) => item.platforms.includes("darwin-arm64"))!.sha256,
-		}),
-	);
-	await writeFile(
-		join(directory, "manifest.json"),
-		JSON.stringify({
-			name: entry.id,
-			version: entry.version,
-			server: {
-				mcp_config: {
-					command: "node",
-					args: ["${__dirname}/bin/cli.js"],
-					env: { CANVAS_URL: "${user_config.canvas_url}" },
-				},
-			},
-		}),
-	);
+	const file = recipe === "canvas" ? "bin/cli.js" : "browser/cli.mjs";
+	const packageDirectory = await seedPackage(root, entry, file);
 	const configs = new Map<string, ServerConfig>(),
 		calls: string[] = [];
 	let failRead = false;
@@ -246,9 +253,7 @@ it.each([
 		root,
 		resources: join(root, "resources"),
 		nodePath: process.execPath,
-		fetch: vi.fn(async () => {
-			throw new Error("Unexpected download");
-		}),
+		fetch: registry(entry, file),
 	});
 	const install = await installer.install({
 		catalogId: entry.id,
@@ -260,7 +265,29 @@ it.each([
 	await vi.waitFor(() =>
 		expect(installer.jobs().find((job) => job.id === install.id)?.status).toBe("completed"),
 	);
-	expect(configs.get(id)?.enabled).toBe(false);
+	expect(configs.get(id)).toMatchObject({
+		enabled: false,
+		command: "node",
+		args:
+			recipe === "canvas"
+				? [join(packageDirectory, file)]
+				: [
+						join(packageDirectory, file),
+						"serve",
+						"--workspace",
+						"https://fixture.slack.com",
+						"--profile-dir",
+						join(root, "sessions", "slack", "profile"),
+					],
+		identity: `npm:${entry.npm!.package}@${entry.version}`,
+	});
+	expect(JSON.parse(await readFile(join(root, "catalog-installs.json"), "utf8"))).toEqual([
+		expect.objectContaining({
+			serverId: id,
+			package: entry.npm!.package,
+			version: entry.version,
+		}),
+	]);
 	const verify = await installer.verify(id);
 	if (recovery) expect((await installer.verify(id)).id).toBe(verify.id);
 	await vi.waitFor(() =>
@@ -286,35 +313,35 @@ it.each([
 	expect((await installer.list()).find((item) => item.id === entry.id)?.installed).toBe(false);
 });
 
-it.each(["win32", "darwin", "linux"])(
-	"uses the pinned Slack runtime and read-only tools on %s",
-	(platform) => {
-		vi.stubGlobal("process", { ...process, platform });
-		const entry = bundleCatalog.find((item) => item.recipe === "slack-ready")!;
-		const config = resolveManifestConfiguration(
-			{
-				name: entry.id,
-				version: entry.version,
-				server: { mcp_config: { command: "untrusted", args: [] } },
-			},
-			entry,
-			"/bundle",
-			{ workspace: "https://fixture.slack.com", profile_dir: "/sessions/slack" },
-		);
-		expect(config.transport).toBe("stdio");
-		if (config.transport !== "stdio") throw new Error("Expected stdio");
-		expect(config.command).toBe(
-			join("/bundle", "runtime", platform === "win32" ? "node.exe" : "node"),
-		);
-		expect(config.args).toContain("/sessions/slack");
-		expect(config.env).toEqual({
+it("launches the Slack npm package with read-only tools", () => {
+	const entry = bundleCatalog.find((item) => item.recipe === "slack-ready")!;
+	expect(entry.candidate).toBe(true);
+	const config = npmCatalogConfig(
+		entry,
+		source(entry),
+		{ command: "node", args: ["/pkg/browser/cli.mjs"] },
+		{ workspace: "https://fixture.slack.com", profile_dir: "/sessions/slack" },
+		"/pkg",
+	);
+	expect(config).toMatchObject({
+		id: "slack",
+		command: "node",
+		args: [
+			"/pkg/browser/cli.mjs",
+			"serve",
+			"--workspace",
+			"https://fixture.slack.com",
+			"--profile-dir",
+			"/sessions/slack",
+		],
+		env: {
 			SLACK_MCP_ENABLED_TOOLS:
 				"channels_list,conversations_history,conversations_replies,conversations_search_messages",
-		});
-	},
-);
+		},
+	});
+});
 
-it("rejects non-workspace Slack URLs and profiles inside the bundle", () => {
+it("rejects non-workspace Slack URLs and profiles inside installed packages", () => {
 	const entry = bundleCatalog.find((item) => item.recipe === "slack-ready")!;
 	for (const workspace of [
 		"https://example.com",
@@ -323,13 +350,13 @@ it("rejects non-workspace Slack URLs and profiles inside the bundle", () => {
 		"http://team.slack.com",
 		"https://user:pass@team.slack.com",
 	])
-		expect(() => catalogConfiguration(entry, { workspace }, "/state", "/bundle")).toThrow();
+		expect(() => catalogConfiguration(entry, { workspace }, "/state", "/packages")).toThrow();
 	expect(() =>
 		catalogConfiguration(
 			entry,
-			{ workspace: "https://team.slack.com", profile_dir: "/bundle/profile" },
+			{ workspace: "https://team.slack.com", profile_dir: "/packages/profile" },
 			"/state",
-			"/bundle",
+			"/packages",
 		),
 	).toThrow("outside");
 });

@@ -135,6 +135,12 @@ export class ManagedStdio implements Transport {
 			this.options.args,
 			this.options.cwd,
 			{
+				// Launchers such as the LinkedIn connector run Python projects with Laplace's uv.
+				LAPLACE_UV: join(
+					this.options.resources,
+					"runtimes",
+					process.platform === "win32" ? "uv.exe" : "uv",
+				),
 				...minimalEnvironment(this.options.home, this.options.env),
 				PATH: [
 					join(this.options.resources, "runtimes"),

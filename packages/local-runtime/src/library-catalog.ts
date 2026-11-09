@@ -1,48 +1,23 @@
 import outlookArtifact from "@repo/browser-runtime/assets/outlook.json";
 import slackArtifact from "@repo/browser-runtime/assets/slack.json";
-import { sessionRecoveryEnabled } from "@repo/browser-runtime/session-recovery";
 import { browserEnabled } from "@repo/local-mcp-core/browser-catalog";
 import {
+	bundleAcceptanceSchema,
 	bundleEntrySchema,
-	bundleArtifactSchema,
-	bundleAvailable as acceptedBundle,
+	bundleNpmSchema,
+	bundlePlatform,
+	bundlePlatformAvailable,
 } from "@repo/project-protocol/local-mcp-bundles";
 import { localConnectorMetadata } from "@repo/project-protocol/local-mcp-setup";
 import { z } from "zod";
 
 import snapshot from "./library-catalog.json";
-import recoveryOutlook from "./library-recovery-outlook.json";
 import { browserConnectionsEnabled } from "./shared/browser-feature";
 import { slackBrowserVersion } from "./shared/slack-browser";
 import { ycBrowserVersion } from "./shared/yc-browser";
 
-// Reviewed library snapshot; downloads never follow a moving branch or accept remote launch settings.
-export const libraryRevision = "fa29103099f9f735da1b9c0ac10410ebda816249";
-const recoveryLibraryRevision = "d9340533ce617065458fdfd92f2d602a74d26b2c";
-const artifactSchema = bundleArtifactSchema
-	.extend({
-		storagePrefix: z.string().default("library"),
-		size: z
-			.number()
-			.int()
-			.positive()
-			.max(64 * 1024 * 1024),
-		candidate: z.boolean().optional(),
-		url: z
-			.string()
-			.url()
-			.refine(
-				(url) =>
-					[libraryRevision, recoveryLibraryRevision].some((revision) =>
-						url.startsWith(
-							`https://raw.githubusercontent.com/acriver3/laplace-mcp-library/${revision}/bundles/`,
-						),
-					) &&
-					!url.includes("..") &&
-					!/[?#]/.test(url),
-			),
-	})
-	.strip();
+// Reviewed library catalog. Connectors install from their npm package; Desktop never accepts
+// remote launch settings.
 const entrySchema = bundleEntrySchema
 	.extend({
 		managedUpdate: z.boolean().optional(),
@@ -50,15 +25,24 @@ const entrySchema = bundleEntrySchema
 		demoOnly: z.boolean().optional(),
 		setupUrl: z.string().url(),
 		browserMode: z.enum(["tethered", "background-browser"]),
-		artifacts: z.array(artifactSchema),
+		// Desktop-shipped browser adapters have no npm distribution.
+		npm: bundleNpmSchema.optional(),
+		platforms: z.array(bundlePlatform).default([]),
+		published: z.boolean().default(false),
+		candidate: z.boolean().default(false),
+		acceptance: z.array(bundleAcceptanceSchema).default([]),
 	})
 	.strip();
 export type BundleCatalogEntry = z.infer<typeof entrySchema>;
-export type BundleArtifact = z.infer<typeof artifactSchema>;
-const legacyCatalogEntry = (
-	item: (typeof snapshot)[number] | typeof recoveryOutlook,
-	browserPreview: boolean,
-) =>
+/** Fields for adapters that ship inside Desktop rather than being downloaded. */
+const desktopShipped = {
+	npm: undefined,
+	platforms: [],
+	published: false,
+	candidate: false,
+	acceptance: [],
+};
+const legacyCatalogEntry = (item: (typeof snapshot)[number], browserPreview: boolean) =>
 	entrySchema.parse({
 		...item,
 		...localConnectorMetadata(item.id),
@@ -78,10 +62,10 @@ const legacyCatalogEntry = (
 		...(browserPreview && item.recipe === "slack-ready"
 			? {
 					...localConnectorMetadata(item.id, true),
+					...desktopShipped,
 					description:
 						"Read Slack through a user-approved Laplace extension in your existing browser. No separate browser or session import.",
 					version: slackBrowserVersion,
-					artifacts: [],
 					prerequisites: [
 						"Existing signed-in Chrome or Edge tab",
 						"User-approved Laplace Browser Connection extension",
@@ -105,13 +89,12 @@ const legacyCatalogEntry = (
 				: "https://github.com/acriver3/laplace-mcp-library",
 	});
 export const legacyBundleCatalog = snapshot.map((item) =>
-	legacyCatalogEntry(
-		sessionRecoveryEnabled() && item.id === "msoutlook-mcp" ? recoveryOutlook : item,
-		browserConnectionsEnabled(),
-	),
+	legacyCatalogEntry(item, browserConnectionsEnabled()),
 );
-export function bundleAvailable(artifact: BundleArtifact) {
-	return acceptedBundle(artifact) || (artifact.published && artifact.candidate === true);
+export const currentPlatform = () => `${process.platform}-${process.arch}`;
+/** An npm connector is offered where it is published, declared, and accepted or a candidate. */
+export function bundleAvailable(entry: BundleCatalogEntry, platform = currentPlatform()) {
+	return !!entry.npm && bundlePlatformAvailable(entry, platform);
 }
 
 // Desktop-shipped demonstration adapter. There is no hosted YC runtime or remote bundle download.
@@ -148,7 +131,6 @@ legacyBundleCatalog.push(
 			"Preview and save draft changes",
 			"Never submit applications",
 		],
-		artifacts: [],
 	}),
 );
 
@@ -158,9 +140,9 @@ export const tetheredBundleCatalog = [outlookArtifact, slackArtifact].map((artif
 	return entrySchema.parse({
 		...entry,
 		...localConnectorMetadata(entry.id, true),
+		...desktopShipped,
 		version: artifact.version,
 		browserMode: "tethered",
-		artifacts: [],
 		repository: "https://github.com/acriver3/laplace-mcp-library",
 		...(artifact.provider === "slack-tethered"
 			? {
@@ -187,7 +169,6 @@ export const allBundleCatalog = [
 	...new Map(
 		[
 			...snapshot.map((item) => legacyCatalogEntry(item, false)),
-			legacyCatalogEntry(recoveryOutlook, false),
 			...legacyBundleCatalog,
 			...tetheredBundleCatalog,
 		].map((entry) => [`${entry.id}@${entry.version}`, entry]),
@@ -205,3 +186,35 @@ export const tetheredEntry = (entry: BundleCatalogEntry) =>
 	tetheredBundleCatalog.some(
 		(candidate) => candidate.id === entry.id && candidate.version === entry.version,
 	);
+
+/** The npm-distributed entry for a connector, independent of browser-mode catalog overrides. */
+export function npmCatalogEntry(catalogId: string) {
+	return allBundleCatalog.find((entry) => entry.id === catalogId && entry.npm);
+}
+export const npmIdentity = (source: { package: string; version: string }) =>
+	`npm:${source.package}@${source.version}`;
+/**
+ * The catalog entry a configuration's runtime-assigned identity proves. Identities cannot be set
+ * by imports or manual edits. `legacy` marks an MCPB bundle installed before npm distribution.
+ */
+export function catalogEntryForConfig(config: {
+	identity?: string;
+	npm?: { package: string; version: string };
+	cwd?: string;
+	managedBrowser?: unknown;
+}): { entry: BundleCatalogEntry; legacy: boolean } | undefined {
+	const identity = config.identity;
+	if (!identity) return;
+	if (config.npm && identity === npmIdentity(config.npm)) {
+		const entry = allBundleCatalog.find((item) => item.npm?.package === config.npm!.package);
+		return entry && { entry, legacy: false };
+	}
+	const exact = allBundleCatalog.find(
+		(entry) => !entry.npm && identity === `${entry.id}@${entry.version}`,
+	);
+	if (exact) return { entry: exact, legacy: false };
+	// Extracted bundles always ran from their own directory; Desktop-shipped adapters never do.
+	if (config.npm || config.managedBrowser || !config.cwd) return;
+	const legacy = allBundleCatalog.find((entry) => entry.npm && identity.startsWith(`${entry.id}@`));
+	return legacy && { entry: legacy, legacy: true };
+}

@@ -3,28 +3,46 @@ afterEach(() => {
 	vi.unstubAllEnvs();
 	vi.resetModules();
 });
-it("keeps the stable background bundle by default", async () => {
-	vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", "false");
-	vi.resetModules();
-	const { legacyBundleCatalog, allBundleCatalog } =
-		await import("@repo/local-runtime/library-catalog");
+it.each(["false", "true"])(
+	"offers the npm Outlook release with session recovery %s",
+	async (recovery) => {
+		vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", recovery);
+		vi.resetModules();
+		const { legacyBundleCatalog, bundleAvailable } =
+			await import("@repo/local-runtime/library-catalog");
+		const entry = legacyBundleCatalog.find((x) => x.id === "msoutlook-mcp")!;
+		expect(entry).toMatchObject({
+			version: "0.5.0-laplace.2",
+			npm: { package: "@withlaplace/msoutlook-mcp", distTag: "latest", bin: "msoutlook-mcp" },
+		});
+		expect(bundleAvailable(entry, "win32-x64")).toBe(true);
+		expect(entry.acceptance.map((result) => result.version)).toEqual([
+			"0.5.0-laplace.1",
+			"0.5.0-laplace.1",
+			"0.5.0-laplace.1",
+		]);
+	},
+);
+it("keeps legacy bundle installations of any version resolvable for migration", async () => {
+	const { catalogEntryForConfig } = await import("@repo/local-runtime/library-catalog");
+	for (const identity of ["msoutlook-mcp@0.5.0-laplace.1", "msoutlook-mcp@0.5.0-laplace.2"])
+		expect(catalogEntryForConfig({ identity, cwd: "/bundle" })).toMatchObject({
+			legacy: true,
+			entry: { id: "msoutlook-mcp" },
+		});
 	expect(
-		allBundleCatalog.some((x) => x.id === "msoutlook-mcp" && x.version === "0.5.0-laplace.2"),
-	).toBe(true);
-	expect(legacyBundleCatalog.find((x) => x.id === "msoutlook-mcp")?.version).toBe(
-		"0.5.0-laplace.1",
-	);
-});
-it("offers the recovery candidate only when opted in and retains historical installs", async () => {
-	vi.stubEnv("LAPLACE_SESSION_RECOVERY_V1", "true");
-	vi.resetModules();
-	const { legacyBundleCatalog, allBundleCatalog, bundleAvailable } =
-		await import("@repo/local-runtime/library-catalog");
-	const entry = legacyBundleCatalog.find((x) => x.id === "msoutlook-mcp")!;
-	expect(entry.version).toBe("0.5.0-laplace.2");
-	expect(bundleAvailable(entry.artifacts[0]!)).toBe(true);
-	expect(entry.artifacts[0]!.acceptance).toEqual([]);
-	expect(allBundleCatalog.some((x) => x.id === entry.id && x.version === "0.5.0-laplace.1")).toBe(
-		true,
-	);
+		catalogEntryForConfig({
+			identity: "npm:@withlaplace/msoutlook-mcp@0.5.0-laplace.3",
+			npm: { package: "@withlaplace/msoutlook-mcp", version: "0.5.0-laplace.3" },
+		}),
+	).toMatchObject({ legacy: false, entry: { id: "msoutlook-mcp" } });
+	// Desktop-shipped adapters never run from an extracted bundle directory.
+	expect(catalogEntryForConfig({ identity: "msoutlook-mcp@0.6.0-candidate.9" })).toBeUndefined();
+	expect(
+		catalogEntryForConfig({
+			identity: "msoutlook-mcp@0.6.0-candidate.9",
+			cwd: "/bundle",
+			managedBrowser: {},
+		}),
+	).toBeUndefined();
 });

@@ -18,7 +18,7 @@ import {
 import { browserSetupTools, verifyBrowserConfiguration } from "./browser-catalog";
 import { runtimeCommand, type ServerConfig } from "./config";
 import { InvocationQueue } from "./invocation-queue";
-import { acquireResourceLeases } from "./leases";
+import { acquireResourceLeases, outlookIdentity } from "./leases";
 import { closeMcpConnection } from "./mcp-lifecycle";
 import { ManagedStdio } from "./process";
 
@@ -217,7 +217,7 @@ export class Supervisor {
 						env: {
 							...config.env,
 							...(process.env.LAPLACE_SESSION_RECOVERY_V1 === "true" &&
-							config.identity?.startsWith("msoutlook-mcp@")
+							outlookIdentity(config.identity)
 								? { LAPLACE_SESSION_RECOVERY_V1: "true" }
 								: {}),
 						},
@@ -270,7 +270,9 @@ export class Supervisor {
 			let cursor: string | undefined;
 			const cursors = new Set<string>();
 			do {
-				const page = await client.listTools(cursor ? { cursor } : undefined, { timeout: 30_000 });
+				const page = await client.listTools(cursor ? { cursor } : undefined, {
+					timeout: 30_000,
+				});
 				tools.push(...page.tools.map((tool) => toolSnapshot.parse(tool)));
 				cursor = page.nextCursor;
 				if (tools.length > 300 || (cursor && cursors.has(cursor)))

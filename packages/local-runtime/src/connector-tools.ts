@@ -126,7 +126,7 @@ const definitions = {
 					.optional(),
 			})
 			.strict(),
-		"Add a connector published on npm. Laplace publishes @withlaplace/msoutlook-mcp (Outlook on the web; optional env MSOUTLOOK_BROWSER=chrome or edge) and @withlaplace/canvas-session-mcp (Canvas; env CANVAS_URL is the school's Canvas HTTPS address, optional CANVAS_MCP_DOWNLOADS folder); other npm MCP servers also work. Desktop installs the exact version (a dist-tag such as latest is resolved now) with lifecycle scripts disabled and runs it under the Laplace Runtime. Does not replace an existing ID. env holds non-secret settings only; never pass passwords or tokens in args or env. Use local_connectors_list to see each connector's npm package and version.",
+		"Add a connector published on npm. Laplace catalog connectors (the @withlaplace packages listed by local_connectors_list) install best with local_connectors_install, which fills their settings and sign-in checks; other npm MCP servers work here. Desktop installs the exact version (a dist-tag such as latest is resolved now) with lifecycle scripts disabled and runs it under the Laplace Runtime. Does not replace an existing ID. env holds non-secret settings only; never pass passwords or tokens in args or env. Use local_connectors_list to see each connector's npm package and version.",
 	],
 	local_connectors_versions: [
 		z.object({ id }).strict(),
