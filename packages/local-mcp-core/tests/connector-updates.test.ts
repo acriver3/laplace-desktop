@@ -12,14 +12,14 @@ import {
 	assertIndexSuccessor,
 	connectorIndex,
 } from "../src/connector-releases";
-import { ConnectorUpdates } from "../src/connector-updates";
+import { ConnectorUpdates, type NpmUpdateHost } from "../src/connector-updates";
 import { UpdatePolicyStore, automaticUpdatesEnabled } from "../src/update-policy";
 const roots: string[] = [];
 afterEach(async () => {
 	vi.unstubAllEnvs();
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
-async function fixture(retain = false) {
+async function fixture(retain = false, npm?: NpmUpdateHost) {
 	const root = await mkdtemp(join(tmpdir(), "laplace-updates-"));
 	roots.push(root);
 	const directory = join(root, "old");
@@ -129,6 +129,7 @@ async function fixture(retain = false) {
 			maintenance,
 			busy,
 			idleSeconds,
+			...(npm ? { npm } : {}),
 		},
 		policy,
 		key,
@@ -274,7 +275,9 @@ it("cancels downloads when automation is disabled", async () => {
 	vi.mocked(f.fetcher).mockImplementation(async (_url, options) => {
 		entered();
 		return new Promise<Response>((_resolve, reject) =>
-			options?.signal?.addEventListener("abort", () => reject(Error("cancelled")), { once: true }),
+			options?.signal?.addEventListener("abort", () => reject(Error("cancelled")), {
+				once: true,
+			}),
 		);
 	});
 	const pending = f.updates.prepare("canvas", undefined, true);
@@ -360,4 +363,74 @@ it("enables the accepted rollout while retaining the explicit execution kill swi
 	expect(automaticUpdatesEnabled()).toBe(false);
 	vi.stubEnv("LAPLACE_AUTOMATIC_UPDATES_V1", "true");
 	expect(automaticUpdatesEnabled()).toBe(true);
+});
+it("migrates legacy bundles to npm and follows the npm dist-tag under the update policy", async () => {
+	const state = { legacy: true, version: "0.1.0", latest: "0.3.0" };
+	const npm = {
+		targets: vi.fn(async () => [
+			{ id: "canvas", name: "My Canvas", version: state.version, legacy: state.legacy },
+		]),
+		latest: vi.fn(async () => state.latest),
+		stage: vi.fn(async () => {}),
+		apply: vi.fn(async (_id: string, version: string) => {
+			if (version === "0.4.0") throw Error("start failed");
+			state.legacy = false;
+			state.version = version;
+		}),
+	};
+	const f = await fixture(false, npm);
+	// The signed-feed enrollment is superseded by the npm distribution.
+	expect(await f.updates.status()).toEqual([
+		expect.objectContaining({
+			id: "canvas",
+			version: "0.1.0",
+			availableVersion: "0.3.0",
+			message: expect.stringContaining("legacy bundle"),
+		}),
+	]);
+	await f.updates.pin("canvas", true);
+	expect(await f.updates.migrate()).toEqual([]);
+	await f.updates.pin("canvas", false);
+	expect(await f.updates.migrate()).toEqual([{ id: "canvas" }]);
+	expect(npm.apply).toHaveBeenLastCalledWith("canvas", "0.3.0", expect.anything());
+	expect(f.releaseLock).toHaveBeenCalledOnce();
+	expect(await f.updates.installed("canvas")).toBeUndefined();
+	expect(await f.updates.migrate()).toEqual([]);
+
+	state.latest = "0.4.0";
+	await f.updates.check();
+	vi.stubEnv("LAPLACE_AUTOMATIC_UPDATES_V1", "true");
+	await f.updates.apply("canvas", true);
+	expect(npm.apply).toHaveBeenCalledOnce();
+	await f.policy.mutate((p) => {
+		p.connectors = true;
+		p.deferredUntil = Date.now() + 60_000;
+	});
+	await f.updates.apply("canvas", true);
+	expect(npm.apply).toHaveBeenCalledOnce();
+	await f.policy.mutate((p) => {
+		p.deferredUntil = 0;
+	});
+	await expect(f.updates.apply("canvas", true)).rejects.toThrow("start failed");
+	expect((await f.updates.status())[0]).toMatchObject({
+		version: "0.3.0",
+		availableVersion: "0.4.0",
+		message: expect.stringContaining("Previous update failed"),
+	});
+	await f.updates.apply("canvas", true);
+	expect(npm.apply).toHaveBeenCalledTimes(2);
+	state.latest = "0.5.0";
+	await f.updates.check();
+	await f.updates.prepare("canvas", undefined, true);
+	expect(npm.stage).toHaveBeenLastCalledWith("canvas", "0.5.0", expect.anything());
+	await f.updates.apply("canvas", true);
+	expect(state.version).toBe("0.5.0");
+	expect((await f.updates.status())[0]).toMatchObject({
+		version: "0.5.0",
+		availableVersion: undefined,
+	});
+	// A registry outage is reported without hiding the connector.
+	npm.latest.mockRejectedValueOnce(Error("The npm registry could not be reached."));
+	await f.updates.check();
+	expect((await f.updates.status())[0]?.message).toBe("The npm registry could not be reached.");
 });

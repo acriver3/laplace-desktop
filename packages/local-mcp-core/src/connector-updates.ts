@@ -34,12 +34,34 @@ const receipt = z.object({
 const journal = z.object({ previous: receipt, candidate: receipt });
 const document = z.object({
 	installations: z.array(receipt).default([]),
+	/** Version each npm-distributed connector's dist-tag named at the last check. */
+	npm: z.record(z.string(), z.object({ version: z.string().max(100) })).default({}),
 	journal: journal.optional(),
 	failed: z.record(z.string(), z.string()).default({}),
 	proof: z.object({ payload: z.string(), signature: z.string() }).optional(),
 	index: connectorIndex.optional(),
 });
 type Receipt = z.infer<typeof receipt>;
+/** A catalog connector distributed through npm; its updates follow the catalog's dist-tag. */
+export interface NpmUpdateTarget {
+	id: string;
+	name: string;
+	version: string;
+	/** Still runs a legacy MCPB bundle; updating moves it to the npm package. */
+	legacy: boolean;
+}
+export interface NpmUpdateHost {
+	targets(): Promise<NpmUpdateTarget[]>;
+	/** The exact version the connector's dist-tag names now. */
+	latest(id: string, signal: AbortSignal): Promise<string>;
+	/** Downloads and prepares a version ahead of switching to it. */
+	stage?(id: string, version: string, signal: AbortSignal): Promise<void>;
+	/**
+	 * Switches to an exact version with setVersion semantics: atomic replacement, the previous
+	 * configuration restored when the new one fails to start, and new tools held for approval.
+	 */
+	apply(id: string, version: string, signal: AbortSignal): Promise<unknown>;
+}
 export interface ConnectorUpdateHost {
 	root: string;
 	version: string;
@@ -58,6 +80,11 @@ export interface ConnectorUpdateHost {
 	 * them by full path (for example the Windows runtime's node.exe) instead of the bare alias.
 	 */
 	bundledRuntime?(command: string): "node" | "uv" | undefined;
+	/**
+	 * npm-distributed catalog connectors. They update from npm instead of the signed feed, which
+	 * remains for Desktop-shipped browser adapters and legacy bundles that have not migrated yet.
+	 */
+	npm?: NpmUpdateHost;
 }
 export interface ConnectorUpdateStatus {
 	id: string;
@@ -89,6 +116,7 @@ export class ConnectorUpdates {
 	private active = false;
 	private transfers = new Map<string, AbortController>();
 	private installing = new Set<string>();
+	private npmProblems = new Map<string, string>();
 	cancel(id?: string) {
 		for (const [key, controller] of this.transfers)
 			if ((!id || key === id) && !this.installing.has(key)) controller.abort();
@@ -189,7 +217,46 @@ export class ConnectorUpdates {
 		}
 	}
 	async check(signal = new AbortController().signal) {
-		return this.exclusive(() => this.checkLocked(signal));
+		return this.exclusive(async () => {
+			await this.checkNpmLocked(signal);
+			return this.checkLocked(signal);
+		});
+	}
+	private async npmTargets() {
+		return (await this.host.npm?.targets()) ?? [];
+	}
+	/** Records the version each npm connector's dist-tag names; one failure never blocks others. */
+	private async checkNpmLocked(signal: AbortSignal) {
+		if (!this.host.npm) return;
+		const targets = await this.npmTargets();
+		const found: Record<string, { version: string }> = {};
+		for (const target of targets) {
+			try {
+				found[target.id] = { version: await this.host.npm.latest(target.id, signal) };
+				this.npmProblems.delete(target.id);
+			} catch (error) {
+				signal.throwIfAborted();
+				this.npmProblems.set(
+					target.id,
+					error instanceof Error ? error.message : "The npm registry could not be checked.",
+				);
+			}
+		}
+		await this.store.mutate((state) => {
+			const previous = state.npm;
+			state.npm = {};
+			for (const target of targets) {
+				const value = found[target.id] ?? previous[target.id];
+				if (value) state.npm[target.id] = value;
+			}
+		});
+	}
+	private npmCandidate(
+		target: NpmUpdateTarget,
+		state: z.infer<typeof document>,
+	): string | undefined {
+		const version = state.npm[target.id]?.version;
+		return version && (target.legacy || version !== target.version) ? version : undefined;
 	}
 	private async checkLocked(signal: AbortSignal) {
 		const [bytes, signature] = await Promise.all([
@@ -262,8 +329,43 @@ export class ConnectorUpdates {
 		});
 	}
 	async status(): Promise<ConnectorUpdateStatus[]> {
-		const [state, policy] = await Promise.all([this.store.read(), this.policy.read()]);
-		return state.installations.map((installed) => {
+		const [state, policy, targets] = await Promise.all([
+			this.store.read(),
+			this.policy.read(),
+			this.npmTargets(),
+		]);
+		const npmRows = targets.map((target): ConnectorUpdateStatus => {
+			const candidate = this.npmCandidate(target, state);
+			return {
+				id: target.id,
+				name: target.name,
+				phase: this.installing.has(target.id)
+					? "installing"
+					: this.transfers.has(target.id)
+						? "downloading"
+						: "idle",
+				version: target.version,
+				availableVersion: candidate,
+				pinned: !!policy.pins[updateInstanceKey(this.host.root, target.id)],
+				message:
+					this.npmProblems.get(target.id) ??
+					(candidate && state.failed[target.id] === candidate
+						? "Previous update failed. Use manual update to retry."
+						: target.legacy
+							? "Moves from its legacy bundle to the npm package; settings and sessions are kept."
+							: undefined),
+			};
+		});
+		const npmIds = new Set(targets.map((target) => target.id));
+		return [...npmRows, ...this.feedStatus(state, policy, npmIds)];
+	}
+	private feedStatus(
+		state: z.infer<typeof document>,
+		policy: Awaited<ReturnType<UpdatePolicyStore["read"]>>,
+		npmIds: Set<string>,
+	): ConnectorUpdateStatus[] {
+		const feed = state.installations.filter((installed) => !npmIds.has(installed.id));
+		return feed.map((installed) => {
 			const candidate = this.candidate(installed, state.index);
 			const interrupted = state.journal?.previous.id === installed.id;
 			return {
@@ -571,8 +673,15 @@ export class ConnectorUpdates {
 	async prepare(id: string, signal = new AbortController().signal, automatic = false) {
 		return this.exclusive(() =>
 			this.transfer(id, signal, automatic, async (signal) => {
-				const state = await this.store.read(),
-					installed = state.installations.find((i) => i.id === id);
+				const state = await this.store.read();
+				const target = (await this.npmTargets()).find((item) => item.id === id);
+				if (target) {
+					const version = this.npmCandidate(target, state);
+					if (version && state.failed[id] !== version)
+						await this.host.npm!.stage?.(id, version, signal);
+					return;
+				}
+				const installed = state.installations.find((i) => i.id === id);
 				const candidate = installed && this.candidate(installed, state.index);
 				if (installed && candidate && !this.reason(installed, candidate))
 					await this.stage(candidate, signal);
@@ -599,6 +708,8 @@ export class ConnectorUpdates {
 	) {
 		if (automatic && !automaticUpdatesEnabled())
 			throw Error("Automatic updates are not activated");
+		const target = (await this.npmTargets()).find((item) => item.id === id);
+		if (target) return this.applyNpmLocked(target, automatic, signal);
 		if (this.active) throw Error("A connector update is already running");
 		this.active = true;
 		let unlock: (() => void) | undefined;
@@ -698,6 +809,93 @@ export class ConnectorUpdates {
 			unlock?.();
 			this.active = false;
 		}
+	}
+	/**
+	 * Follows the catalog's npm dist-tag. Automatic runs honor the same policy as signed-feed
+	 * updates (connector updates switched on, pins, deferral, idle time, failed versions).
+	 */
+	private async applyNpmLocked(target: NpmUpdateTarget, automatic: boolean, signal: AbortSignal) {
+		if (this.active) throw Error("A connector update is already running");
+		this.active = true;
+		let unlock: (() => void) | undefined;
+		const id = target.id;
+		try {
+			const state = await this.store.read();
+			const version = this.npmCandidate(target, state);
+			if (!version) return;
+			const blocked = async () => {
+				const policy = await this.policy.read();
+				return (
+					automatic &&
+					(!policy.connectors ||
+						policy.pins[updateInstanceKey(this.host.root, id)] ||
+						policy.deferredUntil > Date.now() ||
+						state.failed[id] === version ||
+						((await (this.host.idleSeconds?.() ?? computerIdleSeconds())) ?? -1) < 900)
+				);
+			};
+			if (await blocked()) return;
+			await this.host.npm!.stage?.(id, version, signal);
+			signal.throwIfAborted();
+			if (this.host.busy()) throw Error("Local work is active; update deferred");
+			unlock = await this.host.maintenance(id);
+			if (!unlock) throw Error("Connector is busy; update deferred");
+			if ((await blocked()) || (automatic && this.host.busy())) return;
+			signal.throwIfAborted();
+			this.installing.add(id);
+			try {
+				await this.host.npm!.apply(id, version, signal);
+			} catch (error) {
+				await this.store.mutate((s) => {
+					s.failed[id] = version;
+				});
+				throw error;
+			}
+			// The npm package supersedes any signed-feed receipt for this connector.
+			await this.store.mutate((s) => {
+				s.installations = s.installations.filter((i) => i.id !== id);
+				delete s.failed[id];
+			});
+		} finally {
+			unlock?.();
+			this.active = false;
+		}
+	}
+	/**
+	 * Moves catalog connectors still running a legacy MCPB bundle to their npm package, keeping
+	 * their settings and server ID. Runs at startup and after update checks regardless of the
+	 * automatic-update preference, because bundle distribution has ended; a pinned connector is
+	 * left alone, and a failed migration is retried only manually.
+	 */
+	async migrate(signal = new AbortController().signal) {
+		if (!this.host.npm) return [];
+		return this.exclusive(async () => {
+			const results: Array<{ id: string; error?: string }> = [];
+			const policy = await this.policy.read();
+			for (const target of await this.npmTargets()) {
+				if (!target.legacy || policy.pins[updateInstanceKey(this.host.root, target.id)])
+					continue;
+				try {
+					let state = await this.store.read();
+					if (!state.npm[target.id]) {
+						await this.checkNpmLocked(signal);
+						state = await this.store.read();
+					}
+					const version = this.npmCandidate(target, state);
+					if (!version || state.failed[target.id] === version) continue;
+					await this.transfer(target.id, signal, false, (signal) =>
+						this.applyNpmLocked(target, false, signal),
+					);
+					results.push({ id: target.id });
+				} catch (error) {
+					results.push({
+						id: target.id,
+						error: error instanceof Error ? error.message : "Migration failed.",
+					});
+				}
+			}
+			return results;
+		});
 	}
 	async recover() {
 		return this.exclusive(() => this.recoverLocked());
