@@ -338,29 +338,41 @@ it("drops the npm receipt when the launch command is edited by hand", async () =
 	);
 }, 120_000);
 
-it("offers the npm tools on macOS unless switched off, and elsewhere only when switched on", async () => {
-	const names = async (flag: string) => {
-		vi.stubEnv("LAPLACE_NPM_CONNECTORS_V1", flag);
-		vi.resetModules();
-		const { connectorManagementTools } =
-			await import("@repo/local-runtime/connector-tools");
-		return connectorManagementTools.map((tool) => tool.name);
-	};
-	const npmTools = [
-		"local_connectors_add_npm",
-		"local_connectors_versions",
-		"local_connectors_set_version",
-	];
-	expect(await names("false")).not.toEqual(
-		expect.arrayContaining([npmTools[0]]),
-	);
-	expect(await names("true")).toEqual(expect.arrayContaining(npmTools));
-	const unset = await names("");
-	if (process.platform === "darwin")
-		expect(unset).toEqual(expect.arrayContaining(npmTools));
-	else expect(unset).not.toEqual(expect.arrayContaining([npmTools[0]]));
-	vi.unstubAllEnvs();
-});
+it.each(["win32", "darwin", "linux"])(
+	"offers the npm tools by default on %s unless switched off",
+	async (platform) => {
+		vi.stubGlobal("process", { ...process, platform, env: process.env });
+		const names = async (flag: string | undefined) => {
+			vi.stubEnv("LAPLACE_NPM_CONNECTORS_V1", flag);
+			vi.resetModules();
+			const { npmConnectorsEnabled } = await import("@repo/local-runtime/npm-source");
+			const { connectorManagementTools } = await import("@repo/local-runtime/connector-tools");
+			return {
+				enabled: npmConnectorsEnabled(),
+				tools: connectorManagementTools.map((tool) => tool.name),
+			};
+		};
+		const npmTools = [
+			"local_connectors_add_npm",
+			"local_connectors_versions",
+			"local_connectors_set_version",
+		];
+		try {
+			const off = await names("false");
+			expect(off.enabled).toBe(false);
+			expect(off.tools).not.toEqual(expect.arrayContaining([npmTools[0]]));
+			for (const flag of [undefined, "", "true"]) {
+				const on = await names(flag);
+				expect(on.enabled).toBe(true);
+				expect(on.tools).toEqual(expect.arrayContaining(npmTools));
+			}
+		} finally {
+			vi.unstubAllEnvs();
+			vi.unstubAllGlobals();
+			vi.resetModules();
+		}
+	},
+);
 
 it("lets AI clients with connector management add, list and switch npm connectors", async () => {
 	vi.stubEnv("LAPLACE_NPM_CONNECTORS_V1", "true");
