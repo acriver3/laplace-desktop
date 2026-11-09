@@ -46,7 +46,7 @@ describe("local MCP bundle catalog", () => {
 		}
 		const ems = bundleCatalog.find((entry) => entry.recipe === "yale-som-ems")!;
 		expect(ems).toMatchObject({
-			version: "0.1.1",
+			version: "0.1.2",
 			repository: "https://github.com/acriver3/laplace-mcp-library",
 			sourceDirectory: "connectors/yale-som-ems-mcp",
 			npm: {

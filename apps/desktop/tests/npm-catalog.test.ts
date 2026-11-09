@@ -38,6 +38,8 @@ const resources = testResources();
 const npmCli = join(resources, "runtimes", "npm", "bin", "npm-cli.js");
 const ems = bundleCatalog.find((entry) => entry.recipe === "yale-som-ems")!;
 const name = ems.npm!.package;
+// A later version than the catalog's, for update tests.
+const next = ems.version.replace(/\d+$/, (patch) => String(Number(patch) + 1));
 
 /** Dependency-free stdio MCP server that records its launch and exposes the given tools. */
 function connectorSource(tools: string[]) {
@@ -93,7 +95,7 @@ beforeAll(async () => {
 	registryUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 	const versions: Record<string, string[]> = {
 		[ems.version]: ["ems_session_status", "ems_list_templates"],
-		"0.1.2": ["ems_session_status", "ems_list_templates", "ems_new_tool"],
+		[next]: ["ems_session_status", "ems_list_templates", "ems_new_tool"],
 	};
 	for (const [version, tools] of Object.entries(versions)) {
 		const directory = join(work, version);
@@ -348,7 +350,7 @@ it("migrates a legacy bundle installation to npm, keeping its settings, ID and t
 	expect(await connectorUpdates.migrate()).toEqual([]);
 
 	// Updates follow the dist-tag through the npm path and respect the automatic-update policy.
-	packument["dist-tags"].latest = "0.1.2";
+	packument["dist-tags"].latest = next;
 	cleanup.push(() => {
 		packument["dist-tags"].latest = ems.version;
 	});
@@ -357,7 +359,7 @@ it("migrates a legacy bundle installation to npm, keeping its settings, ID and t
 		expect.objectContaining({
 			id: "yale-som-ems",
 			version: ems.version,
-			availableVersion: "0.1.2",
+			availableVersion: next,
 			pinned: false,
 		}),
 	]);
@@ -375,11 +377,11 @@ it("migrates a legacy bundle installation to npm, keeping its settings, ID and t
 	});
 	await connectorUpdates.apply("yale-som-ems", true);
 	expect(manager.getServerConfig("yale-som-ems")).toMatchObject({
-		identity: `npm:${name}@0.1.2`,
+		identity: `npm:${name}@${next}`,
 		enabledTools: ["ems_session_status"],
 	});
 	expect((await connectorUpdates.status())[0]).toMatchObject({
-		version: "0.1.2",
+		version: next,
 		availableVersion: undefined,
 	});
 }, 240_000);
