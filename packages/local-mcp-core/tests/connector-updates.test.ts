@@ -388,9 +388,20 @@ it("migrates legacy bundles to npm and follows the npm dist-tag under the update
 			message: expect.stringContaining("legacy bundle"),
 		}),
 	]);
+	// Migration follows the automatic-update policy: off, deferred and pinned all wait.
+	expect(await f.updates.migrate()).toEqual([]);
+	await f.policy.mutate((p) => {
+		p.connectors = true;
+		p.deferredUntil = Date.now() + 60_000;
+	});
+	expect(await f.updates.migrate()).toEqual([]);
+	await f.policy.mutate((p) => {
+		p.deferredUntil = 0;
+	});
 	await f.updates.pin("canvas", true);
 	expect(await f.updates.migrate()).toEqual([]);
 	await f.updates.pin("canvas", false);
+	expect(npm.apply).not.toHaveBeenCalled();
 	expect(await f.updates.migrate()).toEqual([{ id: "canvas" }]);
 	expect(npm.apply).toHaveBeenLastCalledWith("canvas", "0.3.0", expect.anything());
 	expect(f.releaseLock).toHaveBeenCalledOnce();
@@ -400,6 +411,9 @@ it("migrates legacy bundles to npm and follows the npm dist-tag under the update
 	state.latest = "0.4.0";
 	await f.updates.check();
 	vi.stubEnv("LAPLACE_AUTOMATIC_UPDATES_V1", "true");
+	await f.policy.mutate((p) => {
+		p.connectors = false;
+	});
 	await f.updates.apply("canvas", true);
 	expect(npm.apply).toHaveBeenCalledOnce();
 	await f.policy.mutate((p) => {

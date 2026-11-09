@@ -863,15 +863,17 @@ export class ConnectorUpdates {
 	}
 	/**
 	 * Moves catalog connectors still running a legacy MCPB bundle to their npm package, keeping
-	 * their settings and server ID. Runs at startup and after update checks regardless of the
-	 * automatic-update preference, because bundle distribution has ended; a pinned connector is
-	 * left alone, and a failed migration is retried only manually.
+	 * their settings and server ID. Runs at startup and after update checks under the same policy
+	 * as automatic updates: nothing moves while automatic connector updates are off or deferred,
+	 * a pinned connector is left alone, and a failed migration is retried only manually. A manual
+	 * update, configure or repair of a legacy connector still migrates it.
 	 */
 	async migrate(signal = new AbortController().signal) {
 		if (!this.host.npm) return [];
 		return this.exclusive(async () => {
 			const results: Array<{ id: string; error?: string }> = [];
 			const policy = await this.policy.read();
+			if (!policy.connectors || policy.deferredUntil > Date.now()) return results;
 			for (const target of await this.npmTargets()) {
 				if (!target.legacy || policy.pins[updateInstanceKey(this.host.root, target.id)])
 					continue;

@@ -298,8 +298,14 @@ it("migrates a legacy bundle installation to npm, keeping its settings, ID and t
 	expect(await installer.npmUpdateTargets()).toEqual([
 		{ id: "yale-som-ems", name: "My EMS", version: "0.1.0", legacy: true },
 	]);
-	// A pinned connector stays on its bundle.
 	const connectorUpdates = updates(installer);
+	// Migration follows the automatic-update policy; with it off, the bundle stays.
+	expect(await connectorUpdates.migrate()).toEqual([]);
+	expect(manager.getServerConfig("yale-som-ems").identity).toBe(`${ems.id}@0.1.0`);
+	await policy.mutate((value) => {
+		value.connectors = true;
+	});
+	// A pinned connector stays on its bundle.
 	await connectorUpdates.pin("yale-som-ems", true);
 	expect(await connectorUpdates.migrate()).toEqual([]);
 	expect(manager.getServerConfig("yale-som-ems").identity).toBe(`${ems.id}@0.1.0`);
@@ -357,6 +363,9 @@ it("migrates a legacy bundle installation to npm, keeping its settings, ID and t
 	]);
 	vi.stubEnv("LAPLACE_AUTOMATIC_UPDATES_V1", "true");
 	cleanup.push(() => vi.unstubAllEnvs());
+	await policy.mutate((value) => {
+		value.connectors = false;
+	});
 	await connectorUpdates.apply("yale-som-ems", true);
 	expect(manager.getServerConfig("yale-som-ems")).toMatchObject({
 		npm: { version: ems.version },
