@@ -74,24 +74,9 @@ ml/funko-valuation/**/__pycache__/
 
 # Generated Python bytecode
 __pycache__/
-.next-cloud-apps/
 
-# Vendored VibeSDK local artifacts (Bun/Vite/Wrangler; source stays tracked)
-apps/vibesdk/.wrangler/
-apps/vibesdk/.dev.vars
-apps/vibesdk/.dev.vars.*
-apps/vibesdk/.prod.vars
-apps/vibesdk/node_modules/
-apps/vibesdk/space/node_modules/
-apps/vibesdk/**/*.bak
 .env.rls-*
 
-# Emitted Monaco workers for the native builder
-/apps/connector/public/_builder-workers/
-!/apps/connector/app/apps/*/build/
-!/apps/connector/app/apps/*/build/page.tsx
-!/apps/connector/app/api/container-apps/build/
-!/apps/connector/app/api/container-apps/build/route.ts
 
 # Cloudflare builds and local release evidence/configuration
 .open-next/
@@ -99,7 +84,6 @@ apps/vibesdk/**/*.bak
 .dev.vars
 .dev.vars.*
 .wrangler/
-/apps/vibesdk/wrangler.doppler.local.jsonc
 wrangler.release.json
 wrangler.vinext-release.json
 packages/database/prisma/schema.cloudflare.prisma
@@ -116,7 +100,6 @@ packages/database/prisma/schema.cloudflare.prisma
 /*-dev*.log
 /install-*.log
 /prisma-generate.log
-/builder-ui.log
 /connector-check.log
 /.vinext-recovered/
 /*-workers.log

@@ -1,15 +1,8 @@
 import { expect, it } from "vitest";
 
-import { handoffPrompt, providerDestination, providerActions, type BuildProvider } from "./handoff";
-it("hands off an existing project without inventing web prefill formats", () => {
-	const prompt = handoffPrompt({
-		projectId: "abc",
-		projectUrl: "https://connect.example/apps/abc",
-		mcpUrl: "https://connect.example/mcp",
-		request: "Build a tracker",
-	});
-	expect(prompt).toContain("Do not create another project");
-	expect(prompt).toContain("get_project_guidelines");
+import { providerDestination, providerActions, type BuildProvider } from "./handoff";
+it("opens a supported assistant without inventing web prefill formats", () => {
+	const prompt = "Connect to my authorized tools.";
 	expect(providerDestination("chatgpt", prompt)).toBe("https://chatgpt.com/");
 	expect(providerDestination("claude", prompt)).toBe("https://claude.ai/");
 	expect(new URL(providerDestination("codex", prompt)!).searchParams.get("prompt")).toBe(prompt);

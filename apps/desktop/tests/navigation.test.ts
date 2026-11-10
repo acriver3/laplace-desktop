@@ -48,9 +48,6 @@ describe("desktop navigation boundary", () => {
 	});
 	it.each([
 		"https://connect.withlaplace.com/home?tab=all",
-		"https://builder.withlaplace.com/chat/new",
-		"https://build.withlaplace.com/",
-		"https://builder-preview.withlaplace.com/",
 	])("retains configured hosted origin %s", (url) =>
 		expect(permittedWebOrigin("hosted", url)).toBe(true),
 	);
@@ -64,6 +61,9 @@ describe("desktop navigation boundary", () => {
 		"javascript:alert(1)",
 		"file:///private/secret",
 		"not a URL",
+		"https://builder.withlaplace.com/chat/new",
+		"https://builder-preview.withlaplace.com/",
+		"https://build.withlaplace.com/",
 	])("rejects untrusted hosted navigation %s", (url) =>
 		expect(permittedWebOrigin("hosted", url)).toBe(false),
 	);
@@ -71,8 +71,6 @@ describe("desktop navigation boundary", () => {
 		for (const url of [
 			"http://127.0.0.1:3004",
 			"http://localhost:3004",
-			"http://127.0.0.1:5174",
-			"http://localhost:5174",
 		])
 			expect(permittedWebOrigin("local", url)).toBe(true);
 		for (const url of [

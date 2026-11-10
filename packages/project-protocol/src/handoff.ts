@@ -13,9 +13,6 @@ export const buildTargetLabels: Record<BuildTarget, string> = {
 	desktop: "Build in desktop",
 	copy: "Copy prompt",
 };
-/** Workspace links must not fall through to the published-app launcher. */
-export const projectPagePath = (projectId: string) =>
-	`/apps/${encodeURIComponent(projectId)}?preview=1`;
 export const providerLabels: Record<BuildProvider, string> = {
 	chatgpt: "ChatGPT",
 	claude: "Claude",
@@ -25,16 +22,6 @@ export const providerLabels: Record<BuildProvider, string> = {
 };
 export function buildProvider(value: unknown): BuildProvider {
 	return BUILD_PROVIDERS.includes(value as BuildProvider) ? (value as BuildProvider) : "chatgpt";
-}
-export function handoffPrompt(input: {
-	projectId: string;
-	projectUrl: string;
-	mcpUrl: string;
-	request?: string;
-	title?: string;
-	status?: string;
-}) {
-	return `Build this app using Laplace Connect.${input.title ? `\nApp title: ${input.title}` : ""}\nProject ID: ${input.projectId}\nProject page: ${input.projectUrl}\nMCP server: ${input.mcpUrl}${input.status ? `\n${input.status}` : ""}\n\nThis project already exists. Do not create another project. First call get_project_guidelines with project_id=${input.projectId}. Check list_suggestion_tasks at startup and between tasks. Claim queued suggestions assigned to me, use their task_context, and report progress with update_suggestion_task every 30 seconds. Saved changes update Preview automatically; report implemented after the matching source revision activates. Never publish approved suggestions live automatically. Use Laplace Connect to inspect and edit this project's files, inspect storage, save restore points, and inspect automatic Preview updates. deploy_and_verify remains an optional runtime check; Publish builds and checks the captured source. Ask me directly for clarification. Do not publish live or reset data unless I request it. If Connect is unavailable, help me connect it before building.${input.request?.trim() ? `\n\nMy request:\n${input.request.trim()}` : ""}`;
 }
 // Only officially documented prefill is used; web providers use copy + open.
 export function providerDestination(

@@ -58,17 +58,10 @@ export function permittedWebOrigin(profile: Profile, value: string): boolean {
 		if (url.username || url.password) return false;
 		const allowed =
 			profile === "hosted"
-				? [
-						profiles.hosted.origin,
-						"https://builder.withlaplace.com",
-						"https://build.withlaplace.com",
-						"https://builder-preview.withlaplace.com",
-					]
+				? [profiles.hosted.origin]
 				: [
 						profiles.local.origin,
 						"http://localhost:3004",
-						"http://127.0.0.1:5174",
-						"http://localhost:5174",
 					];
 		return allowed.includes(url.origin);
 	} catch {
