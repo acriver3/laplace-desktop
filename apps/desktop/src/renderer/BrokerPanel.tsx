@@ -27,6 +27,7 @@ export function BrokerPanel() {
 		[],
 	);
 	useEffect(() => {
+		if (!opened) return;
 		let stopped = false;
 		async function poll() {
 			try {
@@ -57,7 +58,7 @@ export function BrokerPanel() {
 			stopped = true;
 			clearInterval(timer);
 		};
-	}, [busy]);
+	}, [busy, opened]);
 	async function act(action: string, itemIds?: string[], extra: Record<string, unknown> = {}) {
 		if (!view || busy) return;
 		setBusy(true);
@@ -114,7 +115,13 @@ export function BrokerPanel() {
 		}
 	}
 	return opened && view && dismissed !== view.id + ":" + view.revision ? (
-		<Modal title="Credential review" close={() => setDismissed(view.id + ":" + view.revision)}>
+		<Modal
+			title="Credential review"
+			close={() => {
+				setDismissed(view.id + ":" + view.revision);
+				setOpened(false);
+			}}
+		>
 			<p>{view.principalName ?? "Connected assistant"}</p>
 			{view.principalId.startsWith("hosted:") && view.items.some((i) => i.state === "matching") && (
 				<button disabled={busy} onClick={() => void act("authorize")}>

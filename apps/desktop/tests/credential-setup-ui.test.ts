@@ -224,10 +224,25 @@ it.skipIf(
 			);
 			await panel.getByRole("button", { name: "Continue", exact: true }).click();
 			await panel.getByRole("checkbox", { name: /Codex/ }).check();
-			await panel.getByRole("button", { name: "Continue", exact: true }).click();
-			await browserExpect(panel.getByText("Use your existing Chrome profile")).toBeVisible();
 			await panel.getByRole("button", { name: "Finish setup" }).click();
 			await browserExpect(panel.getByRole("button", { name: "Manage saved logins" })).toBeVisible();
+			for (const title of [
+				"Doppler",
+				"Recent requests",
+				"Assistant access",
+				"Chrome readiness",
+				"Advanced settings",
+			]) {
+				await browserExpect(page.getByText(title, { exact: true })).toHaveCount(0);
+			}
+			expect(
+				await page.evaluate(() =>
+					(window as any).credentialTest.history.filter(
+						(method: string) =>
+							method.startsWith("credentials.chrome") || method === "credentials.browsers",
+					),
+				),
+			).toEqual([]);
 			await panel.getByRole("button", { name: "Lock Bitwarden", exact: true }).click();
 			await panel.getByLabel("Master password", { exact: true }).fill("synthetic-master");
 			await panel.getByRole("button", { name: "Unlock Bitwarden", exact: true }).click();
@@ -238,6 +253,43 @@ it.skipIf(
 				path: resolve(".cache/bitwarden-guided-overview.png"),
 				fullPage: true,
 			});
+			for (const width of [390, 1280]) {
+				await page.setViewportSize({ width, height: 1000 });
+				expect(
+					await panel.evaluate((element) => {
+						const bounds = element.getBoundingClientRect();
+						return bounds.right <= window.innerWidth && element.scrollWidth <= element.clientWidth;
+					}),
+				).toBe(true);
+				await page.screenshot({
+					path: resolve(`.cache/agent-led-credentials-${width}.png`),
+					fullPage: true,
+				});
+			}
+			// Earlier installations may have stopped at the removed Chrome step.
+			const permissions = await page.evaluate(() => {
+				const credential = (window as any).credentialTest.credential;
+				credential.settings.setupComplete = false;
+				credential.settings.setupStep = "browser";
+				return {
+					clients: credential.settings.clients,
+					bindings: credential.settings.bindings,
+					actions: credential.settings.actions,
+				};
+			});
+			await page.getByRole("button", { name: "On this device", exact: true }).click();
+			await page.getByRole("button", { name: "Credentials", exact: true }).click();
+			await browserExpect(
+				panel.getByRole("heading", { name: "Choose your assistants" }),
+			).toBeVisible();
+			await browserExpect(panel.getByRole("checkbox", { name: /Codex/ })).toBeChecked();
+			await panel.getByRole("button", { name: "Finish setup" }).click();
+			expect(
+				await page.evaluate(() => {
+					const s = (window as any).credentialTest.credential.settings;
+					return { clients: s.clients, bindings: s.bindings, actions: s.actions };
+				}),
+			).toEqual(permissions);
 			await panel.getByRole("button", { name: "Disconnect", exact: true }).click();
 			await panel.getByRole("button", { name: "Disconnect Bitwarden", exact: true }).click();
 			await browserExpect(

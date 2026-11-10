@@ -5,7 +5,16 @@ import type { HostedConnections } from "./hosted-oauth";
 import type { DesktopManager } from "./manager";
 import { desktopVersion } from "./shared/version";
 
-const section = z.enum(["servers", "clients", "device", "updates", "credentials"]);
+const section = z.enum([
+	"servers",
+	"clients",
+	"info",
+	"tools",
+	"settings",
+	"updates",
+	"credentials",
+	"device",
+]);
 export type DesktopSection = z.infer<typeof section>;
 const input = z.discriminatedUnion("action", [
 	z.object({ action: z.literal("status") }).strict(),
@@ -39,7 +48,7 @@ export async function manageDesktop(
 	if (!manager.clientToolAllowed(clientId, desktopManagementTool.name))
 		throw Error("Desktop management is disabled for this assistant.");
 	const args = input.parse(value);
-	if (args.action === "open") open(args.section);
+	if (args.action === "open") open(args.section === "device" ? "settings" : args.section);
 	else if (args.action === "authorize") {
 		if (hosted.status(clientId).hosted !== "connecting")
 			await hosted.connect(clientId, true, args.desktopManagement);
@@ -62,6 +71,6 @@ export async function manageDesktop(
 		guidance:
 			s.mode === "linked"
 				? "Hosted authorization applies to this assistant only."
-				: "Open Device and link this computer to the intended account. Account selection and approval are user-only.",
+				: "Open Settings and link this computer to the intended account. Account selection and approval are user-only.",
 	};
 }

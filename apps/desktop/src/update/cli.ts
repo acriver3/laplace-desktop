@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto";
 import { userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { cp, mkdir, realpath } from "./filesystem";
-
 import { z } from "zod";
 
 import {
@@ -30,6 +28,7 @@ import {
 	writeJson,
 	type Installation,
 } from "./common";
+import { cp, mkdir, realpath } from "./filesystem";
 import {
 	applyFromHandoff,
 	installPrepared,
@@ -214,7 +213,7 @@ export async function bootstrap(checkout: string, adoption?: string) {
 			await nativeInstallerHost.launch(destination, installation.target);
 		}
 		console.log(
-			`Installed Laplace ${pkg.version}. Future updates are available in Settings → Device.`,
+			`Installed Laplace ${pkg.version}. Future updates are available in On this device → Updates.`,
 		);
 	} finally {
 		await unlock();

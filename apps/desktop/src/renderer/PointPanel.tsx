@@ -7,6 +7,7 @@ import {
 	type PointDestination,
 	type PointState,
 } from "../shared/point-contracts";
+import { SettingHint, SettingLabel, SettingToggle } from "./SettingControls";
 import { invoke } from "./types";
 
 export function PointPanel() {
@@ -40,21 +41,22 @@ export function PointPanel() {
 			setBusy(false);
 		}
 	};
+	const active = !!state && ["capturing", "opening", "editor-ready"].includes(state.phase);
 	return (
-		<SettingsItem
-			title="Laplace Point"
-			description="Snip any app and bring it to your preferred agent. You choose when to send."
-		>
-			<div className="stack">
-				<p className="small muted">
-					Codex current-chat delivery attaches to the draft. Other desktop and browser destinations
-					open with the snip copied for you to paste. CLI destinations copy a local screenshot path
-					for your running agent session.
-				</p>
-				<label className="row">
-					<input
-						type="checkbox"
-						aria-label="Enable Laplace Point"
+		<section className="desktop-settings-panel" aria-label="Laplace Point settings">
+			<SettingsItem
+				title={
+					<SettingLabel
+						label="Laplace Point"
+						hint="Capture part of your screen and bring it to your agent. You choose when to send. Snips stay on this device for seven days."
+					/>
+				}
+			>
+				<div className="desktop-settings-content">
+					<SettingToggle
+						id="point-enabled"
+						label="Enable Laplace Point"
+						hint="Capture a region of your screen with the keyboard shortcut or Capture with Point."
 						checked={state?.settings.enabled ?? false}
 						disabled={!state?.available || busy}
 						onChange={(event) =>
@@ -65,151 +67,155 @@ export function PointPanel() {
 							})
 						}
 					/>
-					Enable Laplace Point
-				</label>
-				{state && !state.available && (
-					<p className="small muted">
-						Point requires a Windows or macOS Desktop build with its native adapter.
-					</p>
-				)}
-				<div className="row wrap">
-					<label htmlFor="point-destination">Default agent</label>
-					<select
-						id="point-destination"
-						value={state?.settings.destination ?? "codex-desktop"}
-						disabled={
-							!state || busy || ["capturing", "opening", "editor-ready"].includes(state.phase)
-						}
-						onChange={(event) =>
-							void perform("shell.point.configure", {
-								...state!.settings,
-								destination: event.target.value as PointDestination,
-							})
-						}
-					>
-						{Object.entries(pointDestinationLabels).map(([value, label]) => (
-							<option key={value} value={value}>
-								{label}
-							</option>
-						))}
-					</select>
-				</div>
-				<div className="row wrap">
-					<label htmlFor="point-shortcut">Capture shortcut</label>
-					<input
-						id="point-shortcut"
-						value={shortcut}
-						maxLength={80}
-						onChange={(event) => setShortcut(event.target.value)}
-						placeholder="Control+L"
-						disabled={busy}
-					/>
-					<Button
-						variant="outline"
-						disabled={!state?.available || busy || shortcut === state.settings.shortcut}
-						onClick={() => void perform("shell.point.configure", { ...state!.settings, shortcut })}
-					>
-						Save shortcut
-					</Button>
-				</div>
-				<p className="small muted">
-					Your capture shortcut takes over this key combination in other apps while Point is
-					enabled.
-				</p>
-				{state?.settings.enabled && (
-					<p className="small">
-						{state.registered
-							? "Shortcut ready"
-							: "Shortcut unavailable — capture from the tray or choose another combination."}
-					</p>
-				)}
-				{state &&
-					(state.permissions.screen !== "granted" ||
-						(state.settings.destination === "codex-desktop" &&
-							!state.permissions.accessibility)) && (
-						<div className="stack">
-							<p className="small">
-								Allow Screen Recording for Laplace in macOS System Settings. Codex current-chat
-								delivery also needs Accessibility.
-							</p>
-							<Button
-								variant="outline"
-								onClick={() => void perform("shell.point.permissions")}
-								disabled={busy}
-							>
-								Set up permissions
-							</Button>
-						</div>
+					{state && !state.available && (
+						<p className="desktop-setting-note">
+							Point requires a Windows or macOS Desktop build with its native adapter.
+						</p>
 					)}
-				<div className="row wrap">
-					<Button
-						disabled={
-							!state?.available ||
-							!state.settings.enabled ||
-							busy ||
-							["capturing", "opening", "editor-ready"].includes(state.phase)
-						}
-						onClick={() => void perform("shell.point.capture")}
-					>
-						Capture with Point
-					</Button>
-					{state?.capture && (
-						<>
-							<Button
-								variant="outline"
-								disabled={
-									busy ||
-									state.phase === "editor-ready" ||
-									state.phase === "opening" ||
-									!!state.capture.attachmentAttempted ||
-									!!state.capture.annotationAttempted ||
-									!!state.capture.handoffComplete
+					<div className="desktop-settings-fields">
+						<div className="desktop-setting-field">
+							<SettingLabel
+								htmlFor="point-destination"
+								label="Default agent"
+								hint="Codex desktop attaches to the current draft. Other desktop and browser agents receive a copied snip; CLI agents receive a local path to paste."
+							/>
+							<select
+								id="point-destination"
+								value={state?.settings.destination ?? "codex-desktop"}
+								disabled={!state || busy || active}
+								onChange={(event) =>
+									void perform("shell.point.configure", {
+										...state!.settings,
+										destination: event.target.value as PointDestination,
+									})
 								}
-								onClick={() => void perform("shell.point.retry")}
 							>
-								{state.capture.destination && state.capture.destination !== "codex-desktop"
-									? "Copy and open again"
-									: "Retry snip"}
-							</Button>
+								{Object.entries(pointDestinationLabels).map(([value, label]) => (
+									<option key={value} value={value}>
+										{label}
+									</option>
+								))}
+							</select>
+						</div>
+						<div className="desktop-setting-field">
+							<SettingLabel
+								htmlFor="point-shortcut"
+								label="Capture shortcut"
+								hint="This key combination is reserved in other apps while Point is enabled."
+							/>
+							<div className="desktop-setting-input-action">
+								<input
+									id="point-shortcut"
+									value={shortcut}
+									maxLength={80}
+									onChange={(event) => setShortcut(event.target.value)}
+									placeholder="Control+L"
+									disabled={busy}
+								/>
+								<Button
+									variant="outline"
+									disabled={!state?.available || busy || shortcut === state.settings.shortcut}
+									onClick={() =>
+										void perform("shell.point.configure", { ...state!.settings, shortcut })
+									}
+								>
+									Save shortcut
+								</Button>
+							</div>
+						</div>
+					</div>
+					{state?.settings.enabled && !state.registered && (
+						<p className="desktop-setting-help">
+							Shortcut unavailable — capture from the tray or choose another combination.
+						</p>
+					)}
+					{state &&
+						(state.permissions.screen !== "granted" ||
+							(state.settings.destination === "codex-desktop" &&
+								!state.permissions.accessibility)) && (
+							<div className="desktop-setting-note">
+								<p>
+									Allow Screen Recording for Laplace in macOS System Settings. Codex current-chat
+									delivery also needs Accessibility.
+								</p>
+								<Button
+									variant="outline"
+									onClick={() => void perform("shell.point.permissions")}
+									disabled={busy}
+								>
+									Set up permissions
+								</Button>
+							</div>
+						)}
+					<div className="desktop-settings-actions">
+						<Button
+							variant="primary"
+							disabled={!state?.available || !state.settings.enabled || busy || active}
+							onClick={() => void perform("shell.point.capture")}
+						>
+							Capture with Point
+						</Button>
+						{state?.capture && (
+							<>
+								<Button
+									variant="outline"
+									disabled={
+										busy ||
+										state.phase === "editor-ready" ||
+										state.phase === "opening" ||
+										!!state.capture.attachmentAttempted ||
+										!!state.capture.annotationAttempted ||
+										!!state.capture.handoffComplete
+									}
+									onClick={() => void perform("shell.point.retry")}
+								>
+									{state.capture.destination && state.capture.destination !== "codex-desktop"
+										? "Copy and open again"
+										: "Retry snip"}
+								</Button>
+								<Button
+									variant="outline"
+									disabled={busy}
+									onClick={() => void perform("shell.point.copy")}
+								>
+									Copy snip
+								</Button>
+							</>
+						)}
+					</div>
+					{state?.capture && (
+						<p className="desktop-setting-help">
+							Saved snip destination:{" "}
+							{pointDestinationLabels[state.capture.destination ?? "codex-desktop"]}
+						</p>
+					)}
+					{state?.message && (
+						<p role="status" className="desktop-setting-note">
+							{state.message}
+						</p>
+					)}
+					{error && (
+						<p role="alert" className="desktop-setting-note" data-kind="error">
+							{error}
+						</p>
+					)}
+					<div className="desktop-settings-footer">
+						<div className="desktop-settings-actions">
 							<Button
 								variant="outline"
-								disabled={busy}
-								onClick={() => void perform("shell.point.copy")}
+								disabled={!state || busy || active}
+								onClick={() => void perform("shell.point.clear")}
 							>
-								Copy snip
+								Clear Point captures
 							</Button>
-						</>
-					)}
+							<SettingHint
+								label="saved captures"
+								hint="Selected snips stay on this device for seven days. Clear Point captures removes the saved snips now."
+							/>
+						</div>
+					</div>
 				</div>
-				{state?.capture && (
-					<p className="small muted">
-						Saved snip destination:{" "}
-						{pointDestinationLabels[state.capture.destination ?? "codex-desktop"]}
-					</p>
-				)}
-				{state?.message && (
-					<p role="status" className="small">
-						{state.message}
-					</p>
-				)}
-				{error && (
-					<p role="alert" className="small">
-						{error}
-					</p>
-				)}
-				<div className="row wrap">
-					<span className="small muted">Selected snips stay on this device for seven days.</span>
-					<Button
-						variant="outline"
-						disabled={
-							!state || busy || ["capturing", "opening", "editor-ready"].includes(state.phase)
-						}
-						onClick={() => void perform("shell.point.clear")}
-					>
-						Clear Point captures
-					</Button>
-				</div>
-			</div>
-		</SettingsItem>
+			</SettingsItem>
+		</section>
 	);
 }

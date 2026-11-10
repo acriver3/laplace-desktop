@@ -12,7 +12,6 @@ import { ChevronDown, FolderInput, Plus, RefreshCw, SearchIcon } from "lucide-re
 import { useState } from "react";
 
 import type { ServerSnapshot } from "../shared/helper-contracts";
-import { BrokerStart } from "./BrokerStart";
 import { CatalogConnectButton } from "./CatalogConnectButton";
 import { connectionName } from "./connection-name";
 import { ConnectionIcon } from "./ConnectionIcon";
@@ -35,7 +34,6 @@ export function LocalConnectionsPage({
 	edit,
 	remove,
 	control,
-	install,
 	search,
 	onSearch,
 	view,
@@ -51,7 +49,6 @@ export function LocalConnectionsPage({
 	edit: (server: ServerSnapshot) => void;
 	remove: (server: ServerSnapshot) => void;
 	control: (server: ServerSnapshot, action: "start" | "stop" | "restart") => void;
-	install: (entry: CatalogEntry) => void;
 	search: string;
 	onSearch: (value: string) => void;
 	view: string;
@@ -151,13 +148,11 @@ export function LocalConnectionsPage({
 										Setup instructions
 									</a>
 								)}
-								<BrokerStart
-									entries={[catalogDetails]}
-									label={
-										catalogDetails.installed
-											? "Reauthenticate with assistant"
-											: "Connect with assistant"
-									}
+								<CatalogConnectButton
+									entry={catalogDetails}
+									busy={busy}
+									connectionId={catalogDetails.installed ? catalogDetails.serverId : undefined}
+									label={catalogDetails.installed ? "Reconnect" : "Connect"}
 								/>
 								{catalogDetails.demoOnly && <p>Demo Only</p>}
 								{!catalogDetails.available && <p>Unavailable on this platform</p>}
@@ -199,25 +194,20 @@ export function LocalConnectionsPage({
 												>
 													{installedCatalog.has(server.id) && (
 														<ConnectorUpdateControl
-															row={updates.rows.find(
-																(row) => row.id === server.id,
-															)}
+															row={updates.rows.find((row) => row.id === server.id)}
 															busy={updates.busy}
 															error={updates.error}
 															run={updates.run}
 														/>
 													)}
-													{installedCatalog.get(server.id) &&
-														server.status !== "online" && (
-															<BrokerStart
-																entries={[
-																	installedCatalog.get(
-																		server.id,
-																	)!,
-																]}
-																label="Reconnect"
-															/>
-														)}
+													{installedCatalog.get(server.id) && server.status !== "online" && (
+														<CatalogConnectButton
+															entry={installedCatalog.get(server.id)!}
+															busy={busy}
+															connectionId={server.id}
+															label="Reconnect"
+														/>
+													)}
 													<DropdownMenu>
 														<DropdownMenuTrigger
 															render={
@@ -250,13 +240,7 @@ export function LocalConnectionsPage({
 															</DropdownMenuItem>
 															{installedCatalog.get(server.id) && (
 																<DropdownMenuItem
-																	onClick={() =>
-																		setCatalogDetails(
-																			installedCatalog.get(
-																				server.id,
-																			),
-																		)
-																	}
+																	onClick={() => setCatalogDetails(installedCatalog.get(server.id))}
 																>
 																	Reconnect with assistant
 																</DropdownMenuItem>
@@ -269,14 +253,7 @@ export function LocalConnectionsPage({
 															<DropdownMenuSeparator />
 															<DropdownMenuItem
 																disabled={busy}
-																onClick={() =>
-																	control(
-																		server,
-																		server.enabled
-																			? "stop"
-																			: "start",
-																	)
-																}
+																onClick={() => control(server, server.enabled ? "stop" : "start")}
 															>
 																{server.enabled ? "Stop" : "Start"}
 															</DropdownMenuItem>
@@ -328,10 +305,7 @@ export function LocalConnectionsPage({
 												<ConnectionTile
 													key={entry.id}
 													className="desktop-connection desktop-catalog-connection"
-													title={connectionName(
-														entry.name,
-														entry.browserMode,
-													)}
+													title={connectionName(entry.name, entry.browserMode)}
 													onDetails={() => setCatalogDetails(entry)}
 													statusLabel={
 														entry.demoOnly
@@ -342,15 +316,7 @@ export function LocalConnectionsPage({
 													}
 													icon={<ConnectionIcon />}
 												>
-													<CatalogConnectButton
-														entry={entry}
-														busy={busy}
-														manual={() =>
-															entry.importOnly
-																? importFile()
-																: install(entry)
-														}
-													/>
+													<CatalogConnectButton entry={entry} busy={busy} />
 												</ConnectionTile>
 											))}
 										</ul>

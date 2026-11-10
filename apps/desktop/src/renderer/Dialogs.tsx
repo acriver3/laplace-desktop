@@ -2,13 +2,7 @@ import { X, FolderOpen } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ClientSnapshot, ServerSnapshot } from "../shared/helper-contracts";
-import {
-	invoke,
-	type CatalogEntry,
-	type ImportPreview,
-	type Perform,
-	type RegistrationPreview,
-} from "./types";
+import { invoke, type ImportPreview, type Perform, type RegistrationPreview } from "./types";
 
 export function Modal({
 	title,
@@ -404,93 +398,6 @@ export function ImportDialog({
 					</button>
 				</div>
 			</div>
-		</Modal>
-	);
-}
-
-export function InstallDialog({
-	entry,
-	perform,
-	close,
-}: {
-	entry: CatalogEntry;
-	perform: Perform;
-	close: () => void;
-}) {
-	const [values, setValues] = useState(
-		Object.fromEntries(entry.fields.map((field) => [field.key, field.default])),
-	);
-	return (
-		<Modal title={`Install ${entry.name}`} close={close}>
-			<form
-				className="dialog-body stack"
-				onSubmit={(event) => {
-					event.preventDefault();
-					void perform(async () => {
-						await invoke("catalog.install", { catalogId: entry.id, configuration: values });
-						close();
-					});
-				}}
-			>
-				<p>{entry.description}</p>
-				<p className="small muted">
-					Version {entry.version}. Installs a verified bundle into this profile. Provider sign-in
-					follows installation.
-				</p>
-				{entry.fields.map((field) => (
-					<label key={field.key}>
-						{field.label}
-						{field.type === "select" ? (
-							<select
-								value={values[field.key]}
-								onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
-							>
-								{field.options?.map((option) => (
-									<option key={option} value={option}>
-										{option || "Automatic"}
-									</option>
-								))}
-							</select>
-						) : (
-							<div className="input-action">
-								<input
-									required={field.required}
-									type={field.type === "url" ? "url" : "text"}
-									value={values[field.key]}
-									onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
-								/>
-								{field.type === "directory" && (
-									<button
-										type="button"
-										aria-label={`Choose ${field.label}`}
-										onClick={() =>
-											void perform(async () => {
-												const value = await invoke<string | null>("shell.pickDirectory");
-												if (value) setValues({ ...values, [field.key]: value });
-											})
-										}
-									>
-										<FolderOpen size={16} />
-									</button>
-								)}
-							</div>
-						)}
-					</label>
-				))}
-				<div className="notice">
-					Authentication opens the connector’s dedicated browser. Complete sign-in, MFA, and any
-					keychain prompts yourself. Setup verification runs the connector’s documented login and
-					read checks locally.
-				</div>
-				<div className="dialog-actions">
-					<button type="button" onClick={close}>
-						Cancel
-					</button>
-					<button type="submit" className="primary">
-						Install {entry.name}
-					</button>
-				</div>
-			</form>
 		</Modal>
 	);
 }

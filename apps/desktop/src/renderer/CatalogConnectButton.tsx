@@ -4,10 +4,9 @@ import {
 	DropdownMenuTrigger,
 	DropdownMenuContent,
 	DropdownMenuItem,
-	DropdownMenuSeparator,
 } from "@repo/ui/components/dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { useRef, useState } from "react";
 
 import {
 	catalogSetupNames,
@@ -15,88 +14,117 @@ import {
 	type CatalogSetupTarget,
 	type CatalogSetupResult,
 } from "../shared/catalog-setup";
-import { BrokerStart } from "./BrokerStart";
 import { invoke, type CatalogEntry } from "./types";
+import { useSetupAgent } from "./useSetupAgent";
 
 export function CatalogConnectButton({
 	entry,
-	busy,
-	manual,
+	busy = false,
+	connectionId,
+	label = "Connect",
 }: {
 	entry: CatalogEntry;
-	busy: boolean;
-	manual: () => void;
+	busy?: boolean;
+	connectionId?: string;
+	label?: string;
 }) {
+	const [agent, rememberAgent] = useSetupAgent();
+	const [pickerOpen, setPickerOpen] = useState(false);
+	const [connectOnSelect, setConnectOnSelect] = useState(false);
 	const [pending, setPending] = useState(false);
 	const [result, setResult] = useState<CatalogSetupResult>();
 	const [error, setError] = useState("");
-	async function install() {
-		setPending(true);
-		setError("");
-		try {
-			await invoke("portable.install", {
-				catalogId: entry.id,
-				configuration: {},
-				idempotencyKey: crypto.randomUUID(),
-			});
-		} catch {
-			setError("Installation could not start. Check connection details.");
-		} finally {
-			setPending(false);
-		}
-	}
+	const [copied, setCopied] = useState(false);
+	const working = useRef(false);
+	const disabled = busy || pending || !entry.available;
+
 	async function handoff(target: CatalogSetupTarget) {
+		if (working.current) return;
+		working.current = true;
 		setPending(true);
 		setError("");
+		setCopied(false);
+		setResult(undefined);
 		try {
 			setResult(
 				await invoke<CatalogSetupResult>("shell.catalogSetup", {
 					catalogId: entry.id,
+					...(connectionId ? { connectionId } : {}),
 					target,
 					action: "open",
 				}),
 			);
 		} catch {
-			setError("Could not prepare setup. Try manual setup.");
+			setError("Could not prepare the request. Refresh connections and try again.");
 		} finally {
+			working.current = false;
 			setPending(false);
 		}
 	}
+
+	async function copy() {
+		if (!result) return;
+		try {
+			await navigator.clipboard.writeText(result.prompt);
+			setError("");
+			setCopied(true);
+		} catch {
+			setError("Could not copy the request. Select and copy it from View request below.");
+		}
+	}
+
 	return (
 		<div className="catalog-connect-actions">
-			<BrokerStart entries={[entry]} label="Connect" />
-			<DropdownMenu>
-				<DropdownMenuTrigger
-					render={
-						<Button variant="outline" size="icon" disabled={busy || pending || !entry.available} />
+			<Button
+				variant="primary"
+				disabled={disabled}
+				onClick={() => {
+					if (agent) void handoff(agent);
+					else {
+						setConnectOnSelect(true);
+						setPickerOpen(true);
 					}
-					aria-label={`More setup options for ${entry.name}`}
+				}}
+			>
+				{pending ? "Preparing…" : label}
+			</Button>
+			<DropdownMenu open={pickerOpen} onOpenChange={setPickerOpen}>
+				<DropdownMenuTrigger
+					render={<Button variant="outline" size="icon" disabled={disabled} />}
+					aria-label={`Change agent for ${entry.name}`}
+					title={agent ? `Set up with ${catalogSetupNames[agent]}` : "Choose an agent"}
+					onClick={() => setConnectOnSelect(false)}
 				>
-					<MoreHorizontal className="size-4" />
+					<ChevronDown className="size-4" />
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end">
-					<DropdownMenuItem onClick={() => void install()}>Install on this device</DropdownMenuItem>
-					<DropdownMenuItem onClick={manual}>Set up manually</DropdownMenuItem>
-					<DropdownMenuSeparator />
 					{catalogSetupTarget.options.map((target) => (
-						<DropdownMenuItem key={target} onClick={() => void handoff(target)}>
-							Set up with {catalogSetupNames[target]}
+						<DropdownMenuItem
+							key={target}
+							onClick={() => {
+								rememberAgent(target);
+								setPickerOpen(false);
+								setResult(undefined);
+								setError("");
+								if (connectOnSelect) void handoff(target);
+							}}
+						>
+							{catalogSetupNames[target]}
 						</DropdownMenuItem>
 					))}
 				</DropdownMenuContent>
 			</DropdownMenu>
-			{pending && <p role="status">Preparing setup…</p>}
 			{error && <p role="alert">{error}</p>}
 			{result && (
 				<div className="connection-handoff">
 					<p role="status">
-						{result.opened
-							? "Review and send the draft in your assistant."
-							: "Copy this request into your assistant."}
+						{copied
+							? "Request copied. Paste and send it in your agent."
+							: result.opened
+								? "Review and send the draft in your agent."
+								: "Copy this request into your agent."}
 					</p>
-					<Button onClick={() => void navigator.clipboard.writeText(result.prompt)}>
-						Copy request
-					</Button>
+					<Button onClick={() => void copy()}>Copy request</Button>
 					<details>
 						<summary>View request</summary>
 						<pre>{result.prompt}</pre>

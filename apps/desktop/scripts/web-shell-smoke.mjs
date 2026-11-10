@@ -331,21 +331,17 @@ export async function checkWebShell(app, invoke, until, origin, requests) {
 		"Update button did not open native details",
 	);
 	assert.equal((await invoke("shell.status")).localEmbedded, true);
-	await until(
-		async () =>
-			run(
-				'Array.from(document.querySelectorAll("button")).some(b => b.textContent === "Not now")',
-				panelId,
-			),
-		"Update choice missing",
+	assert.equal(
+		await run(
+			'Array.from(document.querySelectorAll("button")).some(b => b.textContent === "Not now")',
+			panelId,
+		),
+		false,
 	);
-	await run(
-		'Array.from(document.querySelectorAll("button")).find(b => b.textContent === "Not now").click()',
-		panelId,
-	);
+	await run('document.querySelector("#home").click()');
 	await until(
 		async () => (await invoke("shell.status")).mode === "web",
-		"Not now did not return to workspace",
+		"Workspace navigation did not leave Updates",
 	);
 	await app.evaluate(({ webContents }, id) => {
 		const contents = webContents.fromId(id);
@@ -360,7 +356,9 @@ export async function checkWebShell(app, invoke, until, origin, requests) {
 	await click("/desktop/local");
 	for (const [label, section] of [
 		["AI clients", "clients"],
-		["Device", "device"],
+		["Info", "info"],
+		["Tools", "tools"],
+		["Settings", "settings"],
 		["Connections", "servers"],
 	]) {
 		await run(

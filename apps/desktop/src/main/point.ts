@@ -240,7 +240,7 @@ export class PointController {
 	async capture() {
 		if (this.busy || this.monitor || this.stopping) return;
 		if (!this.state.settings.enabled) {
-			this.fail(new Error("Enable Laplace Point in Device settings first."));
+			this.fail(new Error("Enable Laplace Point in On this device → Tools first."));
 			return;
 		}
 		if (!this.state.available) {

@@ -11,8 +11,8 @@ import { localManagementRequest } from "@repo/project-protocol/portable-connecto
 import { z } from "zod";
 
 import { browserAuthorizer, type BrowserApprovals } from "./browser-approvals";
-import type { NpmConnectors } from "./connector-versions";
 import type { CatalogInstaller, CatalogJob } from "./catalog";
+import type { NpmConnectors } from "./connector-versions";
 import { normalizeManualConfiguration, previewManualConfiguration } from "./imports";
 import type { DesktopManager } from "./manager";
 import { npmConnectorsEnabled, packageName } from "./npm-source";
@@ -68,7 +68,7 @@ const definitions = {
 	],
 	local_connectors_browser_desktop: [
 		z.object({ requestId: z.string().uuid() }).strict(),
-		"Open this specific approval in Laplace Desktop when the client cannot display MCP Apps.",
+		"Open this specific request's approval page in the browser when the client cannot display MCP Apps. Returns its URL for clients without a connected Desktop window. The user approves the account on that page.",
 	],
 	local_connectors_manage: [
 		localManagementRequest,
@@ -238,7 +238,7 @@ export class ConnectorManagement {
 			Partial<Pick<CatalogInstaller, "migrateImported" | "rollbackMigration">>,
 		private portable?: PortableConnectors,
 		readonly browserApprovals?: BrowserApprovals,
-		private openBrowserApproval?: (requestId: string) => void,
+		private openBrowserApproval?: (requestId: string, clientId: string) => Promise<string>,
 		private npm?: NpmConnectors,
 	) {}
 	canCall(clientId: string, tool: string) {
@@ -330,11 +330,17 @@ export class ConnectorManagement {
 					clientId,
 					(args as { profileId: string }).profileId,
 				);
-			if (name.endsWith("_desktop")) this.openBrowserApproval?.(requestId);
+			let url: string | undefined;
+			if (name.endsWith("_desktop")) {
+				if (!this.openBrowserApproval) throw Error("Browser approval page unavailable.");
+				url = await this.openBrowserApproval(requestId, clientId);
+				this.authorize(clientId, name);
+			}
 			const { view, capabilities } = this.browserApprovals.review(requestId, clientId);
+			const result = url ? { ...view, url } : view;
 			return {
-				content: [{ type: "text" as const, text: JSON.stringify(view) }],
-				structuredContent: view,
+				content: [{ type: "text" as const, text: JSON.stringify(result) }],
+				structuredContent: result,
 				_meta: { browserApprovalCapabilities: capabilities },
 			};
 		}

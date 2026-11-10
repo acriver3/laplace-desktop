@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { restorableWebUrl, webSessionEnded } from "../src/main/navigation";
-import { shellRequest } from "../src/shared/shell-contracts";
+import { resolveLocalSection, shellRequest } from "../src/shared/shell-contracts";
 
 const origin = "https://connect.withlaplace.com";
 
@@ -44,10 +44,22 @@ describe("web-first Desktop navigation", () => {
 
 describe("trusted shell request contracts", () => {
 	it("switches only between named local sections and Connect", () => {
-		for (const section of ["servers", "clients", "device", "credentials"])
+		for (const section of [
+			"servers",
+			"clients",
+			"info",
+			"tools",
+			"settings",
+			"updates",
+			"device",
+			"credentials",
+		])
 			expect(shellRequest.safeParse({ method: "shell.local", input: { section } }).success).toBe(
 				true,
 			);
+		expect(resolveLocalSection("device")).toBe("settings");
+		for (const section of ["info", "tools", "settings", "updates"] as const)
+			expect(resolveLocalSection(section)).toBe(section);
 		expect(shellRequest.safeParse({ method: "shell.web" }).success).toBe(true);
 		for (const request of [
 			{ method: "shell.local", input: { section: "billing" } },

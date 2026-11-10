@@ -28,7 +28,7 @@ Reauthentication targets the existing connection and suggests its previous crede
 
 ### Advanced configuration and runtime maintenance
 
-Manual CDP addresses, existing CLI path overrides, credential IDs, and API/command JSON are under **Advanced settings**. The managed Bitwarden runtime is pinned to version 2026.10.0. Its complete dependency lockfile lives in `apps/desktop/runtime-manifests/bitwarden`; every dependency is pinned to registry.npmjs.org with SHA-512 integrity. Installation uses the bundled Node/npm, an isolated cache/configuration, no global writes, and disabled lifecycle scripts. Release updates must update the manifest and expected CLI integrity/version together and rerun native acceptance. No user npm configuration or credentials are consumed.
+Technical configuration, including manual CDP addresses and existing CLI path overrides, is handled through agent-led setup. Login selection and assistant permissions are in **Manage saved logins**. The managed Bitwarden runtime is pinned to version 2026.10.0. Its complete dependency lockfile lives in `apps/desktop/runtime-manifests/bitwarden`; every dependency is pinned to registry.npmjs.org with SHA-512 integrity. Installation uses the bundled Node/npm, an isolated cache/configuration, no global writes, and disabled lifecycle scripts. Release updates must update the manifest and expected CLI integrity/version together and rerun native acceptance. No user npm configuration or credentials are consumed.
 
 ## Requests and approvals
 

@@ -10,7 +10,7 @@ import { expect, it } from "vitest";
 it.skipIf(
 	!existsSync(resolve("dist/renderer/index.html")) || !existsSync(chromium.executablePath()),
 )(
-	"keeps broker actions inside cards and dismisses stale setup notices across reloads",
+	"keeps agent actions inside cards and dismisses stale setup notices across reloads",
 	async () => {
 		const directory = resolve("dist/renderer");
 		const server = createServer(async (req, res) => {
@@ -162,8 +162,9 @@ it.skipIf(
 				expect(overflow).toEqual([]);
 			}
 			await page.getByRole("button", { name: "Connect", exact: true }).first().click();
-			await browserExpect(page.getByRole("dialog")).toBeVisible();
-			await page.getByRole("button", { name: "Close dialog" }).click();
+			await browserExpect(page.getByRole("menu")).toBeVisible();
+			await browserExpect(page.getByRole("dialog")).toHaveCount(0);
+			await page.keyboard.press("Escape");
 			await page.setViewportSize({ width: 1440, height: 1000 });
 			await page.screenshot({ path: resolve(".cache/connection-layout.png"), fullPage: true });
 			expect(errors).toEqual([]);

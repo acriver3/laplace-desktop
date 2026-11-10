@@ -10,7 +10,9 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 	await expect(nav.getByRole("button")).toHaveText([
 		"Connections",
 		"AI clients",
-		"Device",
+		"Info",
+		"Tools",
+		"Settings",
 		"Updates",
 	]);
 	await expect(nav.getByRole("button", { name: "Connections", exact: true })).toHaveAttribute(
@@ -48,13 +50,18 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 	for (const entry of catalog.filter((entry) => !entry.installed)) {
 		const row = available
 			.getByRole("listitem")
-			.filter({ has: page.getByRole("button", { name: entry.importOnly ? "Import" : `More setup options for ${entry.name}`, exact: true }) });
-		if (entry.browserMode) await expect(row.locator(".connector-row-title")).toContainText(entry.browserMode === "tethered" ? "[Tethered]" : "[Background Browser]");
+			.filter({
+				has: page.getByRole("button", { name: `Change agent for ${entry.name}`, exact: true }),
+			});
+		if (entry.browserMode)
+			await expect(row.locator(".connector-row-title")).toContainText(
+				entry.browserMode === "tethered" ? "[Tethered]" : "[Background Browser]",
+			);
 		const action = row.getByRole("button", {
-			name: entry.importOnly ? "Import" : `More setup options for ${entry.name}`,
+			name: "Connect",
 			exact: true,
 		});
-		if (entry.available || entry.importOnly) await expect(action).toBeEnabled();
+		if (entry.available) await expect(action).toBeEnabled();
 		else await expect(action).toBeDisabled();
 	}
 	// Exercise trusted native handoff without launching or messaging a real agent.
@@ -70,11 +77,11 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 	try {
 		const setupRow = available
 			.getByRole("listitem")
-			.filter({ has: page.getByRole("button", { name: `More setup options for ${setupEntry.name}`, exact: true }) });
-		await setupRow
-			.getByRole("button", { name: `More setup options for ${setupEntry.name}` })
-			.click();
-		await page.getByRole("menuitem", { name: "Set up with Codex", exact: true }).click();
+			.filter({
+				has: page.getByRole("button", { name: `Change agent for ${setupEntry.name}`, exact: true }),
+			});
+		await setupRow.getByRole("button", { name: "Connect", exact: true }).click();
+		await page.getByRole("menuitem", { name: "Codex", exact: true }).click();
 		await expect(setupRow.getByRole("status")).toContainText("Review and send the draft");
 		await expect(page.getByRole("dialog")).toHaveCount(0);
 		const destinations = await app.evaluate(() => globalThis.catalogDestinations);
@@ -83,12 +90,13 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 		assert.equal(destination.protocol, "codex:");
 		assert.ok(destination.searchParams.get("prompt").includes(setupEntry.id));
 		const prompt = destination.searchParams.get("prompt");
-		const prefix = `Please set up ${setupEntry.name} with Laplace using these instructions: `;
-		assert.ok(prompt.startsWith(prefix));
-		const setupUrl = new URL(prompt.slice(prefix.length));
-		assert.equal(setupUrl.origin + setupUrl.pathname, setupEntry.setupUrl);
-		assert.equal(setupUrl.searchParams.get("version"), setupEntry.version);
-		assert.equal(setupUrl.searchParams.get("environment"), "Local development");
+		assert.ok(prompt.includes('"Local development" profile'));
+		assert.ok(prompt.includes("Discover the available Laplace tools"));
+		assert.ok(prompt.includes("verify with an authenticated read"));
+		assert.deepEqual(
+			(await page.evaluate(() => window.laplaceDesktop.invoke("status"))).servers,
+			[],
+		);
 		const invalid = await page.evaluate(async () => {
 			try {
 				await window.laplaceDesktop.invoke("shell.catalogSetup", {
@@ -140,14 +148,14 @@ export async function checkWorkspace(page, app, appRoot, packaged, catalog) {
 		"Other",
 	]);
 	await screenshot("clients");
-	await nav.getByRole("button", { name: "Device", exact: true }).click();
+	await nav.getByRole("button", { name: "Settings", exact: true }).click();
 	await expect(page.getByRole("combobox", { name: "Environment", exact: true })).toHaveValue(
 		"local",
 	);
 	await expect(
 		page.getByRole("button", { name: "Sign in to link a workspace", exact: true }),
 	).toBeVisible();
-	await screenshot("device");
+	await screenshot("settings");
 	await sidebar.getByRole("button", { name: "Credentials", exact: true }).click();
 	await expect(sidebar.getByRole("button", { name: "Credentials", exact: true })).toHaveAttribute(
 		"aria-current",

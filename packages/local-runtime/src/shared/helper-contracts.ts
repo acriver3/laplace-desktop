@@ -285,7 +285,18 @@ export type DesktopSnapshot = {
 	stayLocalOnly: boolean;
 };
 export type HelperEvent =
-	| { event: "desktop-open"; section: "servers" | "clients" | "device" | "updates" | "credentials" }
+	| {
+			event: "desktop-open";
+			section:
+				| "servers"
+				| "clients"
+				| "info"
+				| "tools"
+				| "settings"
+				| "device"
+				| "updates"
+				| "credentials";
+	  }
 	| { event: "broker-focus" }
 	| { event: "broker-unlock"; sessionId: string }
 	| { event: "browser-approval"; requestId: string }

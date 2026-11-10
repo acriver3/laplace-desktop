@@ -1,6 +1,6 @@
 # Laplace Point
 
-Point is an opt-in Desktop feature under **On this device → Device**. It works without a Laplace account. The default global shortcut is **Control+L on both Windows and macOS**; the tray also has **Capture with Point**. Enabling it takes that shortcut away from other applications. A registration conflict leaves the tray action available and explains how to change the shortcut.
+Point is an opt-in Desktop feature under **On this device → Tools**. It works without a Laplace account. The default global shortcut is **Control+L on both Windows and macOS**; the tray also has **Capture with Point**. Enabling it takes that shortcut away from other applications. A registration conflict leaves the tray action available and explains how to change the shortcut.
 
 ## Capture and delivery
 

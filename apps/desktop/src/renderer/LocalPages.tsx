@@ -10,9 +10,8 @@ import claudeCodeLogo from "../../../connector/public/images/provider-logos/clau
 import codexLogo from "../../../connector/public/images/provider-logos/codex-color.4a2f43ce46b5b6e3.svg";
 import type { DesktopSnapshot } from "../shared/helper-contracts";
 import type { Profile, ShellState } from "../shared/shell-contracts";
-import { PointPanel } from "./PointPanel";
+import { SettingLabel } from "./SettingControls";
 import { invoke, type Perform } from "./types";
-import { UpdatesPanel } from "./UpdatesPanel";
 
 export type SetupTarget = "codex" | "claude-code" | "claude-desktop" | "other";
 const assistants = [
@@ -83,6 +82,53 @@ export function LocalSetup({
 	);
 }
 
+export function LocalInfo({ shell, snapshot }: { shell: ShellState; snapshot?: DesktopSnapshot }) {
+	return (
+		<section className="desktop-settings-panel" aria-label="Device information">
+			<SettingsItem title="About this device">
+				<dl className="desktop-info-grid">
+					<div>
+						<dt>Desktop version</dt>
+						<dd>{shell.updates?.installedVersion ?? "—"}</dd>
+					</div>
+					<div>
+						<dt>Local runtime</dt>
+						<dd>
+							{shell.helperError ? "Needs attention" : snapshot?.endpoint ? "Ready" : "Starting"}
+						</dd>
+					</div>
+					<div>
+						<dt>Connections</dt>
+						<dd>{snapshot?.servers.length ?? "—"}</dd>
+					</div>
+					<div>
+						<dt>Available tools</dt>
+						<dd>{snapshot?.localTools.length ?? "—"}</dd>
+					</div>
+					<div>
+						<dt>
+							<SettingLabel
+								label="Credential storage"
+								hint="Connections and credentials stay on this device. Secrets are protected by your operating system's keychain."
+							/>
+						</dt>
+						<dd>OS keychain</dd>
+					</div>
+					<div>
+						<dt>
+							<SettingLabel
+								label="Closing the window"
+								hint="Tools keep running in the background when you close the window. Use Stop Laplace Runtime in the tray to stop them."
+							/>
+						</dt>
+						<dd>Keep tools running</dd>
+					</div>
+				</dl>
+			</SettingsItem>
+		</section>
+	);
+}
+
 export function LocalSettings({
 	shell,
 	snapshot,
@@ -103,131 +149,120 @@ export function LocalSettings({
 	const linked = !!snapshot?.accountId && snapshot.mode !== "local-only";
 	return (
 		<SettingsList>
-			<PointPanel />
-			<UpdatesPanel update={shell.updates} perform={perform} />
-			<SettingsItem
-				title="Background tools"
-				description="Tools keep running when you close the window. Quit Laplace stops managed processes."
-			>
-				<p className="text-sm">Close to menu bar or tray is enabled.</p>
-			</SettingsItem>
-			<SettingsItem
-				title="Local runtime"
-				description="Connections and credentials are stored on this device."
-			>
-				<dl className="metadata text-sm">
-					<dt>Status</dt>
-					<dd>
-						{shell.helperError ? "Needs attention" : snapshot?.endpoint ? "Ready" : "Starting"}
-					</dd>
-					<dt>Connections</dt>
-					<dd>{snapshot?.servers.length ?? "Loading…"}</dd>
-					<dt>Available tools</dt>
-					<dd>{snapshot?.localTools.length ?? "Loading…"}</dd>
-					<dt>Credential storage</dt>
-					<dd>OS keychain</dd>
-				</dl>
-			</SettingsItem>
-			<SettingsItem
-				title="Workspace linking"
-				description="Choose whether this installation shares connections with a Laplace workspace. This is separate from the workspace open in Laplace."
-			>
-				{snapshot?.error && <p role="alert">{snapshot.error}</p>}
-				{linked ? (
-					<div className="stack">
-						<p>
-							{snapshot?.mode === "linked-blocked"
-								? "Workspace access needs attention."
-								: "This installation is linked."}
-						</p>
-						<p className="small muted">
-							Linked tools follow workspace permissions. Connections explicitly kept local-only
-							retain that choice.
-						</p>
-						<div className="row">
-							{snapshot?.mode === "linked-blocked" &&
-								shell.accounts.some((account) => account.id === snapshot.accountId) && (
+			<section className="desktop-settings-panel" aria-label="Workspace settings">
+				<SettingsItem
+					title={
+						<SettingLabel
+							label="Workspace linking"
+							hint="Link this installation to share connections with a Laplace workspace. Workspace permissions apply; connections marked local-only stay local. This is separate from the workspace open in Laplace."
+						/>
+					}
+				>
+					<div className="desktop-settings-content">
+						{snapshot?.error && <p role="alert">{snapshot.error}</p>}
+						{linked ? (
+							<>
+								<p>
+									{snapshot?.mode === "linked-blocked"
+										? "Workspace access needs attention."
+										: "This installation is linked."}
+								</p>
+								<div className="desktop-settings-actions">
+									{snapshot?.mode === "linked-blocked" &&
+										shell.accounts.some((account) => account.id === snapshot.accountId) && (
+											<Button
+												variant="outline"
+												onClick={() =>
+													void perform(
+														() =>
+															invoke("shell.link", {
+																accountId: snapshot.accountId,
+																name: "Laplace Desktop",
+															}),
+														"Workspace reconnected with existing restrictions.",
+													)
+												}
+											>
+												Reconnect workspace
+											</Button>
+										)}
+									<Button variant="outline" onClick={unlink}>
+										Unlink installation
+									</Button>
+								</div>
+							</>
+						) : shell.account ? (
+							<>
+								<div className="desktop-setting-field">
+									<label htmlFor="link-workspace">Workspace to link</label>
+									<select
+										id="link-workspace"
+										value={accountId}
+										onChange={(event) => setAccountId(event.target.value)}
+									>
+										<option value="">Select workspace…</option>
+										{shell.accounts.map((account) => (
+											<option key={account.id} value={account.id}>
+												{account.name}
+											</option>
+										))}
+									</select>
+								</div>
+								<div className="desktop-settings-actions">
 									<Button
 										variant="outline"
+										disabled={!accountId}
 										onClick={() =>
 											void perform(
-												() =>
-													invoke("shell.link", {
-														accountId: snapshot.accountId,
-														name: "Laplace Desktop",
-													}),
-												"Workspace reconnected with existing restrictions.",
+												() => invoke("shell.link", { accountId, name: "Laplace Desktop" }),
+												"Workspace linked. Review permissions for new tools.",
 											)
 										}
 									>
-										Reconnect workspace
+										Link workspace
 									</Button>
+								</div>
+								{!shell.accounts.length && (
+									<p>No workspaces currently support linking this installation.</p>
 								)}
-							<Button variant="outline" onClick={unlink}>
-								Unlink installation
-							</Button>
-						</div>
-					</div>
-				) : shell.account ? (
-					<div className="stack">
-						<p className="small muted">
-							{snapshot?.stayLocalOnly
-								? "You chose local-only access. Link whenever you’re ready."
-								: "Linking shares connection metadata and applies workspace permissions. Local-only choices are preserved."}
-						</p>
-						<label htmlFor="link-workspace">
-							Workspace to link
-							<select
-								id="link-workspace"
-								value={accountId}
-								onChange={(event) => setAccountId(event.target.value)}
-							>
-								<option value="">Select workspace…</option>
-								{shell.accounts.map((account) => (
-									<option key={account.id} value={account.id}>
-										{account.name}
-									</option>
-								))}
-							</select>
-						</label>
-						<Button
-							variant="outline"
-							disabled={!accountId}
-							onClick={() =>
-								void perform(
-									() => invoke("shell.link", { accountId, name: "Laplace Desktop" }),
-									"Workspace linked. Review permissions for new tools.",
-								)
-							}
-						>
-							Link workspace
-						</Button>
-						{!shell.accounts.length && (
-							<p>No workspaces currently support linking this installation.</p>
+							</>
+						) : (
+							<div className="desktop-settings-actions">
+								<Button
+									variant="outline"
+									onClick={() => void perform(() => invoke("shell.signIn"))}
+								>
+									Sign in to link a workspace
+								</Button>
+							</div>
 						)}
 					</div>
-				) : (
-					<Button variant="outline" onClick={() => void perform(() => invoke("shell.signIn"))}>
-						Sign in to link a workspace
-					</Button>
-				)}
-			</SettingsItem>
-			<SettingsItem
-				title="Environment"
-				description="Each environment keeps separate connections, credentials, and AI clients."
-			>
-				<label htmlFor="profile">
-					Environment
-					<select
-						id="profile"
-						value={shell.profile}
-						onChange={(event) => changeProfile(event.target.value as Profile)}
-					>
-						<option value="hosted">Laplace</option>
-						<option value="local">Local development</option>
-					</select>
-				</label>
-			</SettingsItem>
+				</SettingsItem>
+			</section>
+			<section className="desktop-settings-panel" aria-label="Environment settings">
+				<SettingsItem
+					title={
+						<SettingLabel
+							label="Environment"
+							hint="Each environment keeps separate connections, credentials, and AI clients. Switching stops the current environment's MCP processes."
+						/>
+					}
+				>
+					<div className="desktop-setting-field">
+						<label htmlFor="profile" className="sr-only">
+							Environment
+						</label>
+						<select
+							id="profile"
+							value={shell.profile}
+							onChange={(event) => changeProfile(event.target.value as Profile)}
+						>
+							<option value="hosted">Laplace</option>
+							<option value="local">Local development</option>
+						</select>
+					</div>
+				</SettingsItem>
+			</section>
 		</SettingsList>
 	);
 }

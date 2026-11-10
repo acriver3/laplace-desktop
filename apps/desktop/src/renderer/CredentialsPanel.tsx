@@ -3,15 +3,17 @@ import {
 	MAX_CREDENTIAL_BINDINGS,
 	type CredentialSettings,
 } from "@repo/project-protocol/credentials";
-import { ShieldCheck, LockKeyhole, Check, Globe, ArrowLeft } from "lucide-react";
+import { ShieldCheck, LockKeyhole, Check, ArrowLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { credentialMessages, type BrowserChoice } from "../shared/credential-setup";
+import { credentialMessages } from "../shared/credential-setup";
 import type { ClientSnapshot } from "../shared/helper-contracts";
 import { invoke } from "./types";
 
 type LoginItem = { id: string; label: string; origins: string[] };
-type Step = "connect" | "signIn" | "logins" | "assistants" | "browser" | "overview";
+type Step = "connect" | "signIn" | "logins" | "assistants" | "overview";
+const resumeManagement = (step: string): Step =>
+	step === "assistants" || step === "browser" ? "assistants" : "logins";
 async function request<T = unknown>(method: string, input?: unknown): Promise<T> {
 	const result = await invoke<T | { error: { message: string; code: string } }>(method, input);
 	if (
@@ -43,7 +45,6 @@ export function CredentialsPanel({
 	linkAccount: () => void;
 	accountLinked?: boolean;
 }) {
-	const [chrome, setChrome] = useState<{ state: string; message: string }>();
 	const [state, setState] = useState<CredentialSnapshot>();
 	const [step, setStep] = useState<Step>();
 	const [password, setPassword] = useState("");
@@ -61,17 +62,10 @@ export function CredentialsPanel({
 	const [items, setItems] = useState<LoginItem[]>([]);
 	const [itemsLoaded, setItemsLoaded] = useState(false);
 	const [query, setQuery] = useState("");
-	const [browsers, setBrowsers] = useState<BrowserChoice[]>([]);
-	const [searchedBrowsers, setSearchedBrowsers] = useState(false);
-	const [advanced, setAdvanced] = useState({ bwPath: "bw", endpoint: "", actions: "[]" });
 	const [disconnecting, setDisconnecting] = useState(false);
 	const mounted = useRef(true);
 	const refresh = async () => {
 		const next = await request<CredentialSnapshot>("credentials.status");
-		const chromeState = await request<{ state: string; message: string }>(
-			"credentials.chromeStatus",
-		).catch(() => undefined);
-		if (mounted.current) setChrome(chromeState);
 		if (mounted.current) setState(next);
 		return next;
 	};
@@ -90,9 +84,7 @@ export function CredentialsPanel({
 							(next.settings.setupComplete
 								? "overview"
 								: next.settings.enabled && next.connection.phase === "connected"
-									? ["logins", "assistants", "browser"].includes(next.settings.setupStep)
-										? next.settings.setupStep
-										: "logins"
+									? resumeManagement(next.settings.setupStep)
 									: next.settings.managedBitwarden
 										? "signIn"
 										: "connect"),
@@ -111,23 +103,8 @@ export function CredentialsPanel({
 			clearInterval(timer);
 		};
 	}, []);
-	const serializedAdvanced = state
-		? JSON.stringify({
-				bwPath: state.settings.bwPath,
-				endpoint: state.settings.cdpEndpoint,
-				actions: JSON.stringify(state.settings.actions, null, 2),
-			})
-		: "";
 	useEffect(() => {
-		if (serializedAdvanced) setAdvanced(JSON.parse(serializedAdvanced));
-	}, [serializedAdvanced]);
-	useEffect(() => {
-		if (state?.unlocked && step === "signIn")
-			setStep(
-				["logins", "assistants", "browser"].includes(state.settings.setupStep)
-					? state.settings.setupStep
-					: "logins",
-			);
+		if (state?.unlocked && step === "signIn") setStep(resumeManagement(state.settings.setupStep));
 		if (!state?.unlocked) {
 			setItems([]);
 			setItemsLoaded(false);
@@ -189,11 +166,6 @@ export function CredentialsPanel({
 			setItems(result);
 			setItemsLoaded(true);
 		});
-	const discover = () =>
-		perform(async () => {
-			setBrowsers(await request<BrowserChoice[]>("credentials.browsers"));
-			setSearchedBrowsers(true);
-		});
 	if (!state || !step)
 		return (
 			<section className="credential-setup" aria-label="Bitwarden">
@@ -203,7 +175,7 @@ export function CredentialsPanel({
 	const settings = state.settings;
 	const connection = state.connection;
 	const signingIn = ["signing_in", "challenge", "preparing"].includes(connection.phase);
-	const current = ["connect", "signIn", "logins", "assistants", "browser"].indexOf(step);
+	const current = ["connect", "signIn", "logins", "assistants"].indexOf(step);
 	const selectedIds = new Set(settings.bindings.map((b) => b.itemId));
 	const allLoginsSelected = items.length > 0 && items.every((item) => selectedIds.has(item.id));
 	const selectAllLogins = () =>
@@ -269,42 +241,12 @@ export function CredentialsPanel({
 				</div>
 				<div>
 					<h2>Bitwarden</h2>
-					{settings.brokerAssistants.map((a) => (
-						<p key={a.id}>
-							{a.name}{" "}
-							<button
-								type="button"
-								onClick={() =>
-									void perform(() =>
-										save({
-											brokerAssistants: settings.brokerAssistants.filter((p) => p.id !== a.id),
-										}),
-									)
-								}
-							>
-								Revoke matching access
-							</button>
-						</p>
-					))}
-					<label>
-						<input
-							type="checkbox"
-							checked={settings.wholeVaultMatching}
-							disabled={busy}
-							onChange={(e) => void perform(() => save({ wholeVaultMatching: e.target.checked }))}
-						/>
-						Allow assistants to match logins across my vault
-					</label>
-					<p className="small muted">
-						Shares login names and websites, including newly added logins. Each credential use still
-						needs approval.
-					</p>
 					<p className="muted">Let your assistants use the logins you choose.</p>
 				</div>
 			</div>
 			{step !== "overview" && (
 				<ol className="credential-steps" aria-label="Connection progress">
-					{["Connect", "Sign in", "Logins", "Assistants", "Browser"].map((name, i) => (
+					{["Connect", "Sign in", "Logins", "Assistants"].map((name, i) => (
 						<li
 							key={name}
 							aria-current={current === i ? "step" : undefined}
@@ -584,6 +526,36 @@ export function CredentialsPanel({
 				<div className="stack">
 					<h3>Which logins can your assistants use?</h3>
 					<p>Only the logins you select are available. Every use still needs your approval.</p>
+					{settings.brokerAssistants.map((a) => (
+						<p key={a.id}>
+							{a.name}{" "}
+							<button
+								type="button"
+								onClick={() =>
+									void perform(() =>
+										save({
+											brokerAssistants: settings.brokerAssistants.filter((p) => p.id !== a.id),
+										}),
+									)
+								}
+							>
+								Revoke matching access
+							</button>
+						</p>
+					))}
+					<label>
+						<input
+							type="checkbox"
+							checked={settings.wholeVaultMatching}
+							disabled={busy}
+							onChange={(e) => void perform(() => save({ wholeVaultMatching: e.target.checked }))}
+						/>
+						Allow assistants to match logins across my vault
+					</label>
+					<p className="small muted">
+						Shares login names and websites, including newly added logins. Each credential use still
+						needs approval.
+					</p>
 					{!state.unlocked ? (
 						<div className="stack">
 							{unlock}
@@ -806,42 +778,14 @@ export function CredentialsPanel({
 							disabled={busy}
 							onClick={() =>
 								void perform(async () => {
-									await save({ setupStep: "browser" });
-									setStep("browser");
-									setBrowsers(await request<BrowserChoice[]>("credentials.browsers"));
-									setSearchedBrowsers(true);
+									await save({ setupComplete: true, setupStep: "assistants" });
+									setStep("overview");
 								})
 							}
 						>
-							Continue
+							Finish setup
 						</button>
 					</div>
-				</div>
-			)}
-			{step === "browser" && (
-				<div className="stack">
-					<h3>Use your existing Chrome profile</h3>
-					<p>
-						The Laplace extension opens sign-in tabs in Chrome. No separate browser or debugging
-						connection is needed.
-					</p>
-					<button
-						disabled={busy}
-						onClick={() => void perform(() => request("credentials.chromeCheck"))}
-					>
-						Check Chrome extension
-					</button>
-					<p role="status">{chrome?.message ?? "Extension not checked yet"}</p>
-					<button
-						onClick={() =>
-							void perform(async () => {
-								await save({ setupComplete: true });
-								setStep("overview");
-							})
-						}
-					>
-						Finish setup
-					</button>
 				</div>
 			)}
 			{step === "overview" && (
@@ -875,22 +819,6 @@ export function CredentialsPanel({
 							Disconnect
 						</button>
 					</div>
-					<section className="credential-group" aria-label="Assistant access">
-						<h3>Assistant access</h3>
-						<p>
-							{settings.clients.length} local{" "}
-							{settings.clients.length === 1 ? "assistant" : "assistants"}
-							{settings.hosted ? " · Online assistants enabled" : " · Online assistants disabled"}
-						</p>
-						<button onClick={() => setStep("assistants")}>Assistant access</button>
-					</section>
-					<section className="credential-group" aria-label="Chrome readiness">
-						<h3>Chrome readiness</h3>
-						<p>
-							<Globe size={16} /> {chrome?.message ?? "Chrome extension not checked yet"}
-						</p>
-						<button onClick={() => setStep("browser")}>Chrome setup</button>
-					</section>
 					{disconnecting && (
 						<div className="credential-notice">
 							<p>
@@ -965,74 +893,6 @@ export function CredentialsPanel({
 					))}
 				</div>
 			)}
-			<details className="credential-advanced">
-				<summary>Advanced settings</summary>
-				<div className="stack">
-					<p className="small muted">
-						For custom installations and configured API or command actions. Saving these settings
-						locks the vault.
-					</p>
-					<label>
-						Bitwarden CLI override (existing connections only)
-						<input
-							disabled={settings.managedBitwarden}
-							value={advanced.bwPath}
-							onChange={(e) => setAdvanced({ ...advanced, bwPath: e.target.value })}
-						/>
-					</label>
-					<label>
-						Browser CDP address
-						<input
-							value={advanced.endpoint}
-							onChange={(e) => setAdvanced({ ...advanced, endpoint: e.target.value })}
-							placeholder="http://127.0.0.1:9222"
-						/>
-					</label>
-					<details>
-						<summary>API and command actions</summary>
-						<p className="small">Only configure trusted commands and destinations.</p>
-						{settings.bindings.map((b) => (
-							<p className="small" key={b.id}>
-								{b.label}: <code>{b.id}</code>
-							</p>
-						))}
-						<label>
-							Configured actions JSON
-							<textarea
-								rows={10}
-								value={advanced.actions}
-								onChange={(e) => setAdvanced({ ...advanced, actions: e.target.value })}
-							/>
-						</label>
-					</details>
-					<button
-						disabled={busy}
-						onClick={() =>
-							void perform(async () => {
-								let actions: unknown;
-								try {
-									actions = JSON.parse(advanced.actions);
-								} catch {
-									throw new Error(
-										"The actions JSON isn't valid. Check its formatting and try again.",
-									);
-								}
-								await request("credentials.configure", {
-									settings: {
-										...settings,
-										bwPath: advanced.bwPath,
-										cdpEndpoint: advanced.endpoint,
-										actions,
-									},
-								});
-								setMessage("Advanced settings saved. Unlock Bitwarden to continue.");
-							})
-						}
-					>
-						Save advanced settings
-					</button>
-				</div>
-			</details>
 		</section>
 	);
 }

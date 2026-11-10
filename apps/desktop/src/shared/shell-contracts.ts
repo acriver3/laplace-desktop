@@ -13,8 +13,20 @@ export const profiles = {
 export type Profile = keyof typeof profiles;
 /** Signed in, Desktop shows Connect itself; "local" shows the native On this device pages. */
 export type ShellMode = "web" | "local";
-export const localSection = z.enum(["servers", "clients", "device", "credentials", "updates"]);
+// Keep "device" as an alias for older agents and Desktop links.
+export const localSection = z.enum([
+	"servers",
+	"clients",
+	"info",
+	"tools",
+	"settings",
+	"updates",
+	"credentials",
+	"device",
+]);
 export type LocalSection = z.infer<typeof localSection>;
+export const resolveLocalSection = (section: LocalSection) =>
+	section === "device" ? "settings" : section;
 
 export const shellRequest = z.discriminatedUnion("method", [
 	...pointRequests,
@@ -47,6 +59,10 @@ export const shellRequest = z.discriminatedUnion("method", [
 			input: z
 				.object({
 					catalogId: z.string().min(1).max(120),
+					connectionId: z
+						.string()
+						.regex(/^[A-Za-z0-9_-]{1,80}$/)
+						.optional(),
 					target: catalogSetupTarget,
 					action: z.enum(["instructions", "open"]),
 				})

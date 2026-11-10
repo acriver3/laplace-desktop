@@ -11,7 +11,7 @@ export async function checkPoint(page, app, invoke) {
 	});
 	await page
 		.getByRole("navigation", { name: "On this device" })
-		.getByRole("button", { name: "Device", exact: true })
+		.getByRole("button", { name: "Tools", exact: true })
 		.click();
 	await page.getByRole("checkbox", { name: "Enable Laplace Point" }).waitFor();
 	await page.getByLabel("Default agent").selectOption("claude-browser");

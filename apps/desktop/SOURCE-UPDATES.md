@@ -27,7 +27,7 @@ The updater stores ownership, tool paths, source identity, staging files, and it
 
 ## Using updates
 
-The app checks the latest public GitHub Release 15 seconds after launch, every six hours while running, and when **Check for updates** is selected in **On this device → Device → Updates**. It verifies the release manifest against the Ed25519 public key pinned in its source. Metadata checks never fetch source trees or install packages.
+The app checks the latest public GitHub Release 15 seconds after launch, every six hours while running, and when **Check for updates** is selected in **On this device → Updates**. It verifies the release manifest against the Ed25519 public key pinned in its source. Metadata checks never fetch source trees or install packages.
 
 **Download update** fetches the exact selected release into an isolated checkout, checks its commit and version, installs the frozen dependency lockfile, and builds a native package. Downloading a release authorizes running its trusted build scripts. There is no Git pull, stash, reset, or edit in the user's original checkout. The current app remains usable while building. The UI reports download, build, and verification phases; it does not invent a percentage for subprocesses that provide none.
 

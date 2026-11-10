@@ -68,7 +68,11 @@ it("enforces management permissions and cannot approve or edit grants", async ()
 it("opens a bounded settings section and controls connector lifecycle", async () => {
 	const f = fixture();
 	await f.call({ action: "open", section: "device" });
-	expect(f.open).toHaveBeenCalledWith("device");
+	expect(f.open).toHaveBeenCalledWith("settings");
+	for (const section of ["info", "tools", "settings", "updates"]) {
+		await f.call({ action: "open", section });
+		expect(f.open).toHaveBeenLastCalledWith(section);
+	}
 	await f.call({ action: "stop", id: "one" });
 	expect(f.manager.setEnabled).toHaveBeenCalledWith("one", false);
 	await expect(f.call({ action: "open", section: "https://example.com" })).rejects.toThrow();

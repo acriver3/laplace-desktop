@@ -47,7 +47,7 @@ export interface ConnectionBrokerAdapter {
 		signal: AbortSignal,
 	): Promise<BrokerExecution & { observation?: unknown }>;
 	cancel?(session: BrokerSession): Promise<void>;
-	focus(section?: "servers" | "device" | "clients" | "credentials"): void;
+	focus(section?: "servers" | "settings" | "device" | "clients" | "credentials"): void;
 	unlock?(sessionId: string): void;
 	readiness?(principal: CredentialPrincipal, session: BrokerSession): BrokerReadiness;
 	prepare?(principal: CredentialPrincipal, session: BrokerSession): Promise<void>;
@@ -355,7 +355,7 @@ export class ConnectionBroker {
 						: readiness?.code === "authorize_management"
 							? "clients"
 							: readiness?.code === "link_account"
-								? "device"
+								? "settings"
 								: readiness &&
 									  ["connect_vault", "authorize_assistant", "enable_chrome"].includes(
 											readiness.code,

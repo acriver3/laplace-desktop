@@ -4,6 +4,7 @@ import {
 	catalogSetupDestination,
 	catalogSetupPrompt,
 	catalogSetupTarget,
+	setupCatalogEntry,
 } from "../src/shared/catalog-setup";
 import { shellRequest } from "../src/shared/shell-contracts";
 
@@ -25,13 +26,63 @@ it("prepares connector-specific guidance without saved settings or credentials",
 		credentials: { token: "secret-canary" },
 	};
 	const prompt = catalogSetupPrompt(entry, "Local development");
-	expect(prompt).toBe(
+	expect(prompt).toContain(
 		"Please set up Slack with Laplace using these instructions: https://connect.laplaceop.com/local-mcp/setup/slack-mcp-server?environment=Local+development&version=1.2.3",
 	);
 	expect(prompt).not.toContain("secret-canary");
 	expect(prompt).not.toContain("private-workspace");
 	expect(prompt).not.toContain("Set up manually");
 	expect(prompt).not.toContain("click Connect");
+	expect(prompt).toContain("collect missing configuration");
+	expect(prompt).toContain("authenticated read");
+	expect(prompt).toContain("browser approval page");
+});
+
+it("resolves the selected installation and tells the agent to reconnect that exact ID", () => {
+	const entries = [
+		{ id: "slack-mcp-server", name: "Slack", available: true, fields: [] },
+		{
+			id: "slack-mcp-server",
+			name: "Slack Work",
+			available: true,
+			fields: [],
+			installed: true,
+			serverId: "slack-work",
+		},
+		{
+			id: "slack-mcp-server",
+			name: "Slack Personal",
+			available: true,
+			fields: [],
+			installed: true,
+			serverId: "slack-personal",
+		},
+	];
+	const entry = setupCatalogEntry(entries, "slack-mcp-server", "slack-work");
+	expect(entry.name).toBe("Slack Work");
+	const prompt = catalogSetupPrompt(entry, "Hosted Laplace", "slack-work");
+	expect(prompt).toContain('existing connection with ID "slack-work"');
+	expect(prompt).toContain("do not create a duplicate");
+	expect(prompt).not.toContain("slack-personal");
+	for (const [catalogId, connectionId] of [
+		["slack-mcp-server", "missing"],
+		["canvas-session-mcp", "slack-work"],
+	])
+		expect(() => setupCatalogEntry(entries, catalogId!, connectionId)).toThrow(
+			"Refresh connections",
+		);
+	expect(() =>
+		setupCatalogEntry([{ ...entries[1]!, available: false }], "slack-mcp-server", "slack-work"),
+	).toThrow();
+});
+
+it("can hand off a current catalog entry without a bundled instruction page", () => {
+	const prompt = catalogSetupPrompt(
+		{ id: "additional-connector", name: "Additional connector", available: true, fields: [] },
+		"Local development",
+	);
+	expect(prompt).toContain('catalog entry "additional-connector"');
+	expect(prompt).toContain("Discover the available Laplace tools");
 });
 
 it("uses the web handoff destinations and retains copy-only and oversized prompts", () => {
@@ -55,6 +106,10 @@ it("only accepts bounded catalog identity and known agent actions over desktop I
 		input: { catalogId: "slack-mcp-server", target: "codex", action: "open" },
 	};
 	expect(shellRequest.safeParse(request).success).toBe(true);
+	expect(
+		shellRequest.safeParse({ ...request, input: { ...request.input, connectionId: "slack-work" } })
+			.success,
+	).toBe(true);
 	for (const input of [
 		{ prompt: "untrusted instructions" },
 		{ url: "file:///tmp/run" },
@@ -62,6 +117,9 @@ it("only accepts bounded catalog identity and known agent actions over desktop I
 		{ action: "execute" },
 		{ catalogId: "" },
 		{ catalogId: "x".repeat(121) },
+		{ connectionId: "" },
+		{ connectionId: "x".repeat(81) },
+		{ connectionId: "../other-profile" },
 	])
 		expect(
 			shellRequest.safeParse({ ...request, input: { ...request.input, ...input } }).success,

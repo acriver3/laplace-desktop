@@ -18,7 +18,7 @@ export function desktopBrokerAdapter(
 	credentials: CredentialBroker,
 	catalog: CatalogInstaller,
 	portable: PortableConnectors,
-	focus: (section?: "servers" | "device" | "clients" | "credentials") => void,
+	focus: (section?: "servers" | "settings" | "device" | "clients" | "credentials") => void,
 	unlock?: (sessionId: string) => void,
 	prepareHosted?: (principal: CredentialPrincipal, session: BrokerSession) => Promise<void>,
 ): ConnectionBrokerAdapter {
@@ -197,7 +197,7 @@ export function desktopBrokerAdapter(
 				return {
 					code: "manual_setup",
 					message:
-						"This local connector does not yet support sign-in through the Chrome extension. Use its manual setup on this device.",
+						"This local connector uses its own sign-in flow. Use the connector-management tools to authenticate it on this device, then verify the connection.",
 					action: "desktop",
 				};
 			const needsVault = session.items.some(
@@ -218,7 +218,7 @@ export function desktopBrokerAdapter(
 				if (!credentials.brokerAllowed(principal))
 					return {
 						code: "authorize_assistant",
-						message: "Enable this assistant in Credentials → Assistant access.",
+						message: "Enable this assistant in Credentials → Manage saved logins → Assistants.",
 						action: "desktop",
 					};
 				if (!credentials.snapshot().unlocked)

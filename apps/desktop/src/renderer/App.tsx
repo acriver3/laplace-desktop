@@ -1,27 +1,25 @@
-import { Button } from "@repo/ui/components/button";
 import { ConnectorPageHeader } from "@repo/ui/components/connector/page-header";
 import { SettingsPageView } from "@repo/ui/components/connector/page-views";
 import { Cloud, LoaderCircle, LogIn, RefreshCw, Settings2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { DesktopSnapshot, ServerSnapshot } from "../shared/helper-contracts";
-import type { LocalSection, ShellState } from "../shared/shell-contracts";
+import { resolveLocalSection, type LocalSection, type ShellState } from "../shared/shell-contracts";
 import { BrokerPanel } from "./BrokerPanel";
-import { BrowserApprovalPanel } from "./BrowserApprovalPanel";
-import { CredentialActivity } from "./CredentialActivity";
+import { CatalogConnectButton } from "./CatalogConnectButton";
 import { CredentialsPanel } from "./CredentialsPanel";
 import {
 	ClientInstallDialog,
 	ClientPermissionsDialog,
 	ImportDialog,
-	InstallDialog,
 	Modal,
 	ServerForm,
 } from "./Dialogs";
 import { LocalClientsPage } from "./LocalClientsPage";
 import { LocalConnectionsPage } from "./LocalConnectionsPage";
-import { LocalSettings, type SetupTarget } from "./LocalPages";
+import { LocalInfo, LocalSettings, type SetupTarget } from "./LocalPages";
 import { LocalSidebar } from "./LocalSidebar";
+import { PointPanel } from "./PointPanel";
 import {
 	invoke,
 	type CatalogEntry,
@@ -48,7 +46,6 @@ type Dialog =
 	| { type: "server"; server?: ServerSnapshot }
 	| { type: "server-details"; id: string }
 	| { type: "import"; preview: ImportPreview; migration: boolean }
-	| { type: "install"; entry: CatalogEntry }
 	| { type: "client"; id: string; target?: SetupTarget }
 	| { type: "client-permissions"; id: string }
 	| {
@@ -265,7 +262,6 @@ function CatalogJobs({ jobs, cancel }: { jobs: CatalogJob[]; cancel: (id: string
 export function App() {
 	const contentOnly = new URLSearchParams(window.location.search).get("contentOnly") === "1";
 	const [shell, setShell] = useState(initialShell);
-	const [approvalRequest, setApprovalRequest] = useState<string>();
 	const [snapshot, setSnapshot] = useState<DesktopSnapshot>();
 	const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
 	const [dialog, setDialog] = useState<Dialog>();
@@ -293,7 +289,7 @@ export function App() {
 
 	const manager = useRef<HTMLElement>(null);
 	const scrollPositions = useRef<Record<string, number>>({});
-	const section = shell.section;
+	const section = resolveLocalSection(shell.section);
 	const linked = !!snapshot?.accountId && snapshot.mode !== "local-only";
 	const servers = snapshot?.servers ?? [];
 	const jobs = (snapshot?.jobs ?? []) as CatalogJob[];
@@ -346,7 +342,6 @@ export function App() {
 		void refresh().catch(() => {});
 		const off = window.laplaceDesktop.onEvent((event) => {
 			if (event.event === "shell") setShell(event.data as ShellState);
-			if (event.event === "browser-approval") setApprovalRequest(event.data as string);
 			if (event.event === "snapshot") setSnapshot(event.data as DesktopSnapshot);
 			if (event.event === "error") setMessage({ kind: "error", text: String(event.data) });
 		});
@@ -393,7 +388,9 @@ export function App() {
 	const sections: { id: LocalSection; label: string }[] = [
 		{ id: "servers", label: "Connections" },
 		{ id: "clients", label: "AI clients" },
-		{ id: "device", label: "Device" },
+		{ id: "info", label: "Info" },
+		{ id: "tools", label: "Tools" },
+		{ id: "settings", label: "Settings" },
 		{ id: "updates", label: "Updates" },
 	];
 	if (shell.mode === "web" && !shell.webError)
@@ -441,7 +438,6 @@ export function App() {
 					}}
 					aria-busy={busy}
 				>
-					<BrowserApprovalPanel requestId={approvalRequest} />
 					<BrokerPanel />
 					{shell.unlockSessionId && (
 						<UnlockPrompt
@@ -543,7 +539,6 @@ export function App() {
 									control={(server, action) =>
 										void perform(() => invoke(`server.${action}`, { id: server.id }))
 									}
-									install={(entry) => setDialog({ type: "install", entry })}
 								/>
 							</div>
 							<div hidden={section !== "clients"} className="connector-settings-content">
@@ -566,23 +561,11 @@ export function App() {
 								/>
 							</div>
 							{section === "updates" && (
-								<div className="space-y-4">
-									<UpdatesPanel update={shell.updates} perform={perform} />
-									<Button
-										variant="outline"
-										onClick={() =>
-											void perform(() =>
-												shell.account
-													? invoke("shell.web")
-													: invoke("shell.local", { section: "servers" }),
-											)
-										}
-									>
-										Not now
-									</Button>
-								</div>
+								<UpdatesPanel update={shell.updates} perform={perform} />
 							)}
-							{section === "device" && (
+							{section === "info" && <LocalInfo shell={shell} snapshot={snapshot} />}
+							{section === "tools" && <PointPanel />}
+							{section === "settings" && (
 								<LocalSettings
 									shell={shell}
 									snapshot={snapshot}
@@ -610,25 +593,8 @@ export function App() {
 								clients={snapshot?.clients ?? []}
 								accountLinked={snapshot?.mode === "linked"}
 								addAssistant={() => void show("clients")}
-								linkAccount={() => void show("device")}
+								linkAccount={() => void show("settings")}
 							/>
-							<section>
-								<h2>Doppler</h2>
-								<p>
-									API keys use your connected Doppler account and its permitted projects and
-									configs.
-								</p>
-								<button
-									onClick={() =>
-										void (snapshot?.mode === "linked" ? openLaplace() : show("device"))
-									}
-								>
-									{snapshot?.mode === "linked"
-										? "Open Laplace to manage Doppler scopes"
-										: "Link account for Doppler"}
-								</button>
-							</section>
-							<CredentialActivity />
 						</div>
 					)}
 				</main>
@@ -637,6 +603,9 @@ export function App() {
 				snapshot?.servers.find((server) => server.id === dialog.id) &&
 				(() => {
 					const server = snapshot.servers.find((server) => server.id === dialog.id)!;
+					const catalogEntry = catalog.find(
+						(entry) => entry.installed && entry.serverId === server.id,
+					);
 					return (
 						<Modal title={server.name} close={() => setDialog(undefined)}>
 							<div className="dialog-body stack">
@@ -656,23 +625,13 @@ export function App() {
 										Restart
 									</button>
 								</div>
-								{catalog.some((entry) => entry.installed && entry.serverId === server.id) && (
-									<div className="row">
-										<button
-											onClick={() =>
-												void perform(() => invoke("catalog.authenticate", { id: server.id }))
-											}
-										>
-											Authenticate
-										</button>
-										<button
-											onClick={() =>
-												void perform(() => invoke("catalog.verify", { id: server.id }))
-											}
-										>
-											Verify connection
-										</button>
-									</div>
+								{catalogEntry && (
+									<CatalogConnectButton
+										entry={catalogEntry}
+										busy={busy}
+										connectionId={server.id}
+										label="Reconnect"
+									/>
 								)}
 								<ServerDetails
 									server={server}
@@ -697,9 +656,6 @@ export function App() {
 					perform={perform}
 					close={() => setDialog(undefined)}
 				/>
-			)}
-			{dialog?.type === "install" && (
-				<InstallDialog entry={dialog.entry} perform={perform} close={() => setDialog(undefined)} />
 			)}
 			{dialog?.type === "client" && (
 				<ClientInstallDialog

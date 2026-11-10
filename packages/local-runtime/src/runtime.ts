@@ -22,7 +22,6 @@ import {
 } from "@repo/local-mcp-core/update-policy";
 import { z } from "zod";
 
-import { runtimeHome } from "./paths";
 import { desktopBrokerAdapter } from "./broker-adapter";
 import { BrowserApprovals } from "./browser-approvals";
 import { CatalogInstaller } from "./catalog";
@@ -32,9 +31,8 @@ import {
 	configurePluginBridge,
 } from "./client-registration";
 import { ConnectionBroker } from "./connection-broker";
-import { NpmConnectors } from "./connector-versions";
-import { npmConnectorsEnabled } from "./npm-source";
 import { ConnectorManagement } from "./connector-tools";
+import { NpmConnectors } from "./connector-versions";
 import { CredentialSetupError } from "./credential-errors";
 import { CredentialBroker } from "./credentials";
 import { startCredentialRelay } from "./credentials-relay";
@@ -50,6 +48,8 @@ import {
 import { KeepAwake } from "./keep-awake";
 import { DesktopManager } from "./manager";
 import { previewLegacyMigration, migrateSelectedLegacy } from "./migration";
+import { npmConnectorsEnabled } from "./npm-source";
+import { runtimeHome } from "./paths";
 import { PortableConnectors } from "./portable";
 import { startPortableRelay } from "./portable-relay";
 import { startMcpServer, type ControlServer } from "./server";
@@ -141,6 +141,20 @@ export async function createRuntime(options: RuntimeOptions) {
 	manager.credentialRequests = () => credentials.snapshot().pending.length;
 	const hosted = new HostedConnections(manager, (url) => send({ event: "open-url", url }));
 	const browserApprovals = new BrowserApprovals(manager);
+	const approvalPages = new Map<string, { url: string; close(): Promise<void> }>();
+	async function openApprovalPage(requestId: string, clientId: string) {
+		browserApprovals.review(requestId, clientId);
+		await approvalPages.get(requestId)?.close();
+		const page = await openBrowserApprovalPage(browserApprovals, requestId, clientId);
+		try {
+			browserApprovals.review(requestId, clientId);
+		} catch (error) {
+			await page.close();
+			throw error;
+		}
+		approvalPages.set(requestId, page);
+		return page.url;
+	}
 	const catalog = new CatalogInstaller(manager, {
 		notificationOwner: () => {
 			const snapshot = manager.status();
@@ -234,7 +248,11 @@ export async function createRuntime(options: RuntimeOptions) {
 				catalog,
 				portable,
 				browserApprovals,
-				(requestId) => send({ event: "browser-approval", requestId }),
+				async (requestId, clientId) => {
+					const url = await openApprovalPage(requestId, clientId);
+					send({ event: "open-url", url });
+					return url;
+				},
 				npmConnectors,
 			),
 			(section) => send({ event: "desktop-open", section }),
@@ -391,7 +409,6 @@ export async function createRuntime(options: RuntimeOptions) {
 		.recover()
 		.catch(() => {})
 		.then(() => migrateLegacy());
-	const approvalPages = new Map<string, { url: string; close(): Promise<void> }>();
 	const settingsPath = join(root, "runtime-settings.json");
 	const settingsSchema = z.object({ keepAwake: z.boolean().default(false) }).strict();
 	let settings = settingsSchema.parse(
@@ -734,11 +751,7 @@ export async function createRuntime(options: RuntimeOptions) {
 					break;
 				case "browser.page": {
 					// Headless approval UI: request-scoped loopback page with CSRF protection.
-					browserApprovals.review(input.requestId, "desktop");
-					await approvalPages.get(input.requestId)?.close();
-					const page = await openBrowserApprovalPage(browserApprovals, input.requestId, "desktop");
-					approvalPages.set(input.requestId, page);
-					result = { url: page.url };
+					result = { url: await openApprovalPage(input.requestId, "desktop") };
 					break;
 				}
 				case "browser.cancel":

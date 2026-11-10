@@ -1034,11 +1034,6 @@ legend {
 	gap: 6px;
 	align-items: center;
 }
-.credential-advanced {
-	border-top: 1px solid var(--border);
-	padding-top: 16px;
-	color: var(--muted-foreground);
-}
 .credential-setup summary {
 	cursor: pointer;
 	padding: 8px 0;

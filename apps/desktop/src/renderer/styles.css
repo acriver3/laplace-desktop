@@ -56,13 +56,9 @@
 	min-width: 0;
 	width: 100%;
 }
-.broker-start {
-	min-width: 0;
-	max-width: 100%;
-}
-.broker-start > button {
+.catalog-connect-actions > button {
 	white-space: normal;
-	height: auto;
+	min-height: 36px;
 	max-width: 100%;
 }
 .setup-activity {
@@ -123,7 +119,9 @@
 }
 .credentials-page {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: 24px;
+	min-width: 0;
 	max-width: 960px;
 }
 .credentials-page h2 {
@@ -131,7 +129,15 @@
 	font-weight: 600;
 }
 .credentials-page .credential-setup {
+	min-width: 0;
 	max-width: 100%;
+}
+.credentials-page .row {
+	flex-wrap: wrap;
+}
+.credentials-page .credential-status span {
+	max-width: 100%;
+	overflow-wrap: anywhere;
 }
 .credentials-page .credential-heading > div {
 	min-width: 0;
@@ -145,12 +151,6 @@
 .credentials-page .credential-heading input[type="checkbox"] {
 	flex: 0 0 auto;
 	margin-top: 4px;
-}
-.credential-history article {
-	border: 1px solid var(--border);
-	border-radius: 12px;
-	padding: 16px;
-	margin-block: 8px;
 }
 @media (max-width: 700px) {
 	.desktop-local-shell .connector-toolbar {
@@ -189,6 +189,282 @@
 
 .credentials-page .credential-heading {
 	align-items: flex-start;
+}
+
+/* The longer Point and update controls use the full width of their cards. */
+.desktop-settings-panel {
+	min-width: 0;
+	max-width: 960px;
+}
+.desktop-settings-panel .settings-item {
+	display: block;
+	min-width: 0;
+}
+.desktop-settings-panel .settings-item-header {
+	padding: 20px 24px 16px;
+}
+.desktop-settings-panel .settings-item-content {
+	padding: 0 24px 24px;
+	min-width: 0;
+}
+.desktop-settings-content,
+.desktop-settings-subsection,
+.desktop-connector-updates,
+.desktop-connector-update {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	min-width: 0;
+}
+.desktop-settings-content p,
+.desktop-settings-content h4,
+.desktop-connector-updates p {
+	margin: 0;
+}
+.desktop-settings-subsection + .desktop-settings-subsection {
+	border-top: 1px solid var(--border);
+	padding-top: 20px;
+}
+.desktop-settings-subsection h4 {
+	font-size: 14px;
+	font-weight: 600;
+}
+.desktop-setting-toggle-group {
+	display: flex;
+	flex-direction: column;
+}
+.desktop-setting-toggle-group .desktop-setting-toggle + .desktop-setting-toggle {
+	border-top: 1px solid var(--border);
+}
+.desktop-settings-panel .desktop-setting-toggle {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 12px 0;
+	text-align: left;
+}
+.desktop-setting-copy {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+.desktop-setting-copy strong {
+	font-size: 14px;
+	font-weight: 500;
+}
+.desktop-setting-copy > span,
+.desktop-setting-help {
+	color: var(--muted-foreground);
+	font-size: 13px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+.desktop-setting-copy > .desktop-setting-label {
+	color: var(--foreground);
+}
+.desktop-setting-toggle input[type="checkbox"],
+.desktop-setting-checkbox input[type="checkbox"] {
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	padding: 0;
+	flex: 0 0 16px;
+	accent-color: var(--primary);
+}
+.desktop-settings-fields {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 20px;
+}
+.desktop-setting-field {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-width: 0;
+}
+.desktop-settings-panel .desktop-setting-field > label {
+	display: block;
+	margin: 0;
+	font-size: 13px;
+	font-weight: 500;
+	text-align: left;
+}
+.desktop-setting-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	max-width: 100%;
+}
+.desktop-settings-panel .desktop-setting-label > label {
+	display: block;
+	margin: 0;
+	font-size: 14px;
+	font-weight: 500;
+	line-height: 1.5;
+	cursor: pointer;
+}
+.desktop-setting-field > .desktop-setting-label {
+	font-size: 13px;
+}
+.desktop-settings-panel button.desktop-setting-hint {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 26px;
+	width: 26px;
+	height: 26px;
+	min-height: 26px;
+	padding: 0;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--muted-foreground);
+}
+.desktop-settings-panel button.desktop-setting-hint:hover,
+.desktop-settings-panel button.desktop-setting-hint:focus-visible {
+	background: var(--muted);
+	color: var(--foreground);
+}
+.desktop-settings-panel button.desktop-setting-hint:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+}
+.desktop-setting-tooltip {
+	max-width: min(340px, calc(100vw - 32px));
+	font-size: 13px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+.desktop-info-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 24px;
+	margin: 0;
+}
+.desktop-info-grid > div {
+	min-width: 0;
+}
+.desktop-info-grid dt {
+	display: flex;
+	align-items: center;
+	min-height: 26px;
+	font-size: 13px;
+	color: var(--muted-foreground);
+}
+.desktop-info-grid dd {
+	margin: 4px 0 0;
+	font-size: 15px;
+	overflow-wrap: anywhere;
+}
+.desktop-setting-field input,
+.desktop-setting-field select {
+	width: 100%;
+	min-width: 0;
+	max-width: 100%;
+	min-height: 38px;
+	box-sizing: border-box;
+}
+.desktop-setting-input-action,
+.desktop-settings-actions,
+.desktop-settings-section-heading,
+.desktop-settings-footer {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	min-width: 0;
+}
+.desktop-setting-input-action input {
+	flex: 1 1 120px;
+	width: 0;
+}
+.desktop-setting-input-action button,
+.desktop-settings-actions button,
+.desktop-settings-footer button {
+	flex: 0 0 auto;
+	min-height: 36px;
+	max-width: 100%;
+	white-space: normal;
+}
+.desktop-settings-section-heading,
+.desktop-settings-footer {
+	justify-content: space-between;
+	gap: 12px;
+}
+.desktop-settings-footer {
+	border-top: 1px solid var(--border);
+	padding-top: 16px;
+}
+.desktop-setting-badge {
+	border: 1px solid var(--border);
+	border-radius: 20px;
+	padding: 4px 10px;
+	font-size: 12px;
+	line-height: 1.4;
+	color: var(--muted-foreground);
+	background: var(--muted);
+}
+.desktop-setting-badge[data-state="available"],
+.desktop-setting-badge[data-state="ready"] {
+	color: var(--primary);
+}
+.desktop-setting-version {
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--muted-foreground);
+	overflow-wrap: anywhere;
+}
+.desktop-setting-note {
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	padding: 12px;
+	background: var(--muted);
+	font-size: 13px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+.desktop-setting-note[data-kind="error"] {
+	color: var(--destructive);
+}
+.desktop-setting-note button {
+	margin-top: 8px;
+}
+.desktop-setting-progress {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+}
+.desktop-settings-panel label.desktop-setting-checkbox,
+.desktop-connector-updates label.desktop-setting-checkbox {
+	display: inline-flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	text-align: left;
+}
+.desktop-connector-update {
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 16px;
+}
+@media (max-width: 700px) {
+	.desktop-settings-fields,
+	.desktop-info-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.desktop-settings-panel .settings-item-header {
+		padding: 16px 16px 12px;
+	}
+	.desktop-settings-panel .settings-item-content {
+		padding: 0 16px 16px;
+	}
 }
 .credential-group p {
 	margin: 8px 0;

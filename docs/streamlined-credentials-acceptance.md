@@ -4,13 +4,13 @@ Implemented on `codex/streamlined-credentials` in the Desktop and backend worktr
 
 ## Behavior
 
-- Credentials is a dedicated native sidebar destination in standalone/offline and compatible signed-in shells. Existing native Credentials navigation still reaches it. Connections, AI clients, Device, and Updates remain under On this device.
-- Credentials groups Bitwarden, assistant access, Chrome readiness, Doppler guidance, and recent requests. CLI overrides, legacy CDP, and command actions remain Advanced. Doppler scope editing continues through existing Laplace Connections controls.
+- Credentials is a dedicated native sidebar destination in standalone/offline and compatible signed-in shells. Existing native Credentials navigation still reaches it. Connections, AI clients, Info, Tools, Settings, and Updates remain under On this device.
+- The current Credentials overview retains Bitwarden sign-in, lock/unlock, disconnect, and Manage saved logins. Login selection and assistant permissions remain inside login management. Chrome readiness, Doppler guidance, recent requests, and advanced technical settings have been removed from this overview; stored settings remain intact.
 - Broker sessions expose metadata-only readiness actions. Untouched unlinked drafts can bind once to the account the user links; reviewed or attempted requests cannot switch accounts. Assistant authorization can be completed without losing the request.
 - MCP Apps support credential changes, field mappings, exclusions, focused local unlock, immediate approval feedback, and automatic status updates. The helper advances approved login steps and verifies the connection without an assistant continuation message. Legacy clients retain Desktop review.
 - OAuth can start in the existing Chrome profile with no credential mapping or vault access. Saved-login use requires one fresh mapping approval. Extension site permission, MFA, passkeys, CAPTCHA, and consent remain user-controlled.
 - Submissions have durable receipts; uncertain advances are recorded and never automatically resubmitted. Cancellation, lock, expiry, revocation, restart, and account ownership checks remain enforced. Reauthentication does not replay a failed business action.
-- Local connectors without Chrome-extension login support explicitly fall back to their manual setup. No new secret store, arbitrary browser interface, or standing reauthentication grant was added.
+- Catalog Connect and Reconnect hand setup to the chosen agent, which collects configuration, handles the connector's supported sign-in method, and verifies an authenticated read. Desktop remembers the chosen agent and provides copy/paste when it cannot open an agent draft. Browser approvals use in-chat cards or an explicitly opened browser page, without a Desktop browser-approval popup.
 
 ## Automated verification
 
