@@ -14,9 +14,9 @@ export async function checkPoint(page, app, invoke) {
 		.getByRole("button", { name: "Tools", exact: true })
 		.click();
 	await page.getByRole("checkbox", { name: "Enable Laplace Point" }).waitFor();
-	await page.getByLabel("Default agent").selectOption("claude-browser");
+	await page.getByLabel("Default agent", { exact: true }).selectOption("claude-browser");
 	assert.equal((await invoke("shell.point.status")).settings.destination, "claude-browser");
-	await page.getByLabel("Default agent").selectOption("codex-desktop");
+	await page.getByLabel("Default agent", { exact: true }).selectOption("codex-desktop");
 	assert.equal((await invoke("shell.point.status")).settings.destination, "codex-desktop");
 	const shortcut = "Control+Alt+Shift+9";
 	const reserved = await app.evaluate(
