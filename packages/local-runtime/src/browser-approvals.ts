@@ -2,10 +2,17 @@ import {
 	BrowserApprovals as SharedBrowserApprovals,
 	browserConsentSchema,
 } from "@repo/browser-runtime/browser-approvals";
+import type { BrowserApprovalView } from "@repo/browser-runtime/browser-approval";
 import { EncryptedStore } from "@repo/local-mcp-core/encrypted-store";
 
 import type { DesktopManager } from "./manager";
 export { browserAuthorizer } from "@repo/browser-runtime/browser-approvals";
+
+/** Idle browser sessions must not prevent connector or Desktop maintenance. */
+export function browserApprovalBlocksUpdate({ state }: Pick<BrowserApprovalView, "state">) {
+	return !["connected", "disconnected", "cancelled", "expired"].includes(state);
+}
+
 export class BrowserApprovals extends SharedBrowserApprovals {
 	constructor(manager: DesktopManager) {
 		super(

@@ -5,7 +5,12 @@ import { join } from "node:path";
 
 import { browserSignInUrl } from "@repo/browser-runtime/browser-approval";
 import { RecoveryError } from "@repo/browser-runtime/session-recovery";
-import { BrowserApprovals, browserAuthorizer } from "@repo/local-runtime/browser-approvals";
+import {
+	BrowserApprovals,
+	browserAuthorizer,
+	browserApprovalBlocksUpdate,
+} from "@repo/local-runtime/browser-approvals";
+import { UpdateCoordination } from "@repo/local-mcp-core/update-coordination";
 import type { DesktopManager } from "@repo/local-runtime/manager";
 import { browserExtensionId } from "@repo/local-runtime/shared/browser-extension-id";
 import { SlackBrowserRelay } from "@repo/local-runtime/slack-browser-relay";
@@ -25,6 +30,49 @@ afterEach(async () => {
 	delete process.env.LAPLACE_DESKTOP_TEST_ROOT;
 });
 const identity = { workspace: "https://fixture.slack.com", teamId: "T123456", userId: "U123456" };
+
+it("allows updates with idle browser sessions but protects approval and verification", async () => {
+	const f = await fixture();
+	const updates = new UpdateCoordination(
+		join(f.root, "updates"),
+		() => f.broker.list().some(browserApprovalBlocksUpdate),
+		() => () => {},
+		async () => {},
+	);
+	cleanup.push(() => updates.stop());
+	const acquire = () => updates.acquire(() => () => {});
+
+	// Discovery, user consent and verification must complete before maintenance.
+	expect(await acquire()).toBeUndefined();
+	await f.report();
+	await f.tick();
+	expect(f.broker.view(f.requestId, f.clientId).state).toBe("approval_required");
+	expect(await acquire()).toBeUndefined();
+	const review = f.broker.reviewChat(f.requestId, f.clientId);
+	await f.broker.confirmChat(f.requestId, f.clientId, review.reviewId!, true);
+	expect(f.broker.view(f.requestId, f.clientId).state).toBe("verifying");
+	expect(await acquire()).toBeUndefined();
+	await f.pair();
+	await f.tick();
+	expect(f.broker.view(f.requestId, f.clientId).state).toBe("connected");
+	const connected = await acquire();
+	expect(connected).toBeTypeOf("function");
+	connected!();
+
+	vi.mocked(f.manager.catalogSetupCall).mockRejectedValueOnce(new Error("Browser unavailable"));
+	await f.tick();
+	expect(f.broker.view(f.requestId, f.clientId).state).toBe("disconnected");
+	await vi.waitFor(async () => {
+		const disconnected = await acquire();
+		expect(disconnected).toBeTypeOf("function");
+		disconnected!();
+	});
+});
+
+it.each(["sign_in_required", "permission_required"] as const)(
+	"keeps browser %s protected from updates",
+	(state) => expect(browserApprovalBlocksUpdate({ state })).toBe(true),
+);
 
 it("keeps text review separate from explicit, scoped, single-use confirmation", async () => {
 	const f = await fixture();
