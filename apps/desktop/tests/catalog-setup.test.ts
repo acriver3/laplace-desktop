@@ -2,11 +2,20 @@ import { expect, it } from "vitest";
 
 import {
 	catalogSetupDestination,
+	catalogSetupError,
 	catalogSetupPrompt,
 	catalogSetupTarget,
 	setupCatalogEntry,
 } from "../src/shared/catalog-setup";
 import { shellRequest } from "../src/shared/shell-contracts";
+
+it("explains runtime disconnection without leaking arbitrary diagnostics", () => {
+	expect(catalogSetupError(new Error("Error invoking remote method 'laplace:request': Error: Laplace Runtime is unavailable or still starting.")))
+		.toContain("Restart Laplace Runtime in the tray");
+	expect(catalogSetupError(new Error("Runtime is in maintenance"))).toContain("Wait for the update");
+	expect(catalogSetupError(new Error("Your Laplace profile changed."))).toContain("profile changed");
+	expect(catalogSetupError(new Error("secret-canary"))).not.toContain("secret-canary");
+});
 
 it("prepares connector-specific guidance without saved settings or credentials", () => {
 	const entry = {

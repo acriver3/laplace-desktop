@@ -12,7 +12,7 @@ if (
 	!Array.isArray(journal.keys) ||
 	journal.keys.some(
 		(name) =>
-			typeof name !== "string" || !/^(?:config-key|desktop:key|client:[0-9a-f-]{36})$/.test(name),
+			typeof name !== "string" || !/^(?:config-key|(?:desktop|portable|connection-broker|connector-updates|hosted-[0-9a-f-]{36}-[0-9a-f]{12}):key|client:[0-9a-f-]{36})$/.test(name),
 	)
 )
 	throw new Error("Invalid smoke cleanup journal");

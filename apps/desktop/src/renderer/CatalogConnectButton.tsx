@@ -10,6 +10,7 @@ import { useRef, useState } from "react";
 
 import {
 	catalogSetupNames,
+	catalogSetupError,
 	catalogSetupTarget,
 	type CatalogSetupTarget,
 	type CatalogSetupResult,
@@ -54,8 +55,8 @@ export function CatalogConnectButton({
 					action: "open",
 				}),
 			);
-		} catch {
-			setError("Could not prepare the request. Refresh connections and try again.");
+		} catch (error) {
+			setError(catalogSetupError(error));
 		} finally {
 			working.current = false;
 			setPending(false);

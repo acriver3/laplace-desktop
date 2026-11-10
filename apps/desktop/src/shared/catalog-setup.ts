@@ -41,6 +41,20 @@ export interface CatalogSetupResult {
 	opened: boolean;
 }
 
+/** Explain recoverable handoff failures without displaying arbitrary runtime diagnostics. */
+export function catalogSetupError(error: unknown) {
+	const message = error instanceof Error ? error.message : "";
+	if (/Laplace Runtime is unavailable|Laplace Runtime (?:stopped|disconnected)|fetch failed|ECONNREFUSED/.test(message))
+		return "Laplace Runtime is disconnected. Use Restart Laplace Runtime in the tray, then try Connect again.";
+	if (/maintenance|Local work is active; update deferred/i.test(message))
+		return "Laplace is updating. Wait for the update to finish, then try Connect again.";
+	if (/finish starting/.test(message))
+		return "Laplace is still starting. Wait a moment, then try Connect again.";
+	if (/profile changed/.test(message))
+		return "Your Laplace profile changed. Refresh connections and try again.";
+	return "Could not prepare the request. Refresh connections and try again.";
+}
+
 /** Build from the helper's trusted catalog, never renderer-supplied instructions or saved credentials. */
 export function setupCatalogEntry(
 	entries: SetupCatalogEntry[],

@@ -792,6 +792,7 @@ setInterval(() => {
 
 async function startHelper() {
 	state.helperError = undefined;
+	await helper?.stop();
 	await mkdir(profileRoot(), { recursive: true, mode: 0o700 });
 	const next = new RuntimeClient(
 		(event) => {
@@ -820,6 +821,7 @@ async function startHelper() {
 		(message) => {
 			state.helperError = message;
 			publish();
+			void refreshTray();
 		},
 	);
 	helper = next;
@@ -900,6 +902,7 @@ async function setStartAtLogin(enabled: boolean) {
 	await refreshTray();
 }
 async function stopLocalRuntime() {
+	clearTimeout(runtimeSwapTimer);
 	await stopRuntime(profileRoot());
 	await helper?.stop();
 	state.helperError =
@@ -907,18 +910,37 @@ async function stopLocalRuntime() {
 	publish();
 	await refreshTray();
 }
+let runtimeControlBusy = false;
+async function controlLocalRuntime(action: "start" | "stop" | "restart") {
+	if (runtimeControlBusy || changingProfile || quitting) return;
+	runtimeControlBusy = true;
+	try {
+		await refreshTray();
+		if (action !== "start") await stopLocalRuntime();
+		if (action !== "stop") await startHelper();
+	} catch (error) {
+		state.helperError = (error as Error).message;
+		publish();
+	} finally {
+		runtimeControlBusy = false;
+		await refreshTray();
+	}
+}
 let trayItems: MenuItemConstructorOptions[] = [];
 let trayRefresh: Promise<void> | undefined;
-/** Separate Close Desktop, Stop/Start Runtime, Start at login, and Keep awake controls. */
+let trayRefreshRequested = false;
+/** Runtime controls remain separate from closing the Desktop window. */
 async function runtimeControls(): Promise<MenuItemConstructorOptions[]> {
 	const running = !!(await readRuntimeDescriptor(profileRoot()));
 	const items: MenuItemConstructorOptions[] = [
 		running
 			? {
 					label: "Stop Laplace Runtime",
-					click: () => void stopLocalRuntime().catch(() => {}),
+					enabled: !runtimeControlBusy,
+					click: () => void controlLocalRuntime("stop"),
 				}
-			: { label: "Start Laplace Runtime", click: () => void startHelper() },
+			: { label: "Start Laplace Runtime", enabled: !runtimeControlBusy, click: () => void controlLocalRuntime("start") },
+		{ label: "Restart Laplace Runtime", enabled: !runtimeControlBusy, click: () => void controlLocalRuntime("restart") },
 	];
 	if (state.profile === "hosted" && app.isPackaged) {
 		const login = await autostartEnabled("hosted");
@@ -929,38 +951,28 @@ async function runtimeControls(): Promise<MenuItemConstructorOptions[]> {
 			click: () => void setStartAtLogin(!login).catch(() => {}),
 		});
 	}
-	const settings = running
-		? await helper?.request<{ keepAwake: boolean }>("runtime.settings").catch(() => undefined)
-		: undefined;
-	if (settings)
-		items.push({
-			label: "Keep computer awake while sharing remotely",
-			sublabel: "Only while plugged in",
-			type: "checkbox",
-			checked: settings.keepAwake,
-			click: () =>
-				void helper
-					?.request("runtime.configure", { keepAwake: !settings.keepAwake })
-					.then(() => refreshTray())
-					.catch(() => {}),
-		});
 	return [{ type: "separator" }, ...items];
 }
 function refreshTray() {
-	return (trayRefresh ??= runtimeControls()
-		.then((items) => {
-			trayItems = items;
+	trayRefreshRequested = true;
+	return (trayRefresh ??= (async () => {
+		while (trayRefreshRequested) {
+			trayRefreshRequested = false;
+			trayItems = await runtimeControls();
 			buildTrayMenu?.();
-		})
+		}
+	})()
 		.catch(() => {})
 		.finally(() => {
 			trayRefresh = undefined;
+			if (trayRefreshRequested) void refreshTray();
 		}));
 }
 let buildTrayMenu: (() => void) | undefined;
 
 async function selectProfile(profile: Profile) {
 	if (profile === state.profile || changingProfile) return;
+	if (runtimeControlBusy) throw new Error("Wait for Laplace Runtime to finish restarting.");
 	requireStableAuthentication(authenticationStable);
 	changingProfile = true;
 	try {
@@ -1554,6 +1566,7 @@ void app
 			uiUrl,
 			changed: (value) => {
 				send("point", value);
+				buildTrayMenu?.();
 				void helper
 					?.request("updates.deviceActivity", { busy: deviceUpdateBusy() })
 					.catch(() => {});
@@ -1718,27 +1731,22 @@ void app
 		buildTrayMenu = () =>
 			tray.setContextMenu(
 				Menu.buildFromTemplate([
-					{
-						label: "Capture with Point",
-						click: () => {
-							void (async () => {
-								await helper?.request("updates.deviceActivity", { busy: true });
-								await point?.capture();
-							})().catch(() => {});
-						},
-					},
+					...(point?.state.settings.enabled
+						? [{
+								label: "Capture with Point",
+								click: () => {
+									void (async () => {
+										await helper?.request("updates.deviceActivity", { busy: true });
+										await point?.capture();
+									})().catch(() => {});
+								},
+							}]
+						: []),
 					{
 						label: "Open Laplace",
 						click: () => {
 							window.show();
 							window.focus();
-						},
-					},
-					{
-						label: "On this device",
-						click: () => {
-							showLocal();
-							window.show();
 						},
 					},
 					...trayItems,

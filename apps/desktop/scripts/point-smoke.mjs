@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { trayLabels } from "./tray-smoke.mjs";
 
 // Exercise the packaged settings and registration without changing a real Codex draft.
 export async function checkPoint(page, app, invoke) {
 	const initial = await invoke("shell.point.status");
+	assert.ok(!(await trayLabels(app)).includes("Capture with Point"));
 	assert.equal(initial.available, true, "Packaged Point native adapter is missing");
 	assert.deepEqual(initial.settings, {
 		enabled: false,
@@ -27,6 +29,7 @@ export async function checkPoint(page, app, invoke) {
 	try {
 		const conflict = await invoke("shell.point.configure", { enabled: true, shortcut });
 		assert.equal(conflict.registered, false);
+		assert.ok((await trayLabels(app)).includes("Capture with Point"));
 		assert.match(conflict.message, /unavailable/);
 	} finally {
 		await app.evaluate(
@@ -85,6 +88,7 @@ export async function checkPoint(page, app, invoke) {
 	assert.equal((await invoke("shell.point.status")).capture, undefined);
 	assert.ok(overlays.every((overlay) => overlay.isClosed()));
 	const disabled = await invoke("shell.point.configure", initial.settings);
+	assert.ok(!(await trayLabels(app)).includes("Capture with Point"));
 	assert.equal(disabled.registered, false);
 	await invoke("shell.point.clear");
 	assert.equal((await invoke("shell.point.status")).capture, undefined);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { once } from "node:events";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -19,6 +19,7 @@ import {
 	syntheticSessionCookie,
 } from "./feature-smoke.mjs";
 import { checkPoint } from "./point-smoke.mjs";
+import { observeTray, checkRuntimeTray } from "./tray-smoke.mjs";
 import { checkProviderPopup } from "./popup-smoke.mjs";
 import { testEnvironment } from "./test-environment.mjs";
 import { syntheticWebPage } from "./web-shell-smoke.mjs";
@@ -40,7 +41,9 @@ if (args.length > 0 && (!packaged || args.length > 2))
 await access(packaged ?? join(appRoot, "dist/main/index.cjs"));
 const testRoot = await mkdtemp(join(tmpdir(), "laplace-desktop-smoke-"));
 const profileRoot = join(testRoot, "profiles/local");
-const keys = new Set(["config-key", "desktop:key"]);
+const keys = new Set([
+	"config-key", "desktop:key", "portable:key", "connection-broker:key", "connector-updates:key",
+]);
 const clients = [];
 let app, upstreamPid, helperPid, endpoint, runtime, launcher, invoke;
 let step = "start synthetic server";
@@ -232,6 +235,7 @@ try {
 	await checkWorkspace(page, app, appRoot, packaged, await invoke("catalog.list"));
 	await checkSignedOutAccess(invoke);
 	mark("check signed-out Point settings and global shortcut conflicts");
+	await observeTray(app, invoke);
 	await checkPoint(page, app, invoke);
 	mark("check the full-window Connect shell, local switching, and session expiry");
 	// Embedded logout observes the real profile origin, which packaged smoke owns.
@@ -247,6 +251,18 @@ try {
 	);
 	mark("check hosted provider popup handoff without opening a browser");
 	await checkProviderPopup(app, invoke, until, setAuthenticated);
+	// Hosted-profile checks are finished. Release their temporary vault slots before
+	// the independent local-client checks, including on machines near the OS limit.
+	assert.equal((await invoke("shell.status")).profile, "local");
+	const unusedHostedRoot = join(testRoot, "profiles", "hosted");
+	await promisify(execFile)(runtime, [launcher, "stop", "--profile", "hosted"], {
+		env: testEnvironment({ LAPLACE_RUNTIME_ROOT: unusedHostedRoot }), timeout: 30_000,
+	});
+	const hostedJournal = join(testRoot, "cleanup-hosted.json");
+	await writeFile(hostedJournal, JSON.stringify({ root: unusedHostedRoot, keys: [...keys] }), { mode: 0o600 });
+	await promisify(execFile)(runtime, [join(appRoot, "scripts/keychain-cleanup.mjs"), hostedJournal], {
+		env: testEnvironment(), timeout: 20_000,
+	});
 	helperPid = Number(await readFile(join(profileRoot, "manager.lock"), "utf8"));
 	assert.ok(alive(helperPid));
 	mark("import and manually add custom MCPs without a Laplace account");
@@ -258,6 +274,9 @@ try {
 		async () => (await invoke("status")).servers[0]?.status === "online",
 		"Fixture MCP server did not become online",
 	);
+	mark("check the tray menu and restart the runtime with its saved connections");
+	await checkRuntimeTray(app, invoke, until);
+	helperPid = Number(await readFile(join(profileRoot, "manager.lock"), "utf8"));
 	mark("connect two independently registered AI clients through their stdio bridges");
 	const snapshot = await invoke("status");
 	endpoint = snapshot.endpoint;
@@ -408,29 +427,38 @@ try {
 	}
 	if (app) await app.close().catch(() => {});
 	// A failed unified run must not leave the background runtime serving.
-	if (alive(helperPid))
-		await promisify(execFile)(runtime, [launcher, "stop", "--profile", "local"], {
-			env: testEnvironment({ LAPLACE_RUNTIME_ROOT: profileRoot }),
-			timeout: 30_000,
-		}).catch(() => {});
+	if (runtime && launcher)
+		for (const profile of ["local", "hosted"])
+			await promisify(execFile)(runtime, [launcher, "stop", "--profile", profile], {
+				env: testEnvironment({ LAPLACE_RUNTIME_ROOT: join(testRoot, "profiles", profile) }),
+				timeout: 30_000,
+			}).catch(() => {});
 	server.closeAllConnections();
 	await new Promise((resolve) => server.close(resolve));
 	mark("remove owned temporary keychain entries");
-	const journal = join(testRoot, "cleanup.json");
-	await writeFile(journal, JSON.stringify({ root: profileRoot, keys: [...keys] }), { mode: 0o600 });
-	let cleaned = false;
-	try {
-		if (runtime)
-			await promisify(execFile)(runtime, [join(appRoot, "scripts/keychain-cleanup.mjs"), journal], {
-				env: testEnvironment(),
-				timeout: 20_000,
-			});
-		cleaned = true;
-	} catch {
-		failed = true;
-		console.error(
-			`FAIL Electron smoke: temporary keychain cleanup failed; nonsecret ownership journal retained at ${journal}`,
-		);
+	let cleaned = true;
+	for (const profile of ["local", "hosted"]) {
+		const ownedRoot = join(testRoot, "profiles", profile);
+		const ownedKeys = new Set(keys);
+		for (const file of await readdir(ownedRoot).catch(() => [])) {
+			if (/^hosted-[0-9a-f-]{36}-[0-9a-f]{12}\.enc$/.test(file))
+				ownedKeys.add(`${file.slice(0, -4)}:key`);
+		}
+		const journal = join(testRoot, `cleanup-${profile}.json`);
+		await writeFile(journal, JSON.stringify({ root: ownedRoot, keys: [...ownedKeys] }), { mode: 0o600 });
+		try {
+			if (runtime)
+				await promisify(execFile)(runtime, [join(appRoot, "scripts/keychain-cleanup.mjs"), journal], {
+					env: testEnvironment(),
+					timeout: 20_000,
+				});
+		} catch {
+			cleaned = false;
+			failed = true;
+			console.error(
+				`FAIL Electron smoke: temporary keychain cleanup failed; nonsecret ownership journal retained at ${journal}`,
+			);
+		}
 	}
 	if (alive(helperPid) || alive(upstreamPid)) {
 		failed = true;

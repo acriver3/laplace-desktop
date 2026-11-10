@@ -106,6 +106,7 @@ it.skipIf(
 					copied: "",
 					launchOpened: true,
 					launchFails: false,
+					runtimeDisconnected: false,
 					emit(event: string, data: unknown) {
 						for (const listener of listeners) listener({ event, data });
 					},
@@ -148,6 +149,7 @@ it.skipIf(
 							return structuredClone(point);
 						}
 						if (method === "shell.catalogSetup") {
+							if (test.runtimeDisconnected) throw new Error("Laplace Runtime is unavailable or still starting.");
 							if (test.launchFails) throw new Error("Synthetic launch failure");
 							return {
 								prompt: `Set up ${input.catalogId}${input.connectionId ? " using " + input.connectionId : ""} with Laplace.`,
@@ -416,7 +418,13 @@ it.skipIf(
 			await browserExpect(catalogRowAction.getByRole("alert")).toContainText("Refresh connections");
 			await page.evaluate(() => {
 				(window as any).localShellTest.launchFails = false;
+				(window as any).localShellTest.runtimeDisconnected = true;
 			});
+			await connect.click();
+			await browserExpect(catalogRowAction.getByRole("alert")).toContainText("Restart Laplace Runtime in the tray");
+			await page.evaluate(() => { (window as any).localShellTest.runtimeDisconnected = false; });
+			await connect.click();
+			await browserExpect(catalogRowAction.getByRole("status")).toHaveText("Copy this request into your agent.");
 			await changeAgent.click();
 			await page.getByRole("menuitem", { name: "Claude Code", exact: true }).click();
 
