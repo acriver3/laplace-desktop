@@ -8,7 +8,6 @@ import { RecoveryError } from "@repo/browser-runtime/session-recovery";
 import {
 	BrowserApprovals,
 	browserAuthorizer,
-	browserApprovalBlocksUpdate,
 } from "@repo/local-runtime/browser-approvals";
 import { UpdateCoordination } from "@repo/local-mcp-core/update-coordination";
 import type { DesktopManager } from "@repo/local-runtime/manager";
@@ -35,7 +34,7 @@ it("allows updates with idle browser sessions but protects approval and verifica
 	const f = await fixture();
 	const updates = new UpdateCoordination(
 		join(f.root, "updates"),
-		() => f.broker.list().some(browserApprovalBlocksUpdate),
+		() => f.broker.blocksUpdates(),
 		() => () => {},
 		async () => {},
 	);
@@ -71,7 +70,12 @@ it("allows updates with idle browser sessions but protects approval and verifica
 
 it.each(["sign_in_required", "permission_required"] as const)(
 	"keeps browser %s protected from updates",
-	(state) => expect(browserApprovalBlocksUpdate({ state })).toBe(true),
+	async (state) => {
+		const f = await fixture();
+		await f.report([], state);
+		await f.tick();
+		expect(f.broker.blocksUpdates()).toBe(true);
+	},
 );
 
 it("keeps text review separate from explicit, scoped, single-use confirmation", async () => {
@@ -402,6 +406,51 @@ it("restores remembered approval across Desktop restart without persisting trans
 	await (restored as any).tick();
 	expect((await f.pair()).token).toBeTruthy();
 });
+it.each(["discovering", "sign_in_required", "permission_required"])(
+	"allows maintenance while a saved session waits in %s, retaining its consent",
+	async (state) => {
+		const f = await fixture();
+		await f.report();
+		await f.tick();
+		await f.broker.approve(
+			f.requestId, f.clientId,
+			f.broker.review(f.requestId, f.clientId).capabilities[f.candidate.id]!,
+		);
+		await f.pair();
+		await f.tick();
+		await f.broker.close();
+		const consent = await readFile(join(f.root, "browser-consent.enc"));
+		const restored = new BrowserApprovals(f.manager);
+		cleanup.push(() => restored.close());
+		await restored.initialize();
+		await f.renew();
+		await f.report([], state);
+		await (restored as any).tick();
+		expect(restored.list()[0]!.state).toBe(state);
+		const updates = new UpdateCoordination(
+			join(f.root, "updates"), () => restored.blocksUpdates(),
+			() => () => {}, async () => {},
+		);
+		cleanup.push(() => updates.stop());
+		const release = await updates.acquire(() => () => {});
+		expect(release).toBeTypeOf("function");
+		release!();
+		expect(await readFile(join(f.root, "browser-consent.enc"))).toEqual(consent);
+		// A returning account still verifies before maintenance; no new consent is granted.
+		await f.report();
+		await (restored as any).tick();
+		expect(restored.list()[0]!.state).toBe("verifying");
+		expect(restored.blocksUpdates()).toBe(true);
+		await f.pair();
+		await (restored as any).tick();
+		expect(restored.blocksUpdates()).toBe(false);
+		// An explicit reconnect remains protected even when it finds a saved grant.
+		await restored.begin(randomUUID(), "slack", "slack", identity.workspace,
+			browserAuthorizer(() => {}, f.clientId, "local_connectors_authenticate"));
+		expect(restored.blocksUpdates()).toBe(true);
+	},
+);
+
 it("surfaces sign-in and permission states, requires selection for multiple accounts, and revokes on client disable", async () => {
 	const f = await fixture();
 	await f.report([], "sign_in_required");

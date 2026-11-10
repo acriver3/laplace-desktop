@@ -23,7 +23,7 @@ import {
 import { z } from "zod";
 
 import { desktopBrokerAdapter } from "./broker-adapter";
-import { BrowserApprovals, browserApprovalBlocksUpdate } from "./browser-approvals";
+import { BrowserApprovals } from "./browser-approvals";
 import { CatalogInstaller } from "./catalog";
 import {
 	previewClientRegistration,
@@ -307,7 +307,7 @@ export async function createRuntime(options: RuntimeOptions) {
 		manager.supervisor.activity() ||
 		manager.credentialRequests() > 0 ||
 		catalog.jobs().some((job) => job.status === "running") ||
-		browserApprovals.list().some(browserApprovalBlocksUpdate);
+		browserApprovals.blocksUpdates();
 	const sharedUpdates = new UpdateCoordination(
 		sharedBrowserUpdateRoot(),
 		updateBusy,
