@@ -26,6 +26,7 @@ import { useConnectorUpdates } from "./useConnectorUpdates";
 export function LocalConnectionsPage({
 	servers,
 	catalog,
+	catalogState,
 	busy,
 	refresh,
 	add,
@@ -41,6 +42,7 @@ export function LocalConnectionsPage({
 }: {
 	servers: ServerSnapshot[];
 	catalog: CatalogEntry[];
+	catalogState: "loading" | "ready" | "error";
 	busy: boolean;
 	refresh: () => void;
 	add: () => void;
@@ -297,6 +299,19 @@ export function LocalConnectionsPage({
 								title: "Available to connect",
 								content: (
 									<>
+										{catalogState === "loading" && (
+											<p role="status" className="text-sm text-muted-foreground">
+												Loading available connections…
+											</p>
+										)}
+										{catalogState === "error" && (
+											<div role="alert" className="row wrap">
+												<p>Couldn’t load available connections.</p>
+												<Button variant="outline" disabled={busy} onClick={refresh}>
+													Retry catalog
+												</Button>
+											</div>
+										)}
 										<ul
 											className="connector-row-list"
 											aria-label="Available connections"
@@ -320,11 +335,13 @@ export function LocalConnectionsPage({
 												</ConnectionTile>
 											))}
 										</ul>
-										{!available.length && (
+										{catalogState === "ready" && !available.length && (
 											<p className="text-sm text-muted-foreground">
 												{query
 													? "No matching connections."
-													: "Every catalog connection is installed."}
+													: catalog.length
+														? "Every catalog connection is installed."
+														: "No catalog connections are available."}
 											</p>
 										)}
 									</>

@@ -264,6 +264,8 @@ export function App() {
 	const [shell, setShell] = useState(initialShell);
 	const [snapshot, setSnapshot] = useState<DesktopSnapshot>();
 	const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+	const [catalogState, setCatalogState] = useState<"loading" | "ready" | "error">("loading");
+	const [refreshRevision, setRefreshRevision] = useState(0);
 	const [dialog, setDialog] = useState<Dialog>();
 	const [message, setMessage] = useState<{ kind: "error" | "success"; text: string }>();
 	const [busy, setBusy] = useState(false);
@@ -297,6 +299,7 @@ export function App() {
 	const serverIds = JSON.stringify(servers.map(({ id }) => id).sort());
 	const refresh = useCallback(async () => {
 		setSnapshot(await invoke<DesktopSnapshot>("status"));
+		setRefreshRevision((revision) => revision + 1);
 	}, []);
 	const perform: Perform = useCallback(
 		async (work, success) => {
@@ -353,6 +356,7 @@ export function App() {
 	useEffect(() => {
 		setSnapshot(undefined);
 		setCatalog([]);
+		setCatalogState("loading");
 		setDialog(undefined);
 		setConnectionSearch("");
 		setConnectionView("both");
@@ -361,15 +365,21 @@ export function App() {
 	useEffect(() => {
 		if (!snapshot?.endpoint) return;
 		let current = true;
+		setCatalogState("loading");
 		void invoke<CatalogEntry[]>("catalog.list")
 			.then((entries) => {
-				if (current) setCatalog(entries);
+				if (current) {
+					setCatalog(entries);
+					setCatalogState("ready");
+				}
 			})
-			.catch(() => {});
+			.catch(() => {
+				if (current) setCatalogState("error");
+			});
 		return () => {
 			current = false;
 		};
-	}, [shell.profile, snapshot?.endpoint, snapshot?.runId, catalogRevision, serverIds]);
+	}, [shell.profile, snapshot?.endpoint, snapshot?.runId, catalogRevision, serverIds, refreshRevision]);
 	useLayoutEffect(() => {
 		const element = manager.current;
 		if (!element) return;
@@ -525,6 +535,7 @@ export function App() {
 									key={shell.profile}
 									servers={servers}
 									catalog={catalog}
+									catalogState={catalogState}
 									busy={busy}
 									search={connectionSearch}
 									onSearch={setConnectionSearch}

@@ -45,6 +45,7 @@ it.skipIf(
 		const browser = await chromium.launch({ headless: true });
 		try {
 			const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
+			page.setDefaultTimeout(5000);
 			const errors: string[] = [];
 			page.on("pageerror", (error) => errors.push(error.message));
 			await page.addInitScript(() => {
@@ -96,6 +97,10 @@ it.skipIf(
 					permissions: { screen: "granted", accessibility: true },
 				};
 				const test = {
+					catalogFails: true,
+					catalogEmpty: false,
+					catalogAllInstalled: false,
+					finishCatalogLoad: () => {},
 					history: [] as { method: string; input: any }[],
 					copyFails: false,
 					copied: "",
@@ -116,6 +121,7 @@ it.skipIf(
 							listener({ event: "shell", data: structuredClone(shell) });
 					},
 				};
+				const catalogGate = new Promise<void>((resolve) => { test.finishCatalogLoad = resolve; });
 				Object.assign(window, { localShellTest: test });
 				Object.defineProperty(navigator, "clipboard", {
 					value: {
@@ -169,7 +175,10 @@ it.skipIf(
 										},
 									]
 								: [];
-						if (method === "catalog.list")
+						if (method === "catalog.list") {
+							await catalogGate;
+							if (test.catalogFails) throw new Error("Local work is active; update deferred");
+							if (test.catalogEmpty) return [];
 							return [
 								{
 									id: "slack-mcp-server",
@@ -196,7 +205,8 @@ it.skipIf(
 									available: true,
 									fields: [],
 								},
-							];
+							].map((entry) => test.catalogAllInstalled ? { ...entry, installed: true } : entry);
+						}
 						if (method === "shell.updatePreferences") {
 							test.update({
 								updates: { ...shell.updates, policy: { ...shell.updates?.policy, ...input } },
@@ -230,6 +240,31 @@ it.skipIf(
 				page.evaluate((value) => (window as any).localShellTest.update(value), patch);
 			const history = () => page.evaluate(() => (window as any).localShellTest.history);
 			const navigation = page.getByRole("navigation", { name: "On this device" });
+
+			// Failed initial loads must not look like a fully installed catalog. Refresh must
+			// retry even when status returns the exact same endpoint, run ID and servers.
+			await browserExpect(page.getByText("Loading available connections…")).toBeVisible();
+			await browserExpect(page.getByText("Every catalog connection is installed.")).toHaveCount(0);
+			await page.evaluate(() => (window as any).localShellTest.finishCatalogLoad());
+			await browserExpect(page.getByRole("alert")).toContainText("Couldn’t load available connections.");
+			await browserExpect(page.getByText("Every catalog connection is installed.")).toHaveCount(0);
+			await page.evaluate(() => { (window as any).localShellTest.catalogFails = false; });
+			await page.getByRole("button", { name: "Retry catalog" }).click();
+			await browserExpect(page.getByRole("list", { name: "Available connections" })).toContainText("Slack");
+			await page.evaluate(() => { (window as any).localShellTest.catalogFails = true; });
+			await page.getByRole("button", { name: "Refresh connections" }).click();
+			await browserExpect(page.getByRole("button", { name: "Retry catalog" })).toBeVisible();
+			await browserExpect(page.getByRole("list", { name: "Available connections" })).toContainText("Slack");
+			await page.evaluate(() => { Object.assign((window as any).localShellTest, { catalogFails: false, catalogEmpty: true }); });
+			await page.getByRole("button", { name: "Retry catalog" }).click();
+			await browserExpect(page.getByText("No catalog connections are available.")).toBeVisible();
+			await browserExpect(page.getByText("Every catalog connection is installed.")).toHaveCount(0);
+			await page.evaluate(() => { Object.assign((window as any).localShellTest, { catalogEmpty: false, catalogAllInstalled: true }); });
+			await page.getByRole("button", { name: "Refresh connections" }).click();
+			await browserExpect(page.getByText("Every catalog connection is installed.")).toBeVisible();
+			await page.evaluate(() => { (window as any).localShellTest.catalogAllInstalled = false; });
+			await page.getByRole("button", { name: "Refresh connections" }).click();
+			await browserExpect(page.getByRole("list", { name: "Available connections" })).toContainText("Slack");
 
 			// Signed out: local pages only, catalog installs available, and a browser sign-in entry point.
 			await browserExpect(page.getByRole("heading", { name: "On this device" })).toBeVisible();
@@ -661,6 +696,10 @@ it.skipIf(
 				),
 			).toEqual([]);
 			await page.reload();
+			await page.evaluate(() => {
+				(window as any).localShellTest.catalogFails = false;
+				(window as any).localShellTest.finishCatalogLoad();
+			});
 			await available
 				.getByRole("listitem")
 				.last()
