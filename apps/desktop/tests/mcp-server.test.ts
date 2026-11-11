@@ -805,9 +805,13 @@ it.each(["cancel", "permission", "revoke"])(
 		else if (reason === "permission")
 			await f.manager.setClientTools(a.id, ["local_connectors_status"]);
 		else await f.manager.revokeClient(a.id);
-		await vi.waitFor(() =>
-			expect(f.installer.jobs().find((j) => j.id === job.id)?.status).toBe("cancelled"),
-		);
+		await vi.waitFor(async () => {
+			expect(f.installer.jobs().find((j) => j.id === job.id)?.status).toBe("cancelled");
+			// Job state becomes visible before its queued journal write completes.
+			// Wait for durable cancellation before teardown removes the fixture directory.
+			const saved = JSON.parse(await readFile(join(f.root, "catalog-jobs.json"), "utf8"));
+			expect(saved.find((j: { id: string }) => j.id === job.id)?.status).toBe("cancelled");
+		});
 		expect(f.manager.listServers()).toHaveLength(0);
 	},
 );
