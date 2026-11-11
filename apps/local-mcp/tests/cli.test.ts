@@ -86,9 +86,9 @@ it("requires review before changing state", async () => {
 	const { calls } = await harness(["remove", "fixture"], {});
 	expect(calls).toEqual([]);
 	const confirmed = await harness(["remove", "fixture", "--confirm"], {
-		"server.remove": [{ removed: true }],
+		"portable.manage": [{ removed: true }],
 	});
-	expect(confirmed.calls).toEqual([{ method: "server.remove", input: { id: "fixture" } }]);
+	expect(confirmed.calls).toEqual([{ method: "portable.manage", input: { action: "remove", id: "fixture" } }]);
 });
 
 it("imports with the reviewed fingerprint and opens headless approvals", async () => {

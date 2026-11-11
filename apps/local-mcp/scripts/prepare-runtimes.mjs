@@ -23,7 +23,7 @@ const platform = catalog.platforms[target];
 const windows = target.startsWith("win32-");
 if (!platform)
 	throw new Error("Build runtime bundles on Windows x64, macOS x64/arm64 or Linux x64");
-const compilerEnvironment = windows ? assertWindowsBuildTools() : undefined;
+const compilerEnvironment = windows && process.platform === "win32" ? assertWindowsBuildTools() : undefined;
 const destination = process.argv[3] ? resolve(process.argv[3]) : join(root, "resources/runtimes");
 await mkdir(destination, { recursive: true });
 const temporary = await mkdtemp(join(tmpdir(), "laplace-runtimes-"));

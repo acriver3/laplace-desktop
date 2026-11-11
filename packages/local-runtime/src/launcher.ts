@@ -15,7 +15,7 @@ import { profileRoot, runtimeProfile, runtimeProfiles, type RuntimeProfile } fro
 import { swapRunningRuntime } from "./update";
 
 /** The versioned runtime directory this launcher was installed in (versions/<v>). */
-const installation = () => dirname(__dirname);
+const installation = () => process.env.LAPLACE_CLI_RUNTIME_DIRECTORY ?? dirname(__dirname);
 const option = (args: string[], name: string) => {
 	const index = args.indexOf(name);
 	return index < 0 ? undefined : args[index + 1];
@@ -23,15 +23,14 @@ const option = (args: string[], name: string) => {
 export function launchOptions(profile: RuntimeProfile, directory = installation()) {
 	return {
 		root: profileRoot(profile),
-		node: process.execPath,
+		node: join(directory, "runtimes", process.platform === "win32" ? "node.exe" : "node"),
 		service: join(directory, "helper", "service.cjs"),
 		resources: directory,
 		origin: runtimeProfiles[profile].origin,
 		nativeHost: true,
 	};
 }
-async function status(profile: RuntimeProfile) {
-	const root = profileRoot(profile);
+async function status(profile: RuntimeProfile, root = profileRoot(profile)) {
 	const descriptor = await readRuntimeDescriptor(root);
 	const snapshot = descriptor
 		? await controlRequest<{ mode: string; servers: unknown[]; clients: unknown[] }>(
@@ -57,19 +56,23 @@ async function status(profile: RuntimeProfile) {
 export async function runLauncher(args = process.argv.slice(2)): Promise<unknown> {
 	const [command] = args;
 	const profile = runtimeProfile.parse(option(args, "--profile") ?? "hosted");
-	const options = launchOptions(profile);
+	const options = {
+		...launchOptions(profile),
+		root: resolve(option(args, "--root") ?? profileRoot(profile)),
+		nativeHost: !args.includes("--no-native-host"),
+	};
 	switch (command) {
 		case "autostart":
 			// Login clears an explicit stop; the runtime then serves until stopped again.
 			return startRuntime({ ...options, explicit: true }).then(() => ({ started: true }));
 		case "start":
 			await startRuntime({ ...options, explicit: true });
-			return status(profile);
+			return status(profile, options.root);
 		case "stop":
 			await stopRuntime(options.root);
-			return status(profile);
+			return status(profile, options.root);
 		case "status":
-			return status(profile);
+			return status(profile, options.root);
 		case "enable": {
 			const { launcher, hidden } = stableLaunchers();
 			await enableAutostart({
@@ -77,11 +80,11 @@ export async function runLauncher(args = process.argv.slice(2)): Promise<unknown
 				hidden: process.platform === "win32" ? hidden : undefined,
 				profile,
 			});
-			return status(profile);
+			return status(profile, options.root);
 		}
 		case "disable":
 			await disableAutostart(profile);
-			return status(profile);
+			return status(profile, options.root);
 		case "install": {
 			// Headless archives install themselves into the stable per-user location.
 			const version = (await readFile(join(installation(), "VERSION"), "utf8")).trim();
@@ -106,7 +109,7 @@ export async function runLauncher(args = process.argv.slice(2)): Promise<unknown
 				installed: installed.version,
 				launcher: installed.launcher,
 				update: swap,
-				...(await status(profile)),
+				...(await status(profile, options.root)),
 			};
 		}
 		case "bridge": {
@@ -126,9 +129,9 @@ export async function runLauncher(args = process.argv.slice(2)): Promise<unknown
 			// Same operations AI clients reach over MCP, for agents that only have a shell.
 			const [, action, id, value, extra] = args;
 			const descriptor = await readRuntimeDescriptor(options.root);
-			if (!descriptor) throw new Error("Laplace Runtime is not running. Run laplace-runtime start.");
-			if (action === "versions" && id)
-				return controlRequest(descriptor, "npm.versions", { id });
+			if (!descriptor)
+				throw new Error("Laplace Runtime is not running. Run laplace-runtime start.");
+			if (action === "versions" && id) return controlRequest(descriptor, "npm.versions", { id });
 			if (action === "set-version" && id && value)
 				return controlRequest(descriptor, "npm.setVersion", { id, version: value }, 300_000);
 			if (action === "add-npm" && id && value)
