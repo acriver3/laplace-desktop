@@ -209,10 +209,11 @@
 	{
 		"id": "yale-som-cms-mcp",
 		"name": "Yale SOM CMS",
-		"description": "Read Yale SOM career information and download resources using your dedicated Yale SOM CMS browser login.",
+		"description": "Read Yale SOM career information, download resources and confirm student career changes using your dedicated CMS browser login.",
 		"capabilities": [
-			"Read career dashboard, jobs, employers and events",
-			"Read appointments, applications and career resources",
+			"Read career dashboard, jobs, employers, events and resources",
+			"Read applications, appointments, documents and profile",
+			"Preview and confirm student career changes",
 			"Download career resources locally"
 		],
 		"repository": "https://github.com/acriver3/laplace-mcp-library",
@@ -222,11 +223,12 @@
 		"recipe": "yale-som-cms",
 		"patches": [],
 		"reviewedAt": "2026-11-10",
-		"reviewEvidence": ["reviews/yale-som-cms-mcp-review.md"],
+		"reviewEvidence": ["reviews/yale-som-cms-mcp.md"],
 		"reviewNotes": [
-			"Read-only candidate for the Yale SOM 12twenty student career portal at https://som-yale.12twenty.com/dashboard/.",
-			"Uses a visible dedicated Chrome/Edge login and saves its profile for headless background reads; never imports ordinary browser cookies or tethers to an existing tab.",
-			"Native Windows student-account acceptance and npm publication are pending. Other platforms are not offered until tested."
+			"Candidate for the Yale SOM 12twenty student career portal at https://som-yale.12twenty.com/dashboard/.",
+			"Uses a visible dedicated Chrome/Edge login and saves its profile for headless background use; never imports ordinary browser cookies or tethers to an existing tab.",
+			"Student career changes require a complete preview and explicit confirmation. Setup checks only session status and the dashboard.",
+			"Automated fixtures are recorded separately from live acceptance. Native Windows student-account acceptance and npm publication are pending. Other platforms are not offered until tested."
 		],
 		"prerequisites": [
 			"Laplace Local and its included Node 24 runtime",
@@ -236,7 +238,7 @@
 		],
 		"authentication": [
 			"Run login and complete Yale SSO/MFA yourself in the visible dedicated Chrome or Edge window.",
-			"Background reads reuse the saved profile headlessly with the same browser channel and download directory. If login expires, run login again."
+			"Background calls reuse the saved profile headlessly with the same browser channel and download directory. If login expires, run login again."
 		],
 		"sourceDirectory": "connectors/yale-som-cms-mcp",
 		"npm": {
