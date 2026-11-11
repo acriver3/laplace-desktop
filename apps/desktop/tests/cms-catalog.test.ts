@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 
@@ -77,6 +77,13 @@ it("authenticates CMS with the configured browser and runs only its approved set
 	const root = await mkdtemp(join(tmpdir(), "cms-catalog-"));
 	cleanup.push(() => rm(root, { recursive: true, force: true }));
 	const resources = join(root, "resources");
+	if (process.platform === "win32") {
+		await mkdir(join(resources, "runtimes"), { recursive: true });
+		await copyFile(
+			join(process.cwd(), "resources/runtimes/process-host.exe"),
+			join(resources, "runtimes/process-host.exe"),
+		);
+	}
 	const directory = npmPackageDirectory(root, source);
 	const packageDirectory = join(directory, "node_modules", ...source.package.split("/"));
 	const file = "dist/cli.js";
