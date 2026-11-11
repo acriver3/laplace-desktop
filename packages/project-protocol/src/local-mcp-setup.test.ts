@@ -9,18 +9,19 @@ import {
 describe("public local connector setup", () => {
 	it("has one stable public URL per connector, including the demo", () => {
 		const urls = localConnectorDefinitions.map((entry) => localConnectorSetupUrl(entry.id));
-		expect(new Set(urls).size).toBe(6);
+		expect(new Set(urls).size).toBe(7);
 		for (const url of urls) expect(new URL(url).origin).toBe("https://connect.laplaceop.com");
 	});
 	it("labels activated tethered runtimes without relabeling old releases", () => {
 		expect(
 			localConnectorDefinitions
-				.slice(0, 5)
+				.slice(0, 6)
 				.map((entry) => localConnectorMetadata(entry.id, true).name),
 		).toEqual([
 			"Canvas [Background Browser]",
 			"LinkedIn [Background Browser]",
 			"Yale SOM EMS [Background Browser]",
+			"Yale SOM CMS [Background Browser]",
 			"Outlook [Tethered]",
 			"Slack [Tethered]",
 		]);

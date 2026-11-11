@@ -23,6 +23,13 @@ export const localConnectorDefinitions = [
 		verify: ["ems_session_status", "ems_list_templates"],
 	},
 	{
+		id: "yale-som-cms-mcp",
+		name: "Yale SOM CMS",
+		mode: "background-browser",
+		serverId: "yale-som-cms",
+		verify: ["cms_session_status", "cms_get_dashboard"],
+	},
+	{
 		id: "msoutlook-mcp",
 		name: "Outlook",
 		mode: "tethered",

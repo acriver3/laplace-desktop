@@ -21,7 +21,15 @@ import { ycBrowserVersion } from "./shared/yc-browser";
 const entrySchema = bundleEntrySchema
 	.extend({
 		managedUpdate: z.boolean().optional(),
-		recipe: z.enum(["canvas", "linkedin", "yale-som-ems", "outlook", "slack-ready", "yc-demo"]),
+		recipe: z.enum([
+			"canvas",
+			"linkedin",
+			"yale-som-ems",
+			"yale-som-cms",
+			"outlook",
+			"slack-ready",
+			"yc-demo",
+		]),
 		demoOnly: z.boolean().optional(),
 		setupUrl: z.string().url(),
 		browserMode: z.enum(["tethered", "background-browser"]),

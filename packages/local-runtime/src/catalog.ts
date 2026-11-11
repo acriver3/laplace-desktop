@@ -151,6 +151,7 @@ const serverIds: Record<string, string> = {
 	"canvas-session-mcp": "canvas-session",
 	"linkedin-mcp-server": "linkedin",
 	"yale-som-ems-mcp": "yale-som-ems",
+	"yale-som-cms-mcp": "yale-som-cms",
 	"msoutlook-mcp": "outlook",
 	"slack-mcp-server": "slack",
 };
@@ -159,6 +160,7 @@ const checks: Record<string, string[]> = {
 	canvas: ["canvas_whoami", "canvas_list_courses"],
 	linkedin: ["get_my_profile"],
 	"yale-som-ems": ["ems_session_status", "ems_list_templates"],
+	"yale-som-cms": ["cms_session_status", "cms_get_dashboard"],
 	outlook: ["outlook_status", "outlook_list_folders"],
 	"slack-ready": ["channels_list"],
 };
@@ -229,7 +231,7 @@ function inputFields(entry: BundleCatalogEntry, root: string) {
 				default: join(session, "profile"),
 			},
 		];
-	if (entry.recipe === "yale-som-ems")
+	if (entry.recipe === "yale-som-ems" || entry.recipe === "yale-som-cms")
 		return [
 			{
 				key: "profile_dir",
@@ -245,6 +247,17 @@ function inputFields(entry: BundleCatalogEntry, root: string) {
 				options: ["chrome", "msedge"],
 				default: "chrome",
 			},
+			...(entry.recipe === "yale-som-cms"
+				? [
+						{
+							key: "downloads_dir",
+							label: "Career resource download folder",
+							type: "directory",
+							required: true,
+							default: join(homedir(), "Documents", "Yale SOM CMS"),
+						},
+					]
+				: []),
 		];
 	return [
 		{
@@ -1424,7 +1437,7 @@ export class CatalogInstaller {
 									: [config.command, join(directory, "browser/cli.mjs")]
 								: entry.recipe === "canvas"
 									? entryPoint("bin/cli.js")
-									: entry.recipe === "yale-som-ems"
+									: entry.recipe === "yale-som-ems" || entry.recipe === "yale-som-cms"
 										? entryPoint("dist/cli.js")
 										: config.npm
 											? entryPoint("")
@@ -1451,13 +1464,16 @@ export class CatalogInstaller {
 									]
 								: entry.recipe === "canvas"
 									? ["login", "--url", configuration.canvas_url!]
-									: entry.recipe === "yale-som-ems"
+									: entry.recipe === "yale-som-ems" || entry.recipe === "yale-som-cms"
 										? [
 												"login",
 												"--profile-dir",
 												configuration.profile_dir!,
 												"--browser",
 												configuration.browser!,
+												...(entry.recipe === "yale-som-cms"
+													? ["--downloads-dir", configuration.downloads_dir!]
+													: []),
 											]
 										: [
 												"--login",

@@ -819,6 +819,7 @@ export class DesktopManager {
 			canvas: ["canvas_whoami", "canvas_list_courses"],
 			linkedin: ["get_my_profile"],
 			"yale-som-ems": ["ems_session_status", "ems_list_templates"],
+			"yale-som-cms": ["cms_session_status", "cms_get_dashboard"],
 			outlook: ["outlook_login", "outlook_status", "outlook_list_folders"],
 			"slack-ready": [
 				"channels_list",
