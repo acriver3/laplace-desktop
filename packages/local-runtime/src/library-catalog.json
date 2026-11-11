@@ -227,7 +227,7 @@
 		"reviewEvidence": ["reviews/yale-som-cms-mcp-review.md"],
 		"reviewNotes": [
 			"Read-only candidate for the Yale SOM 12twenty student career portal at https://som-yale.12twenty.com/dashboard/.",
-			"Uses a dedicated local Chrome/Edge profile and interactive Yale SSO/MFA; session data and downloads stay outside the installed package.",
+			"Uses a visible dedicated Chrome/Edge login and saves its profile for headless background reads; never imports ordinary browser cookies or tethers to an existing tab.",
 			"Native Windows student-account acceptance and npm publication are pending. Other platforms are not offered until tested."
 		],
 		"prerequisites": [
@@ -237,8 +237,8 @@
 			"Dedicated profile and download directories outside the installed package"
 		],
 		"authentication": [
-			"Run the package's login command and complete Yale SSO/MFA in the dedicated browser.",
-			"Reuse the same profile, browser channel and download directory for status and serve."
+			"Run login and complete Yale SSO/MFA yourself in the visible dedicated Chrome or Edge window.",
+			"Background reads reuse the saved profile headlessly with the same browser channel and download directory. If login expires, run login again."
 		],
 		"sourceDirectory": "connectors/yale-som-cms-mcp",
 		"npm": {
