@@ -229,6 +229,9 @@ importers:
       '@repo/local-runtime':
         specifier: workspace:*
         version: link:../../packages/local-runtime
+      '@repo/project-protocol':
+        specifier: workspace:*
+        version: link:../../packages/project-protocol
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

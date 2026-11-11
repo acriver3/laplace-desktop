@@ -7,11 +7,13 @@
 	"scripts": {
 		"test": "vitest run",
 		"type-check": "tsc --noEmit",
-		"package": "pnpm --filter @repo/desktop package:runtime"
+		"package": "pnpm --filter @repo/desktop package:runtime",
+		"package:npm": "node scripts/package-npm.mjs"
 	},
 	"dependencies": {
 		"@repo/local-mcp-core": "workspace:*",
-		"@repo/local-runtime": "workspace:*"
+		"@repo/local-runtime": "workspace:*",
+		"@repo/project-protocol": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:",

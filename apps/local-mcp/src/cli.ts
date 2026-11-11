@@ -1,3 +1,6 @@
+import { manage, managementUsage, option as argumentOption, waitOperation } from "./management";
+import desktopPackage from "../../desktop/package.json";
+
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -41,17 +44,18 @@ export type CliIo = {
  */
 export async function runCli(io: CliIo) {
 	const argv = io.argv;
-	const option = (name: string, fallback?: string) => {
-		const index = argv.indexOf(name);
-		return index < 0 ? fallback : argv[index + 1];
-	};
+	const option = (name: string, fallback?: string) => argumentOption(argv, name) ?? fallback;
 	const command = argv[0];
 	const profile = runtimeProfile.parse(option("--profile") ?? "hosted");
 	const options = launchOptions(profile);
 	const root = resolve(option("--root") ?? options.root);
 	const sleep = io.sleep ?? ((ms: number) => new Promise((accept) => setTimeout(accept, ms)));
-	if (!command || command === "help" || command === "--help") {
-		io.print(usage);
+	if (!command || command === "help" || argv.includes("--help")) {
+		io.print(usage + "\n" + managementUsage);
+		return;
+	}
+	if (command === "--version" || command === "version") {
+		io.print(desktopPackage.version);
 		return;
 	}
 	if (command === "status" || command === "bridge" || lifecycle.has(command)) {
@@ -76,7 +80,9 @@ export async function runCli(io: CliIo) {
 		entry.deletePassword();
 		io.print({
 			keychain,
-			...((await runLauncher(["status", "--profile", profile]).catch(() => ({}))) as object),
+			...((await runLauncher(["status", "--profile", profile, "--root", root]).catch(
+				() => ({}),
+			)) as object),
 		});
 		return;
 	}
@@ -85,11 +91,15 @@ export async function runCli(io: CliIo) {
 		io.request ??
 		(async (method: HelperMethod, input: unknown = {}) => {
 			const descriptor = await startRuntime({ ...options, root, explicit: true });
-			return controlRequest(descriptor, method, input);
+			return controlRequest(descriptor, method, input, 300_000);
 		});
 	const reviewed = async (message: string) =>
 		argv.includes("--confirm") || (await io.confirm(message));
 
+	if (["connectors", "jobs", "clients", "runtime", "credentials"].includes(command)) {
+		io.print(await manage(argv, request, io));
+		return;
+	}
 	switch (command) {
 		case "serve": {
 			// Stdio MCP for AI clients that launch `laplace-local serve`; shares the runtime.
@@ -154,6 +164,7 @@ export async function runCli(io: CliIo) {
 				if (result.linked) break;
 			}
 			io.print(await request("status"));
+			if (!result.linked) throw new Error("Login was not completed before the approval expired.");
 			return;
 		}
 		case "logout":
@@ -205,7 +216,7 @@ export async function runCli(io: CliIo) {
 			const id = argv[1];
 			if (!id) throw new Error(`Usage: ${command} <connection-id> --confirm`);
 			if (!(await reviewed(`${command} local connector ${id}?`))) return;
-			io.print(await request(command === "repair" ? "server.restart" : "server.remove", { id }));
+			io.print(await request("portable.manage", { action: command, id }));
 			return;
 		}
 		case "browser":
@@ -277,33 +288,29 @@ async function browser(
 		case "install": {
 			if (!id) throw new Error("Usage: browser setup <catalog-id> [--workspace <url>]");
 			const workspace = option("--workspace");
-			const result = (await request("catalog.install", {
+			const configFile = option("--config");
+			const configuration = configFile
+				? JSON.parse(await readFile(resolve(configFile), "utf8"))
+				: {};
+			if (workspace) configuration.workspace = workspace;
+			if (!argv.includes("--confirm") && !(await io.confirm(`Install connector ${id}?`))) return;
+			const result = await request("catalog.install", {
 				catalogId: id,
-				configuration: workspace ? { workspace } : {},
-			})) as { requestId?: string };
-			if (!result?.requestId) return result;
-			io.print(result);
-			// Browser approvals may need the headless page when no Desktop window is open.
-			const deadline = Date.now() + 600_000;
-			while (Date.now() < deadline) {
-				await sleep(1000);
-				const pending = (await request("browser.list")) as Array<{
-					requestId: string;
-					state: string;
-				}>;
-				const current = pending.find((item) => item.requestId === result.requestId);
-				if (!current || ["approved", "cancelled", "expired", "error"].includes(current.state))
-					return current ?? { state: "ended" };
-			}
-			return { state: "pending", requestId: result.requestId };
+				configuration,
+				idempotencyKey: option("--idempotency-key") ?? randomUUID(),
+			});
+			return waitOperation(result, argv, request, io);
 		}
 		case "authenticate":
 			if (!id) throw new Error("Usage: browser authenticate <connection-id>");
+			if (!argv.includes("--confirm") && !(await io.confirm(`Authenticate connector ${id}?`)))
+				return;
 			return request("catalog.authenticate", { id });
 		case "disconnect":
 		case "uninstall":
 			if (!id) throw new Error(`Usage: browser ${action} <connection-id>`);
-			return request("server.remove", { id });
+			if (!argv.includes("--confirm") && !(await io.confirm(`Remove connector ${id}?`))) return;
+			return request("portable.manage", { action: "remove", id });
 		case "migrate":
 		case "rollback":
 			throw new Error(
