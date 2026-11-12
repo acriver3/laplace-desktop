@@ -203,12 +203,17 @@ export class PortableConnectors {
 		await this.initialize();
 		const item = this.state.instances[id];
 		if (!item) return [];
-		if (item.snapshot.bundle.kind === "catalog")
+		if (item.snapshot.bundle.kind === "catalog") {
+			if (this.manager.listServers().some((server) => server.id === id)) {
+				const fields = await this.catalog.configurationFields(id);
+				if (fields) return fields;
+			}
 			return (
 				(await this.catalog.list()).find(
 					(e) => item.snapshot.bundle.kind === "catalog" && e.id === item.snapshot.bundle.catalogId,
 				)?.fields ?? []
 			);
+		}
 		const manifest = manifestSchema.parse(
 			JSON.parse(await readFile(join(item.directory, "manifest.json"), "utf8")),
 		);
@@ -690,7 +695,7 @@ export class PortableConnectors {
 						copiedFrom: item.snapshot.copiedFrom,
 					};
 					const op = this.state.operations.find((o) => o.connectorId === command.id);
-					if (op) {
+					if (op && !this.manager.getServerConfig(command.id).enabled) {
 						op.status = "needs_authentication";
 						op.catalogJobId = undefined;
 						op.message = "Settings changed. Complete sign-in and verify on this device.";

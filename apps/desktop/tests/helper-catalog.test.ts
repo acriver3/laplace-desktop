@@ -313,6 +313,22 @@ it.each([
 	expect((await installer.list()).find((item) => item.id === entry.id)?.installed).toBe(false);
 });
 
+it("defaults background session checks off and passes explicit opt-in to both connectors", () => {
+	for (const recipe of ["canvas", "yale-som-ems"]) {
+		const entry = bundleCatalog.find((candidate) => candidate.recipe === recipe)!;
+		const configure = (setting?: string) => catalogConfiguration(entry, {
+			...(recipe === "canvas" ? { canvas_url: "https://canvas.example.edu" } : {}),
+			...(setting ? { background_session_checks: setting } : {}),
+		}, "/tmp/state", "/tmp/packages");
+		const launch = (settings: Record<string, string>) => npmCatalogConfig(
+			entry, source(entry), { command: "node", args: ["/pkg/cli.js"] }, settings, "/pkg",
+		);
+		expect(launch(configure()).env.LAPLACE_BACKGROUND_SESSION_CHECKS).toBe("off");
+		expect(launch(configure("on")).env.LAPLACE_BACKGROUND_SESSION_CHECKS).toBe("on");
+		expect(() => configure("always")).toThrow("Choose on or off");
+	}
+});
+
 it("launches the Slack npm package with read-only tools", () => {
 	const entry = bundleCatalog.find((item) => item.recipe === "slack-ready")!;
 	expect(entry.candidate).toBe(true);

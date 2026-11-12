@@ -61,18 +61,31 @@ function ServerDetails({
 	edit,
 	remove,
 	linked,
+	backgroundChecks,
+	busy,
 }: {
 	server: ServerSnapshot;
 	perform: Perform;
 	edit: () => void;
 	remove: () => void;
 	linked: boolean;
+	backgroundChecks: boolean;
+	busy: boolean;
 	signedIn: boolean;
 }) {
 	const [tools, setTools] = useState(
 		server.tools.filter((tool) => tool.localEnabled).map((tool) => tool.name),
 	);
 	const [dirty, setDirty] = useState(false);
+	const [background, setBackground] = useState<CatalogEntry["fields"][number]>();
+	useEffect(() => {
+		if (!backgroundChecks) return;
+		let current = true;
+		void invoke<CatalogEntry["fields"]>("portable.fields", { id: server.id }).then((fields) => {
+			if (current) setBackground(fields.find((field) => field.key === "background_session_checks"));
+		}).catch(() => {});
+		return () => { current = false; };
+	}, [backgroundChecks, server.id]);
 	useEffect(() => {
 		if (!dirty) setTools(server.tools.filter((tool) => tool.localEnabled).map((tool) => tool.name));
 	}, [server.tools, dirty]);
@@ -106,6 +119,26 @@ function ServerDetails({
 								: "Linked to Laplace"}
 					</dd>
 				</dl>
+				{backgroundChecks && background && (
+					<label className="row">
+						<input
+							type="checkbox"
+							checked={background.default === "on"}
+							disabled={busy}
+							onChange={(event) => {
+								const value = event.currentTarget.checked ? "on" : "off";
+								void perform(async () => {
+									await invoke("portable.manage", {
+										idempotencyKey: crypto.randomUUID(),
+										command: { action: "configure", id: server.id, configuration: { [background.key]: value } },
+									});
+									setBackground({ ...background, default: value });
+								});
+							}}
+						/>
+						{background.label}
+					</label>
+				)}
 				<div className="row wrap">
 					<button onClick={edit}>
 						<Settings2 size={14} />
@@ -649,6 +682,8 @@ export function App() {
 									perform={perform}
 									linked={linked}
 									signedIn={!!shell.account}
+									busy={busy}
+									backgroundChecks={!!catalogEntry?.fields.some((field) => field.key === "background_session_checks")}
 									edit={() => setDialog({ type: "server", server })}
 									remove={() => removeConnection(server)}
 								/>

@@ -80,6 +80,10 @@ Configuration files are JSON objects containing string values for catalog settin
 for example `{"canvas_url":"https://school.instructure.com"}`. Put credentials in
 protected configuration files instead of command-line arguments.
 
+For Canvas and Yale SOM EMS, configure `{"background_session_checks":"on"}`
+to opt in on this device. The default is `"off"`. Checks run only for a
+deployment with a verified interval and stop when the connector stops.
+
 Install/copy return durable operation IDs. `--wait` polls until ready or until user
 action is needed; it never approves browser access. Use `approvals list` and
 `approvals open <request-id>` for browser approval. Failed, cancelled, interrupted,

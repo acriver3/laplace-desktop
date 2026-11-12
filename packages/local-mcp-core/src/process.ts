@@ -125,6 +125,7 @@ export class ManagedStdio implements Transport {
 			home: string;
 			env: Record<string, string>;
 			resources: string;
+			gracefulShutdown?: boolean;
 			diagnostic: (message: string) => void;
 		},
 	) {}
@@ -199,7 +200,22 @@ export class ManagedStdio implements Transport {
 		const child = this.child;
 		if (child) {
 			this.child = undefined;
-			this.closing = stopTree(child);
+			this.closing = (async () => {
+				if (this.options.gracefulShutdown && child.exitCode === null && child.signalCode === null) {
+					// EMS closes its browser and releases its profile lock on EOF.
+					await new Promise<void>((resolve) => {
+						const done = () => {
+							clearTimeout(timer);
+							child.off("close", done);
+							resolve();
+						};
+						const timer = setTimeout(done, 2_000);
+						child.once("close", done);
+						child.stdin.end();
+					});
+				}
+				await stopTree(child);
+			})();
 			await this.closing;
 		}
 	}

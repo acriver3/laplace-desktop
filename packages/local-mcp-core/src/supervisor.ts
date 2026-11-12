@@ -46,6 +46,21 @@ interface Runtime {
 	aborts: Set<AbortController>;
 	releaseLeases?: () => Promise<void>;
 }
+const emsIdentity = (identity?: string) => /^(?:npm:@withlaplace\/)?yale-som-ems-mcp@/.test(identity ?? "");
+
+function verifiedBackgroundEnvironment(identity?: string): Record<string, string> {
+	if (/^(?:npm:@withlaplace\/)?canvas-session-mcp@/.test(identity ?? "")) {
+		return {
+			CANVAS_MCP_VERIFIED_CHECK_ORIGIN: process.env.CANVAS_MCP_VERIFIED_CHECK_ORIGIN ?? "",
+			CANVAS_MCP_VERIFIED_CHECK_MINUTES: process.env.CANVAS_MCP_VERIFIED_CHECK_MINUTES ?? "",
+		};
+	}
+	if (emsIdentity(identity)) {
+		return { EMS_VERIFIED_CHECK_MINUTES: process.env.EMS_VERIFIED_CHECK_MINUTES ?? "" };
+	}
+	return {};
+}
+
 export class Supervisor {
 	private closed = false;
 	private maintenance = false;
@@ -216,12 +231,14 @@ export class Supervisor {
 						home: homedir(),
 						env: {
 							...config.env,
+							...verifiedBackgroundEnvironment(config.identity),
 							...(process.env.LAPLACE_SESSION_RECOVERY_V1 === "true" &&
 							outlookIdentity(config.identity)
 								? { LAPLACE_SESSION_RECOVERY_V1: "true" }
 								: {}),
 						},
 						resources: this.resources,
+						gracefulShutdown: emsIdentity(config.identity),
 						diagnostic: (message) => this.diagnostic(runtime, message),
 					})
 				: new StreamableHTTPClientTransport(new URL(config.url), {

@@ -229,7 +229,7 @@ it("installs Yale SOM EMS from npm with resolved catalog arguments and an npm id
 				"--browser",
 				"msedge",
 			],
-			env: {},
+			env: { LAPLACE_BACKGROUND_SESSION_CHECKS: "off" },
 			npm: source,
 			identity: `npm:${name}@${ems.version}`,
 		}),
@@ -341,7 +341,7 @@ it("migrates a legacy bundle installation to npm, keeping its settings, ID and t
 			serverId: "yale-som-ems",
 			package: name,
 			version: ems.version,
-			configuration: { profile_dir: profile, browser: "msedge" },
+			configuration: { profile_dir: profile, browser: "msedge", background_session_checks: "off" },
 		}),
 	]);
 	expect(await installer.npmUpdateTargets()).toEqual([

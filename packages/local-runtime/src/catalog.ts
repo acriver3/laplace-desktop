@@ -169,6 +169,17 @@ const assertActive = (signal?: AbortSignal) => {
 const uvExecutable = (resources: string) =>
 	join(resources, "runtimes", process.platform === "win32" ? "uv.exe" : "uv");
 
+const backgroundSessionField = {
+	key: "background_session_checks",
+	label: "Background session checks (where verified)",
+	type: "select",
+	options: ["off", "on"],
+	default: "off",
+};
+
+const supportsBackgroundSessions = (entry: BundleCatalogEntry) =>
+	entry.recipe === "canvas" || entry.recipe === "yale-som-ems";
+
 function inputFields(entry: BundleCatalogEntry, root: string) {
 	if (entry.recipe === "yc-demo" || (tetheredEntry(entry) && entry.recipe !== "slack-ready"))
 		return [];
@@ -203,6 +214,7 @@ function inputFields(entry: BundleCatalogEntry, root: string) {
 				options: ["chrome", "msedge"],
 				default: "chrome",
 			},
+			backgroundSessionField,
 		];
 	if (browserSlack(entry) || (tetheredEntry(entry) && entry.recipe === "slack-ready"))
 		return [
@@ -245,6 +257,7 @@ function inputFields(entry: BundleCatalogEntry, root: string) {
 				options: ["chrome", "msedge"],
 				default: "chrome",
 			},
+			backgroundSessionField,
 		];
 	return [
 		{
@@ -280,7 +293,7 @@ export function catalogConfiguration(
 		)
 			throw new Error(`${field.label} must be an absolute folder outside the installed connector.`);
 		if (field.type === "select" && !field.options?.includes(value))
-			throw new Error("Choose Chrome or Edge.");
+			throw new Error(field.key === backgroundSessionField.key ? "Choose on or off for background session checks." : "Choose Chrome or Edge.");
 		if (field.type === "url") {
 			let url: URL;
 			try {
@@ -345,9 +358,12 @@ export function npmCatalogConfig(
 		enabled: false,
 		command: launch.command,
 		args: [...launch.args, ...entry.npm.args.map(replace)],
-		env: Object.fromEntries(
-			Object.entries(entry.npm.env).map(([key, value]) => [key, replace(value)]),
-		),
+		env: {
+			...Object.fromEntries(Object.entries(entry.npm.env).map(([key, value]) => [key, replace(value)])),
+			...(supportsBackgroundSessions(entry)
+				? { LAPLACE_BACKGROUND_SESSION_CHECKS: configuration.background_session_checks === "on" ? "on" : "off" }
+				: {}),
+		},
 		npm: source,
 		identity: npmIdentity(source),
 	}) as ServerConfig & { transport: "stdio" };
@@ -611,8 +627,18 @@ export class CatalogInstaller {
 			(id) => this.installations.get(id)!.catalogId === entry.id && !!this.resolved(id),
 		);
 	}
+	async configurationFields(id: string) {
+		const { installation, entry } = await this.installed(id);
+		if (!supportsBackgroundSessions(entry)) return;
+		return inputFields(entry, this.options.root).map((field) => ({
+			...field,
+			default: installation.configuration[field.key] ?? field.default,
+		}));
+	}
 	async portableSnapshot(id: string) {
 		const { installation, entry } = await this.installed(id);
+		const configuration = reusableConnectorSettings(installation.configuration);
+		delete configuration[backgroundSessionField.key];
 		return {
 			version: 1 as const,
 			sourceId: id,
@@ -622,7 +648,7 @@ export class CatalogInstaller {
 				version: installation.version,
 				...(installation.package ? { package: installation.package } : {}),
 			},
-			configuration: reusableConnectorSettings(installation.configuration),
+			configuration,
 		};
 	}
 
@@ -706,7 +732,7 @@ export class CatalogInstaller {
 					: error instanceof Error
 						? error.message
 						: "The operation failed.";
-				if (sessionRecoveryEnabled() && !controller.signal.aborted) {
+				if ((sessionRecoveryEnabled() || error instanceof RecoveryError) && !controller.signal.aborted) {
 					job.recovery = error instanceof RecoveryError ? error.recovery : classifyRecovery(error);
 					job.error = recoveryMessage(job.recovery);
 				}
@@ -970,12 +996,15 @@ export class CatalogInstaller {
 		if (!this.manager.replaceManagedUpdate)
 			throw new Error("Update Desktop to configure this connector");
 		const { cwd: _cwd, ...rest } = previous;
+		const backgroundOnly = supportsBackgroundSessions(entry) && Object.keys(configuration).every(
+			(key) => key === backgroundSessionField.key || configuration[key] === installation.configuration[key],
+		);
 		await this.manager.replaceManagedUpdate(
 			serverConfig.parse({
 				...rest,
 				args: template.args,
 				env: { ...previous.env, ...template.env },
-				enabled: false,
+				enabled: backgroundOnly && previous.enabled,
 				generation: randomUUID(),
 			}),
 			previous,
@@ -1515,7 +1544,10 @@ export class CatalogInstaller {
 				try {
 					await this.verifyReads(entry, job, signal);
 				} catch (error) {
-					if (!sessionRecoveryEnabled()) await this.manager.setEnabled(id, false);
+					if (!sessionRecoveryEnabled() && !(error instanceof RecoveryError))
+						await this.manager.setEnabled(id, false);
+					else if (this.manager.getServerConfig(id).enabled !== enabled)
+						await this.manager.setEnabled(id, enabled);
 					throw error;
 				} finally {
 					if (sessionRecoveryEnabled() && this.manager.getServerConfig(id).enabled !== enabled)
@@ -1525,7 +1557,7 @@ export class CatalogInstaller {
 			id,
 		);
 	}
-	private assertToolResult(result: unknown) {
+	private assertToolResult(result: unknown, sessionConnector = false) {
 		const response = result as {
 			isError?: boolean;
 			structuredContent?: unknown;
@@ -1546,6 +1578,17 @@ export class CatalogInstaller {
 					/* Not all successful tools return JSON. */
 				}
 			}
+		const code = (response?.structuredContent as { code?: string } | undefined)?.code;
+		const sessionFailure = sessionConnector && typeof code === "string" &&
+			["sign_in_required", "auth_required", "identity_mismatch", "rate_limited", "transport_unavailable"].includes(code);
+		if (failed && sessionFailure) {
+			const recovery = classifyRecovery(code === "auth_required" ? "sign_in_required" : code);
+			const details = response.structuredContent as { details?: { retryAfterMs?: number } };
+			throw new RecoveryError(
+				code === "transport_unavailable" ? { state: "reconnecting", reason: code } : recovery,
+				details.details?.retryAfterMs,
+			);
+		}
 		if (failed && sessionRecoveryEnabled()) {
 			const failure = recoveryFromResult(response);
 			if (failure && response.isError && response.structuredContent) throw failure;
@@ -1587,6 +1630,7 @@ export class CatalogInstaller {
 				try {
 					this.assertToolResult(
 						await this.manager.catalogSetupCall(job.serverId, tool, {}, signal),
+						supportsBackgroundSessions(entry),
 					);
 					delete job.recovery;
 					break;
