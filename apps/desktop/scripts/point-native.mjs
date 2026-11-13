@@ -42,22 +42,29 @@ if (process.platform === "win32") {
 		},
 	);
 } else {
-	execFileSync(
-		"xcrun",
-		[
-			"clang++",
-			"-std=c++17",
-			"-fobjc-arc",
-			"-O2",
-			join(root, "native/point-mac.mm"),
-			"-framework",
-			"AppKit",
-			"-framework",
-			"ApplicationServices",
-			"-o",
-			output,
-		],
-		{ stdio: "inherit" },
-	);
+	const compile = (source, destination) =>
+		execFileSync(
+			"xcrun",
+			[
+				"clang++",
+				"-std=c++17",
+				"-fobjc-arc",
+				"-O2",
+				source,
+				"-framework",
+				"AppKit",
+				"-framework",
+				"ApplicationServices",
+				"-o",
+				destination,
+			],
+			{ stdio: "inherit" },
+		);
+	compile(join(root, "native/point-mac.mm"), output);
+	if (process.argv.includes("--test")) {
+		const test = join(root, ".cache/point-native/point-mac-test");
+		compile(join(root, "tests/point-mac.test.mm"), test);
+		execFileSync(test, [], { stdio: "inherit" });
+	}
 }
 console.log(`Built Point adapter for ${process.platform}-${process.arch}.`);

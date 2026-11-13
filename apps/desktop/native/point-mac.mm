@@ -20,23 +20,60 @@ static NSDictionary *currentInfo() {
  for (NSDictionary *window in windowInfo()) if ([window[(id)kCGWindowNumber] unsignedIntValue] == targetId && [window[(id)kCGWindowOwnerPID] intValue] == targetPid) return window;
  fail(@"The Codex window is unavailable. Your snip is retained."); return nil;
 }
+static NSArray *accessibilityWindows(pid_t pid) {
+ AXUIElementRef app = AXUIElementCreateApplication(pid);
+ AXUIElementSetMessagingTimeout(app, 0.25);
+ // Electron builds its accessibility tree lazily, independently of the OS grant.
+ AXUIElementSetAttributeValue(app, CFSTR("AXManualAccessibility"), kCFBooleanTrue);
+ NSArray *windows = nil;
+ AXError error = kAXErrorSuccess;
+ for (int attempt = 0; attempt < 20; attempt++) {
+  CFTypeRef value = NULL;
+  error = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute, &value);
+  if (value) {
+   if (CFGetTypeID(value) == CFArrayGetTypeID()) windows = CFBridgingRelease(value);
+   else CFRelease(value);
+  }
+  if (windows.count || error == kAXErrorAPIDisabled) break;
+  [NSThread sleepForTimeInterval:0.05];
+ }
+ CFRelease(app);
+ if (error == kAXErrorAPIDisabled)
+  fail(@"Allow Laplace in System Settings > Privacy & Security > Accessibility, then retry.");
+ if (!windows.count)
+  fail(@"Codex is not exposing its accessibility windows. Restart Codex, open your chat, then retry the retained snip.");
+ return windows;
+}
+static AXUIElementRef matchingWindow(NSDictionary *info, NSArray *windows) {
+ CGRect bounds;
+ if (!CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(id)kCGWindowBounds], &bounds)) return NULL;
+ AXUIElementRef found = NULL;
+ for (id object in windows) {
+  AXUIElementRef window = (__bridge AXUIElementRef)object;
+  CGPoint position;
+  CGSize size;
+  id axPosition = attr(window, kAXPositionAttribute);
+  id axSize = attr(window, kAXSizeAttribute);
+  if (!axPosition || !axSize ||
+      !AXValueGetValue((__bridge AXValueRef)axPosition, kAXValueTypeCGPoint, &position) ||
+      !AXValueGetValue((__bridge AXValueRef)axSize, kAXValueTypeCGSize, &size)) continue;
+  if (fabs(position.x-bounds.origin.x) < 2 && fabs(position.y-bounds.origin.y) < 2 &&
+      fabs(size.width-bounds.size.width) < 2 && fabs(size.height-bounds.size.height) < 2) {
+   if (found) {
+    CFRelease(found);
+    fail(@"Multiple Codex windows match. Select the intended window and retry.");
+   }
+   found = (AXUIElementRef)CFRetain(window);
+  }
+ }
+ return found;
+}
 static AXUIElementRef targetWindow() {
  targetApp = [NSRunningApplication runningApplicationWithProcessIdentifier:targetPid];
  if (!codex(targetApp)) fail(@"The Codex destination changed.");
- NSDictionary *info = currentInfo(); CGRect bounds; CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(id)kCGWindowBounds], &bounds);
- AXUIElementRef app = AXUIElementCreateApplication(targetPid);
- NSArray *windows = attr(app, kAXWindowsAttribute); CFRelease(app);
- AXUIElementRef found = NULL;
- for (id object in windows) {
-  AXUIElementRef w = (__bridge AXUIElementRef)object; CGPoint p; CGSize s;
-  id position = attr(w, kAXPositionAttribute), size = attr(w, kAXSizeAttribute);
-  if (!position || !size || !AXValueGetValue((__bridge AXValueRef)position, kAXValueTypeCGPoint, &p) || !AXValueGetValue((__bridge AXValueRef)size, kAXValueTypeCGSize, &s)) continue;
-  if (fabs(p.x-bounds.origin.x)<2 && fabs(p.y-bounds.origin.y)<2 && fabs(s.width-bounds.size.width)<2 && fabs(s.height-bounds.size.height)<2) {
-   if (found) { CFRelease(found); fail(@"Multiple Codex windows match. Select the intended window and retry."); }
-   found = (AXUIElementRef)CFRetain(w);
-  }
- }
- if (!found) fail(@"Codex accessibility is unavailable. Allow Laplace in System Settings > Privacy & Security > Accessibility.");
+ AXUIElementRef found = matchingWindow(currentInfo(), accessibilityWindows(targetPid));
+ if (!found)
+  fail(@"Point could not match the selected Codex window. Bring your chat forward and retry the retained snip.");
  return found;
 }
 static void foreground() {
@@ -101,9 +138,28 @@ int main(int argc,const char **argv) { @autoreleasepool { @try {
  }
  if(!AXIsProcessTrusted())fail(@"Allow Laplace in System Settings > Privacy & Security > Accessibility, then retry.");
  if([operation isEqual:@"identify"]) {
-  for(NSDictionary *w in windowInfo()) {if([w[(id)kCGWindowLayer] intValue]!=0)continue;pid_t pid=[w[(id)kCGWindowOwnerPID] intValue];NSRunningApplication *app=[NSRunningApplication runningApplicationWithProcessIdentifier:pid];if(!codex(app))continue;
-   output(@{@"window":[w[(id)kCGWindowNumber] stringValue],@"pid":@(pid),@"version":version(app)});return 0;
-  } fail(@"Open a Codex desktop chat, then retry your snip.");
+  NSMutableDictionary<NSNumber *, NSArray *> *windowsByPid = [NSMutableDictionary dictionary];
+  bool sawCodexWindow = false;
+  for (NSDictionary *info in windowInfo()) {
+   if ([info[(id)kCGWindowLayer] intValue] != 0 || ![info[(id)kCGWindowIsOnscreen] boolValue]) continue;
+   pid_t pid = [info[(id)kCGWindowOwnerPID] intValue];
+   NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+   if (!codex(app)) continue;
+   sawCodexWindow = true;
+   NSArray *windows = windowsByPid[@(pid)];
+   if (!windows) {
+    windows = accessibilityWindows(pid);
+    windowsByPid[@(pid)] = windows;
+   }
+   AXUIElementRef window = matchingWindow(info, windows);
+   if (!window) continue;
+   CFRelease(window);
+   output(@{@"window":[info[(id)kCGWindowNumber] stringValue], @"pid":@(pid), @"version":version(app)});
+   return 0;
+  }
+  if (sawCodexWindow)
+   fail(@"Point could not match a visible Codex window. Bring your chat forward and retry the retained snip.");
+  fail(@"Open a Codex desktop chat, then retry your snip.");
  }
  if(argc!=4)fail(@"Invalid Point operation.");targetId=(CGWindowID)strtoul(argv[2],NULL,10);targetPid=(pid_t)strtol(argv[3],NULL,10);
  AXUIElementRef w=targetWindow();CFRelease(w);
