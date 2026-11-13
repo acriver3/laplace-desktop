@@ -20,6 +20,8 @@ export const nativeObservation = z.object({
 });
 export type NativeObservation = z.infer<typeof nativeObservation>;
 export type NativeOperation =
+	| "permissions"
+	| "request-permissions"
 	| "identify"
 	| "copy-link"
 	| "open-tab"
@@ -104,6 +106,12 @@ export class PointNative {
 	}
 	async identify() {
 		return nativeWindow.parse(await this.call("identify"));
+	}
+	async permissions(prompt = false) {
+		if (this.platform !== "darwin") return { accessibility: true };
+		return z.object({ accessibility: z.boolean() }).parse(
+			await this.call(prompt ? "request-permissions" : "permissions"),
+		);
 	}
 	async observe(target: NativeWindow) {
 		return nativeObservation.parse(await this.call("observe", target));

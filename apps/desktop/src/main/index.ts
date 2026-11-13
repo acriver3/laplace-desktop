@@ -1020,7 +1020,7 @@ async function handleShell(raw: unknown) {
 	const request = shellRequest.parse(raw);
 	switch (request.method) {
 		case "shell.point.status":
-			return point?.state;
+			return point?.status();
 		case "shell.point.configure":
 			if (!point) throw new Error("Point is still starting.");
 			return point.configure(request.input);

@@ -87,15 +87,19 @@ export class PointController {
 	private publish() {
 		this.options.changed(this.state);
 	}
-	private permissions() {
+	private async permissions() {
+		const native = await this.native.permissions().catch(() => ({ accessibility: false }));
 		this.state.permissions = {
 			screen:
 				process.platform === "darwin"
 					? systemPreferences.getMediaAccessStatus("screen")
 					: "granted",
-			accessibility:
-				process.platform !== "darwin" || systemPreferences.isTrustedAccessibilityClient(false),
+			accessibility: native.accessibility,
 		};
+	}
+	async status() {
+		await this.permissions();
+		return this.state;
 	}
 	/**
 	 * Whether Point is doing work an update would interrupt: selecting a snip, opening a
@@ -125,7 +129,7 @@ export class PointController {
 			/* Safe disabled default on absent/invalid settings. */
 		}
 		this.state.available = await this.native.available();
-		this.permissions();
+		await this.permissions();
 		const overlaySession = session.fromPartition("laplace-point-overlay");
 		registerRendererProtocol(overlaySession, this.options.appRoot);
 		overlaySession.setPermissionRequestHandler((_contents, _permission, callback) =>
@@ -227,7 +231,7 @@ export class PointController {
 		if (this.state.registered) globalShortcut.unregister(this.state.settings.shortcut);
 		this.state.settings = settings;
 		this.state.message = undefined;
-		this.permissions();
+		await this.permissions();
 		this.register();
 		await mkdir(this.root, { recursive: true, mode: 0o700 });
 		await writeFile(join(this.root, "settings.json.tmp"), JSON.stringify(settings), {
@@ -263,7 +267,7 @@ export class PointController {
 		this.state.message = undefined;
 		this.publish();
 		try {
-			this.permissions();
+			await this.permissions();
 			const displays = screen.getAllDisplays();
 			const sources = await desktopCapturer
 				.getSources({
@@ -556,13 +560,20 @@ export class PointController {
 	async requestPermissions() {
 		if (process.platform === "darwin") {
 			if (this.state.settings.destination === "codex-desktop")
-				systemPreferences.isTrustedAccessibilityClient(true);
+				this.state.permissions.accessibility = (await this.native.permissions(true)).accessibility;
 			if (systemPreferences.getMediaAccessStatus("screen") !== "granted")
 				await shell.openExternal(
 					"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
 				);
+			else if (
+				this.state.settings.destination === "codex-desktop" &&
+				!this.state.permissions.accessibility
+			)
+				await shell.openExternal(
+					"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+				);
 		}
-		this.permissions();
+		await this.permissions();
 		this.publish();
 		return this.state;
 	}

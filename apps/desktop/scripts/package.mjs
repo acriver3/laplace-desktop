@@ -51,3 +51,11 @@ execFileSync(process.execPath, [cli, process.argv.includes("--make") ? "make" : 
 	stdio: "inherit",
 	env: { ...process.env, LAPLACE_DESKTOP_BUILD_ROOT: root },
 });
+if (process.platform === "darwin") {
+	const app = join(root, "out", `Laplace-darwin-${process.arch}`, "Laplace.app");
+	execFileSync("codesign", ["--verify", "--deep", "--strict", app], { stdio: "inherit" });
+	if (!process.env.LAPLACE_MAC_SIGN_IDENTITY)
+		console.log(
+			"Locally signed macOS build. Set LAPLACE_MAC_SIGN_IDENTITY to a Developer ID Application identity for release signing.",
+		);
+}

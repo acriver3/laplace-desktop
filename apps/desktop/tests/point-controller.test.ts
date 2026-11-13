@@ -121,6 +121,7 @@ beforeEach(async () => {
 	fixture.windows = [];
 	fixture.root = await mkdtemp(join(tmpdir(), "point-controller-"));
 	vi.spyOn(PointNative.prototype, "available").mockResolvedValue(true);
+	vi.spyOn(PointNative.prototype, "permissions").mockResolvedValue({ accessibility: true });
 	vi.spyOn(PointNative.prototype, "identify").mockResolvedValue(target);
 	vi.spyOn(PointHandoff.prototype, "start").mockResolvedValue({
 		status: "attachment-ready",
@@ -148,6 +149,15 @@ afterEach(async () => {
 const eventFor = (window: any) => ({
 	sender: window.webContents,
 	senderFrame: window.webContents.mainFrame,
+});
+
+it("reports the helper permission and refreshes it after macOS settings change", async () => {
+	vi.mocked(controller.native.permissions).mockResolvedValue({ accessibility: false });
+	expect((await controller.status()).permissions.accessibility).toBe(false);
+	vi.mocked(controller.native.permissions).mockResolvedValue({ accessibility: true });
+	expect((await controller.status()).permissions.accessibility).toBe(true);
+	vi.mocked(controller.native.permissions).mockRejectedValue(new Error("Helper unavailable"));
+	expect((await controller.status()).permissions.accessibility).toBe(false);
 });
 
 it("registers the isolated overlay protocol and accepts selection before any Codex input", async () => {

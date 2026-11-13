@@ -19,12 +19,20 @@ export function PointPanel() {
 		const update = (next: PointState | undefined) => {
 			if (next?.settings && typeof next.available === "boolean") setState(next);
 		};
-		void invoke<PointState>("shell.point.status")
-			.then(update)
-			.catch(() => setError("Point could not load."));
-		return window.laplaceDesktop.onEvent((event) => {
+		const refresh = () => {
+			void invoke<PointState>("shell.point.status")
+				.then(update)
+				.catch(() => setError("Point could not load."));
+		};
+		refresh();
+		window.addEventListener("focus", refresh);
+		const unsubscribe = window.laplaceDesktop.onEvent((event) => {
 			if (event.event === "point") update(event.data as PointState);
 		});
+		return () => {
+			window.removeEventListener("focus", refresh);
+			unsubscribe();
+		};
 	}, []);
 	const savedShortcut = state?.settings.shortcut;
 	useEffect(() => {
@@ -134,10 +142,16 @@ export function PointPanel() {
 							(state.settings.destination === "codex-desktop" &&
 								!state.permissions.accessibility)) && (
 							<div className="desktop-setting-note">
-								<p>
-									Allow Screen Recording for Laplace in macOS System Settings. Codex current-chat
-									delivery also needs Accessibility.
-								</p>
+								{state.permissions.screen !== "granted" && (
+									<p>Allow Screen Recording for Laplace in macOS System Settings.</p>
+								)}
+								{state.settings.destination === "codex-desktop" &&
+									!state.permissions.accessibility && (
+										<p>
+											Allow Accessibility for Laplace in macOS System Settings so Point can attach
+											snips to Codex.
+										</p>
+									)}
 								<Button
 									variant="outline"
 									onClick={() => void perform("shell.point.permissions")}

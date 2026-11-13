@@ -92,6 +92,13 @@ static void focusComposer() {activate();id e=unique(^bool(id x){return composer(
 static void output(NSDictionary *value) {NSData *data=[NSJSONSerialization dataWithJSONObject:value options:0 error:nil];fwrite(data.bytes,1,data.length,stdout);}
 int main(int argc,const char **argv) { @autoreleasepool { @try {
  if(argc<2)fail(@"Missing Point operation.");NSString *operation=@(argv[1]);
+ if([operation isEqual:@"permissions"] || [operation isEqual:@"request-permissions"]) {
+  if(argc!=2)fail(@"Invalid Point operation.");
+  bool prompt=[operation isEqual:@"request-permissions"];
+  NSDictionary *options=@{(__bridge NSString *)kAXTrustedCheckOptionPrompt:@(prompt)};
+  bool trusted=AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
+  output(@{@"accessibility":@(trusted)});return 0;
+ }
  if(!AXIsProcessTrusted())fail(@"Allow Laplace in System Settings > Privacy & Security > Accessibility, then retry.");
  if([operation isEqual:@"identify"]) {
   for(NSDictionary *w in windowInfo()) {if([w[(id)kCGWindowLayer] intValue]!=0)continue;pid_t pid=[w[(id)kCGWindowOwnerPID] intValue];NSRunningApplication *app=[NSRunningApplication runningApplicationWithProcessIdentifier:pid];if(!codex(app))continue;
