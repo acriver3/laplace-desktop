@@ -33,6 +33,8 @@ The Windows focus adapter waits for Chromium's asynchronous focus update and rec
 
 Use the repository's Node and pnpm versions. Runtime preparation builds the adapter automatically on the matching host OS. Windows needs the x64 MSVC toolchain and Windows SDK in Developer PowerShell; macOS needs Xcode command-line tools. No native adapter is built for Linux.
 
+For local macOS development, a persistent code-signing identity can be selected in `~/Library/Application Support/Laplace/build/signing.json` with `{"kind":"local","identity":"<certificate SHA-1>"}`. Keep the private key in the login keychain. Packaging and source updates reuse this identity, so changing application contents does not change its designated requirement. A missing certificate fails signing instead of silently replacing the identity. `LAPLACE_MAC_SIGN_IDENTITY` overrides this setting for release builds. Unconfigured builds use ad-hoc signing, which can require renewed macOS permission grants after every rebuild.
+
 ```sh
 pnpm --filter @repo/desktop check:source
 pnpm --filter @repo/desktop build:point-native

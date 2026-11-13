@@ -5,11 +5,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assembleRuntime } from "./runtime-tree.mjs";
+import { macSigningEnvironment } from "./mac-signing.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 process.chdir(root);
 if (!["darwin", "win32"].includes(process.platform))
 	throw new Error("Desktop test packages currently target macOS and Windows.");
+const signing = process.platform === "darwin" ? await macSigningEnvironment() : {};
 execFileSync(process.execPath, ["scripts/runtimes.mjs"], { stdio: "inherit" });
 execFileSync(process.execPath, ["scripts/build.mjs"], { stdio: "inherit" });
 const require = createRequire(import.meta.url);
@@ -49,12 +51,14 @@ const cli = join(
 execFileSync(process.execPath, [cli, process.argv.includes("--make") ? "make" : "package"], {
 	cwd: stage,
 	stdio: "inherit",
-	env: { ...process.env, LAPLACE_DESKTOP_BUILD_ROOT: root },
+	env: { ...process.env, ...signing, LAPLACE_DESKTOP_BUILD_ROOT: root },
 });
 if (process.platform === "darwin") {
 	const app = join(root, "out", `Laplace-darwin-${process.arch}`, "Laplace.app");
 	execFileSync("codesign", ["--verify", "--deep", "--strict", app], { stdio: "inherit" });
-	if (!process.env.LAPLACE_MAC_SIGN_IDENTITY)
+	if (signing.LAPLACE_MAC_SIGN_KIND === "local")
+		console.log(`Reused local signing identity ${signing.LAPLACE_MAC_SIGN_IDENTITY}.`);
+	else if (!signing.LAPLACE_MAC_SIGN_IDENTITY)
 		console.log(
 			"Locally signed macOS build. Set LAPLACE_MAC_SIGN_IDENTITY to a Developer ID Application identity for release signing.",
 		);
