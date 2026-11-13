@@ -30,12 +30,12 @@ async function resources(config: ServerConfig, cwd: string) {
 	for (let index = 0; index < config.args.length; index++) {
 		const arg = config.args[index]!;
 		if (
-			/^--(?:profile-dir|user-data-dir|session-dir|data-dir|config-dir)$/.test(arg) &&
+			/^--(?:profile-dir|user-data-dir|session-dir|state-dir|data-dir|config-dir)$/.test(arg) &&
 			config.args[index + 1]
 		)
 			paths.push(resolve(cwd, config.args[++index]!));
 		const match = arg.match(
-			/^--(?:profile-dir|user-data-dir|session-dir|data-dir|config-dir)=(.+)$/,
+			/^--(?:profile-dir|user-data-dir|session-dir|state-dir|data-dir|config-dir)=(.+)$/,
 		);
 		if (match) paths.push(resolve(cwd, match[1]!));
 	}

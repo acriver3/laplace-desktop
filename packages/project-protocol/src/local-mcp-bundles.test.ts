@@ -33,6 +33,7 @@ describe("local MCP bundle catalog", () => {
 			"Canvas [Background Browser]",
 			"LinkedIn [Background Browser]",
 			"Yale SOM EMS [Background Browser]",
+			"Yale SOM CMS [Tethered]",
 			"Outlook",
 		]);
 		expect(new Set(bundleCatalog.map((entry) => entry.id)).size).toBe(bundleCatalog.length);
@@ -74,6 +75,17 @@ describe("local MCP bundle catalog", () => {
 			bundleCatalogSchema.safeParse([{ ...ems, npm: { ...ems.npm, package: "yale-som-ems-mcp" } }])
 				.success,
 		).toBe(false);
+	});
+	it("declares CMS local directories and requires publication before availability", () => {
+		const cms = bundleCatalog.find((entry) => entry.recipe === "yale-som-cms")!;
+		expect(cms).toMatchObject({
+			version: "0.1.1",
+			browserMode: "tethered",
+			platforms: ["win32-x64"],
+		});
+		expect(bundleConfigurationKeys(cms)).toEqual(["state_dir", "cdp_url", "downloads_dir"]);
+		expect(bundleAvailable({ ...cms, published: false })).toBe(false);
+		expect(bundleNpmSpec(cms)).toBe("@withlaplace/yale-som-cms-mcp@0.1.1");
 	});
 	it("offers a platform only when published, declared and accepted there or a candidate", () => {
 		const entry = structuredClone(bundleCatalog.find((item) => item.recipe === "yale-som-ems")!);
@@ -135,6 +147,19 @@ describe("local MCP bundle catalog", () => {
 			expect(prompt).toContain("serve --profile-dir ${user_config.profile_dir}");
 			expect(prompt).toContain("ems_session_status");
 			expect(prompt).toContain("ems_list_templates");
+			expect(prompt).toContain("Yale SSO/MFA");
+			expect(prompt).not.toContain("uv sync");
+		} else if (entry.recipe === "yale-som-cms") {
+			expect(prompt).toContain("https://som-yale.12twenty.com/dashboard/");
+			expect(prompt).toContain("cms_session_status");
+			expect(prompt).toContain("cms_get_dashboard");
+			expect(prompt).toContain("--downloads-dir");
+			expect(prompt).toContain("already-running visible Chrome");
+			expect(prompt).toContain("chrome://inspect/#remote-debugging");
+			expect(prompt).toContain("--state-dir");
+			expect(prompt).toContain("--cdp-url");
+			expect(prompt).toContain("does not require a browser extension");
+			expect(prompt).not.toContain("headless");
 			expect(prompt).toContain("Yale SSO/MFA");
 			expect(prompt).not.toContain("uv sync");
 		} else if (entry.recipe === "outlook") {

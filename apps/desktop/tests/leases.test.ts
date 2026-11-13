@@ -76,3 +76,43 @@ it("requires old wrappers and matching launch paths to stop before migration act
 		}),
 	).rejects.toThrow("Cannot inspect");
 });
+
+it("coordinates CMS state across installed versions without leasing the shared Chrome endpoint", async () => {
+	const root = await mkdtemp(join(tmpdir(), "desktop-cms-state-leases-"));
+	cleanup.push(() => rm(root, { recursive: true, force: true }));
+	const state = join(root, "state"),
+		alias = join(root, "state-alias");
+	await mkdir(state);
+	await symlink(state, alias, process.platform === "win32" ? "junction" : "dir");
+	const cdp = "ws://127.0.0.1:9222/devtools/browser";
+	const config = (version: string, args: string[]) =>
+		serverConfig.parse({
+			id: "yale-som-cms",
+			name: "Yale SOM CMS [Tethered]",
+			transport: "stdio",
+			command: process.execPath,
+			identity: `npm:@withlaplace/yale-som-cms-mcp@${version}`,
+			args: ["serve", ...args, "--cdp-url", cdp],
+		});
+	const current = config("0.1.1", ["--state-dir", state]);
+	const next = config("0.1.2", [`--state-dir=${alias}`]);
+	const currentDirectory = join(root, "package-0.1.1"),
+		nextDirectory = join(root, "package-0.1.2");
+	const release = await acquireResourceLeases(current, currentDirectory);
+	cleanup.push(release);
+	await expect(acquireResourceLeases(next, nextDirectory)).rejects.toThrow(
+		"Another Laplace process",
+	);
+	// Independent state can use the same Chrome connection, and the failed attempt released its cwd.
+	const independent = await acquireResourceLeases(
+		config("0.1.2", ["--state-dir", join(root, "other-state")]),
+		nextDirectory,
+	);
+	await independent();
+	await release();
+	const replacement = await acquireResourceLeases(next, nextDirectory);
+	cleanup.push(replacement);
+	await expect(acquireResourceLeases(current, currentDirectory)).rejects.toThrow(
+		"Another Laplace process",
+	);
+});

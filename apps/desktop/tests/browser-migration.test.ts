@@ -22,6 +22,8 @@ async function fixture() {
 	cleanup.push(() => rm(root, { recursive: true, force: true }));
 	vi.stubEnv("LAPLACE_TETHERED_BROWSER_V1", "true");
 	vi.stubEnv("LAPLACE_DESKTOP_TEST_ROOT", root);
+	// Legacy Outlook leases use APPDATA on Windows; never contend with a real session.
+	if (process.platform === "win32") vi.stubEnv("APPDATA", join(root, "appdata"));
 	vi.resetModules();
 	const { DesktopManager } = await import("@repo/local-runtime/manager");
 	const { BrowserApprovals } = await import("@repo/local-runtime/browser-approvals");

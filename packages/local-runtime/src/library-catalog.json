@@ -209,6 +209,62 @@
 		]
 	},
 	{
+		"id": "yale-som-cms-mcp",
+		"name": "Yale SOM CMS [Tethered]",
+		"description": "Read Yale SOM career information, download resources and confirm student career changes through your open Chrome session.",
+		"capabilities": [
+			"Read career dashboard, jobs, employers, events and resources",
+			"Read applications, appointments, documents and profile",
+			"Preview and confirm student career changes",
+			"Download career resources locally"
+		],
+		"repository": "https://github.com/acriver3/laplace-mcp-library",
+		"upstreamVersion": "0.1.1",
+		"version": "0.1.1",
+		"license": "MIT",
+		"recipe": "yale-som-cms",
+		"patches": [],
+		"reviewedAt": "2026-11-11",
+		"reviewEvidence": ["reviews/yale-som-cms-mcp.md"],
+		"reviewNotes": [
+			"Candidate for the Yale SOM 12twenty student career portal at https://som-yale.12twenty.com/dashboard/.",
+			"Tethered connects to an already-running visible Chrome through its local remote-debugging connection. Chrome keeps the login session. The connector creates and closes only its own CMS tab, then disconnects without closing Chrome or other tabs. No browser extension is required.",
+			"Student career changes require a complete preview and explicit confirmation. Setup checks only session status and the dashboard.",
+			"Automated fixtures are recorded separately from live acceptance. Version 0.1.1 publication and native Windows student-account acceptance are pending. Other platforms are not offered until tested."
+		],
+		"prerequisites": [
+			"Laplace Local and its included Node 24 runtime",
+			"An open Chrome window with remote debugging enabled at chrome://inspect/#remote-debugging",
+			"A Yale SOM CMS student account",
+			"Local state and download directories outside the installed package"
+		],
+		"authentication": [
+			"Keep Chrome open, enable remote debugging at chrome://inspect/#remote-debugging, and approve the native Chrome connection prompt when requested. Run login and complete Yale SSO/MFA yourself in the connector-created CMS tab.",
+			"Status and MCP calls connect to the same open Chrome using the configured CDP URL. Chrome persists your login; the state directory stores locks and change journals, not browser cookies. If login expires, run login and sign in again. The connector closes only its own tab and disconnects."
+		],
+		"sourceDirectory": "connectors/yale-som-cms-mcp",
+		"npm": {
+			"package": "@withlaplace/yale-som-cms-mcp",
+			"distTag": "latest",
+			"bin": "yale-som-cms-mcp",
+			"args": [
+				"serve",
+				"--state-dir",
+				"${user_config.state_dir}",
+				"--cdp-url",
+				"${user_config.cdp_url}",
+				"--downloads-dir",
+				"${user_config.downloads_dir}"
+			],
+			"env": {}
+		},
+		"platforms": ["win32-x64"],
+		"published": false,
+		"candidate": true,
+		"acceptance": [],
+		"browserMode": "tethered"
+	},
+	{
 		"id": "msoutlook-mcp",
 		"name": "Outlook",
 		"description": "Read and manage Outlook mail, calendars, contacts and directory profiles using a local browser sign-in.",

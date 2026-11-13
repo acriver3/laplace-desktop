@@ -151,6 +151,7 @@ const serverIds: Record<string, string> = {
 	"canvas-session-mcp": "canvas-session",
 	"linkedin-mcp-server": "linkedin",
 	"yale-som-ems-mcp": "yale-som-ems",
+	"yale-som-cms-mcp": "yale-som-cms",
 	"msoutlook-mcp": "outlook",
 	"slack-mcp-server": "slack",
 };
@@ -159,6 +160,7 @@ const checks: Record<string, string[]> = {
 	canvas: ["canvas_whoami", "canvas_list_courses"],
 	linkedin: ["get_my_profile"],
 	"yale-som-ems": ["ems_session_status", "ems_list_templates"],
+	"yale-som-cms": ["cms_session_status", "cms_get_dashboard"],
 	outlook: ["outlook_status", "outlook_list_folders"],
 	"slack-ready": ["channels_list"],
 };
@@ -241,6 +243,30 @@ function inputFields(entry: BundleCatalogEntry, root: string) {
 				default: join(session, "profile"),
 			},
 		];
+	if (entry.recipe === "yale-som-cms")
+		return [
+			{
+				key: "state_dir",
+				label: "Local state folder",
+				type: "directory",
+				required: true,
+				default: join(session, "state"),
+			},
+			{
+				key: "cdp_url",
+				label: "Chrome remote-debugging URL",
+				type: "url",
+				required: true,
+				default: "ws://127.0.0.1:9222/devtools/browser",
+			},
+			{
+				key: "downloads_dir",
+				label: "Career resource download folder",
+				type: "directory",
+				required: true,
+				default: join(homedir(), "Documents", "Yale SOM CMS"),
+			},
+		];
 	if (entry.recipe === "yale-som-ems")
 		return [
 			{
@@ -294,6 +320,19 @@ export function catalogConfiguration(
 			throw new Error(`${field.label} must be an absolute folder outside the installed connector.`);
 		if (field.type === "select" && !field.options?.includes(value))
 			throw new Error(field.key === backgroundSessionField.key ? "Choose on or off for background session checks." : "Choose Chrome or Edge.");
+		if (field.key === "cdp_url") {
+			const endpoint =
+				/^ws:\/\/(localhost|127\.0\.0\.1|\[::1\]):([1-9]\d{0,4})(\/devtools\/browser(?:\/[A-Za-z0-9_-]+)?)$/.exec(
+					value,
+				);
+			if (!endpoint || Number(endpoint[2]) > 65535)
+				throw new Error(
+					"Use a loopback WebSocket URL with an explicit port and /devtools/browser path.",
+				);
+			// Preserve an explicit :80; URL serialization removes it and the connector requires a port.
+			configuration[field.key] = value;
+			continue;
+		}
 		if (field.type === "url") {
 			let url: URL;
 			try {
@@ -1434,7 +1473,9 @@ export class CatalogInstaller {
 				this.update(
 					job,
 					"authenticating",
-					"Complete sign-in and MFA in the dedicated browser. Approve any credential-store prompt yourself.",
+					entry.recipe === "yale-som-cms"
+						? "Keep Chrome open with remote debugging enabled. Approve Chrome’s connection prompt and complete Yale sign-in/MFA in the connector’s CMS tab."
+						: "Complete sign-in and MFA in the dedicated browser. Approve any credential-store prompt yourself.",
 				);
 				if (entry.recipe !== "outlook") {
 					// npm installs run the package's bin; legacy bundles their extracted entry point.
@@ -1453,7 +1494,7 @@ export class CatalogInstaller {
 									: [config.command, join(directory, "browser/cli.mjs")]
 								: entry.recipe === "canvas"
 									? entryPoint("bin/cli.js")
-									: entry.recipe === "yale-som-ems"
+									: entry.recipe === "yale-som-ems" || entry.recipe === "yale-som-cms"
 										? entryPoint("dist/cli.js")
 										: config.npm
 											? entryPoint("")
@@ -1480,21 +1521,31 @@ export class CatalogInstaller {
 									]
 								: entry.recipe === "canvas"
 									? ["login", "--url", configuration.canvas_url!]
-									: entry.recipe === "yale-som-ems"
+									: entry.recipe === "yale-som-cms"
 										? [
 												"login",
-												"--profile-dir",
-												configuration.profile_dir!,
-												"--browser",
-												configuration.browser!,
+												"--state-dir",
+												configuration.state_dir!,
+												"--cdp-url",
+												configuration.cdp_url!,
+												"--downloads-dir",
+												configuration.downloads_dir!,
 											]
-										: [
-												"--login",
-												"--auto-import",
-												"--no-daemon",
-												"--user-data-dir",
-												configuration.profile_dir!,
-											];
+										: entry.recipe === "yale-som-ems"
+											? [
+													"login",
+													"--profile-dir",
+													configuration.profile_dir!,
+													"--browser",
+													configuration.browser!,
+												]
+											: [
+													"--login",
+													"--auto-import",
+													"--no-daemon",
+													"--user-data-dir",
+													configuration.profile_dir!,
+												];
 						await this.command(
 							executable!,
 							[...prefix, ...args],

@@ -23,6 +23,13 @@ export const localConnectorDefinitions = [
 		verify: ["ems_session_status", "ems_list_templates"],
 	},
 	{
+		id: "yale-som-cms-mcp",
+		name: "Yale SOM CMS",
+		mode: "tethered",
+		serverId: "yale-som-cms",
+		verify: ["cms_session_status", "cms_get_dashboard"],
+	},
+	{
 		id: "msoutlook-mcp",
 		name: "Outlook",
 		mode: "tethered",
@@ -48,18 +55,23 @@ export const localConnectorDefinitions = [
 export function localConnectorDefinition(id: string) {
 	return localConnectorDefinitions.find((entry) => entry.id === id);
 }
-export function localConnectorMetadata(id: string, tethered = false) {
+export function localConnectorMetadata(id: string, tethered = false, version?: string) {
 	const entry = localConnectorDefinition(id);
 	if (!entry) throw new Error("Unknown local catalog connector.");
+	// CMS 0.1.1 connects to existing Chrome; its npm launcher does not use the extension runtime.
+	// Preserve the historical headless 0.1.0 label when an installed version is supplied.
+	const mode =
+		entry.id === "yale-som-cms-mcp" && version === "0.1.0" ? "background-browser" : entry.mode;
+	const showTethered = tethered || entry.id === "yale-som-cms-mcp";
 	const browserMode: BrowserMode =
-		entry.mode === "tethered" && (tethered || entry.id === "ycombinator-demo")
+		mode === "tethered" && (showTethered || entry.id === "ycombinator-demo")
 			? "tethered"
 			: "background-browser";
-	// Do not relabel historical dedicated-browser releases as tethered.
+	// Other historical dedicated-browser releases retain their existing labels.
 	const suffix =
-		entry.mode === "background-browser"
+		mode === "background-browser"
 			? " [Background Browser]"
-			: tethered && entry.id !== "ycombinator-demo"
+			: showTethered && entry.id !== "ycombinator-demo"
 				? " [Tethered]"
 				: "";
 	return {
