@@ -45,9 +45,11 @@ static AXError fixtureAttribute(AXUIElementRef element, CFStringRef key, CFTypeR
 #undef main
 
 static NSDictionary *fixtureWindow(CGRect frame) {
+ static NSUInteger identifier = 0;
  CGPoint position = frame.origin;
  CGSize size = frame.size;
  return @{
+  @"fixtureId": @(++identifier),
   (__bridge NSString *)kAXPositionAttribute: CFBridgingRelease(AXValueCreate(kAXValueTypeCGPoint, &position)),
   (__bridge NSString *)kAXSizeAttribute: CFBridgingRelease(AXValueCreate(kAXValueTypeCGSize, &size)),
  };
@@ -79,7 +81,37 @@ int main() { @autoreleasepool {
  assert(match && CFEqual(match, (__bridge CFTypeRef)window));
  CFRelease(match);
  assert(matchingWindow(info, @[fixtureWindow(CGRectMake(0, 0, 100, 100))]) == NULL);
- expectFailure(^{ matchingWindow(info, @[window, window]); }, @"Multiple Codex windows match");
+ NSDictionary *panel = @{
+  (__bridge NSString *)kCGWindowBounds: CFBridgingRelease(CGRectCreateDictionaryRepresentation(CGRectMake(1053, 57, 360, 327))),
+ };
+ assert(matchingWindow(panel, @[window]) == NULL);
+ match = matchingWindow(info, @[window, window]);
+ assert(match && CFEqual(match, (__bridge CFTypeRef)window));
+ CFRelease(match);
+ expectFailure(^{ matchingWindow(info, @[window, fixtureWindow(frame)]); }, @"Multiple Codex windows match");
+
+ NSDictionary *other = fixtureWindow(frame);
+ match = matchingWindow(info, @[window, other], other);
+ assert(match && CFEqual(match, (__bridge CFTypeRef)other));
+ CFRelease(match);
+ NSMutableDictionary *named = [window mutableCopy];
+ named[(__bridge NSString *)kAXTitleAttribute] = @"Intended chat";
+ NSMutableDictionary *namedInfo = [info mutableCopy];
+ namedInfo[(__bridge NSString *)kCGWindowName] = @"Intended chat";
+ match = matchingWindow(namedInfo, @[named, other]);
+ assert(match && CFEqual(match, (__bridge CFTypeRef)named));
+ CFRelease(match);
+ match = matchingWindow(namedInfo, @[named, other], other);
+ assert(match && CFEqual(match, (__bridge CFTypeRef)other));
+ CFRelease(match);
+
+ NSDictionary *textChild = @{(__bridge NSString *)kAXParentAttribute: window};
+ fixtureApp = @{
+  @"fixture": @YES,
+  (__bridge NSString *)kAXFocusedUIElementAttribute: textChild,
+ };
+ assert(focusWithin(window));
+ assert(!focusWithin(other));
 
  windowReads = 0;
  fixtureWindows = @[];

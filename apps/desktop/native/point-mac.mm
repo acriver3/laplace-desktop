@@ -44,10 +44,33 @@ static NSArray *accessibilityWindows(pid_t pid) {
   fail(@"Codex is not exposing its accessibility windows. Restart Codex, open your chat, then retry the retained snip.");
  return windows;
 }
-static AXUIElementRef matchingWindow(NSDictionary *info, NSArray *windows) {
+static bool sameFrame(CGRect a, CGRect b) {
+ return fabs(a.origin.x-b.origin.x) < 2 && fabs(a.origin.y-b.origin.y) < 2 &&
+        fabs(a.size.width-b.size.width) < 2 && fabs(a.size.height-b.size.height) < 2;
+}
+static id focusedFrontmostWindow(NSDictionary *info) {
+ pid_t pid = [info[(id)kCGWindowOwnerPID] intValue];
+ CGRect bounds;
+ if (!CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(id)kCGWindowBounds], &bounds)) return nil;
+ for (NSDictionary *candidate in windowInfo()) {
+  if ([candidate[(id)kCGWindowOwnerPID] intValue] != pid ||
+      [candidate[(id)kCGWindowLayer] intValue] != 0 ||
+      ![candidate[(id)kCGWindowIsOnscreen] boolValue]) continue;
+  CGRect candidateBounds;
+  if (!CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)candidate[(id)kCGWindowBounds], &candidateBounds) ||
+      !sameFrame(bounds, candidateBounds)) continue;
+  if (![candidate[(id)kCGWindowNumber] isEqual:info[(id)kCGWindowNumber]]) return nil;
+  AXUIElementRef app = AXUIElementCreateApplication(pid);
+  id focused = attr(app, kAXFocusedWindowAttribute);
+  CFRelease(app);
+  return focused;
+ }
+ return nil;
+}
+static AXUIElementRef matchingWindow(NSDictionary *info, NSArray *windows, id focused = nil) {
  CGRect bounds;
  if (!CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(id)kCGWindowBounds], &bounds)) return NULL;
- AXUIElementRef found = NULL;
+ NSMutableArray *matches = [NSMutableArray array];
  for (id object in windows) {
   AXUIElementRef window = (__bridge AXUIElementRef)object;
   CGPoint position;
@@ -57,38 +80,62 @@ static AXUIElementRef matchingWindow(NSDictionary *info, NSArray *windows) {
   if (!axPosition || !axSize ||
       !AXValueGetValue((__bridge AXValueRef)axPosition, kAXValueTypeCGPoint, &position) ||
       !AXValueGetValue((__bridge AXValueRef)axSize, kAXValueTypeCGSize, &size)) continue;
-  if (fabs(position.x-bounds.origin.x) < 2 && fabs(position.y-bounds.origin.y) < 2 &&
-      fabs(size.width-bounds.size.width) < 2 && fabs(size.height-bounds.size.height) < 2) {
-   if (found) {
-    CFRelease(found);
-    fail(@"Multiple Codex windows match. Select the intended window and retry.");
-   }
-   found = (AXUIElementRef)CFRetain(window);
+  if (sameFrame(CGRectMake(position.x, position.y, size.width, size.height), bounds)) {
+   bool duplicate = false;
+   for (id match in matches)
+    if (CFEqual((__bridge CFTypeRef)match, window)) { duplicate = true; break; }
+   if (!duplicate) [matches addObject:object];
   }
  }
- return found;
+ if (matches.count > 1 && focused) {
+  for (id match in matches)
+   if (CFEqual((__bridge CFTypeRef)match, (__bridge CFTypeRef)focused))
+    return (AXUIElementRef)CFRetain((__bridge CFTypeRef)match);
+ }
+ if (matches.count > 1) {
+  NSString *title = info[(id)kCGWindowName];
+  if ([title isKindOfClass:NSString.class] && title.length) {
+   NSMutableArray *named = [NSMutableArray array];
+   for (id match in matches)
+    if ([attr((__bridge AXUIElementRef)match, kAXTitleAttribute) isEqual:title]) [named addObject:match];
+   if (named.count) matches = named;
+  }
+ }
+ if (matches.count == 1) return (AXUIElementRef)CFRetain((__bridge CFTypeRef)matches[0]);
+ if (matches.count > 1) fail(@"Multiple Codex windows match. Select the intended window and retry.");
+ return NULL;
 }
 static AXUIElementRef targetWindow() {
  targetApp = [NSRunningApplication runningApplicationWithProcessIdentifier:targetPid];
  if (!codex(targetApp)) fail(@"The Codex destination changed.");
- AXUIElementRef found = matchingWindow(currentInfo(), accessibilityWindows(targetPid));
+ NSDictionary *info = currentInfo();
+ AXUIElementRef found = matchingWindow(info, accessibilityWindows(targetPid), focusedFrontmostWindow(info));
  if (!found)
   fail(@"Point could not match the selected Codex window. Bring your chat forward and retry the retained snip.");
  return found;
 }
+static bool windowFocused(AXUIElementRef window) {
+ if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != targetPid) return false;
+ AXUIElementRef app = AXUIElementCreateApplication(targetPid);
+ id focused=attr(app,kAXFocusedWindowAttribute);
+ bool matches = focused && CFEqual(window, (__bridge CFTypeRef)focused);
+ CFRelease(app);
+ return matches;
+}
 static void foreground() {
  if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != targetPid) fail(@"Codex lost focus. Your snip is retained.");
- AXUIElementRef w=targetWindow(), app=AXUIElementCreateApplication(targetPid);
- id focused=attr(app,kAXFocusedWindowAttribute);
- bool matches=focused && CFEqual(w,(__bridge CFTypeRef)focused);CFRelease(w);CFRelease(app);
+ AXUIElementRef window = targetWindow();
+ bool matches = windowFocused(window);
+ CFRelease(window);
  if(!matches)fail(@"The selected Codex window is no longer focused.");
 }
 static void activate() {
  AXUIElementRef w=targetWindow();
  AXUIElementSetAttributeValue(w,kAXMinimizedAttribute,kCFBooleanFalse);
  [targetApp activateWithOptions:NSApplicationActivateIgnoringOtherApps];
- AXUIElementPerformAction(w,kAXRaiseAction);CFRelease(w);
- for(int n=0;n<20&&NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier!=targetPid;n++)[NSThread sleepForTimeInterval:.05];
+ AXUIElementPerformAction(w,kAXRaiseAction);
+ for (int attempt=0; attempt<20 && !windowFocused(w); attempt++) [NSThread sleepForTimeInterval:.05];
+ CFRelease(w);
  foreground();
 }
 static void key(CGKeyCode code, CGEventFlags flags) {
@@ -125,7 +172,29 @@ static void click(id object) {
  CGEventPost(kCGHIDEventTap,down);CGEventPost(kCGHIDEventTap,up);CFRelease(down);CFRelease(up);
 }
 static id focused() {AXUIElementRef app=AXUIElementCreateApplication(targetPid);id e=attr(app,kAXFocusedUIElementAttribute);CFRelease(app);return e;}
-static void focusComposer() {activate();id e=unique(^bool(id x){return composer(x);});if(AXUIElementSetAttributeValue((__bridge AXUIElementRef)e,kAXFocusedAttribute,kCFBooleanTrue)!=kAXErrorSuccess)fail(@"The Codex composer could not be focused.");id f=focused();if(!f||!CFEqual((__bridge CFTypeRef)e,(__bridge CFTypeRef)f))fail(@"The Codex composer could not be focused.");}
+static bool focusWithin(id editor) {
+ id element = focused();
+ for (int depth = 0; element && depth < 32; depth++) {
+  if (CFEqual((__bridge CFTypeRef)editor, (__bridge CFTypeRef)element)) return true;
+  element = attr((__bridge AXUIElementRef)element, kAXParentAttribute);
+ }
+ return false;
+}
+static bool waitForEditorFocus(id editor) {
+ for (int attempt = 0; attempt < 20; attempt++) {
+  if (focusWithin(editor)) return true;
+  [NSThread sleepForTimeInterval:0.05];
+ }
+ return focusWithin(editor);
+}
+static void focusComposer() {
+ activate();
+ id editor = unique(^bool(id element) { return composer(element); });
+ AXUIElementSetAttributeValue((__bridge AXUIElementRef)editor, kAXFocusedAttribute, kCFBooleanTrue);
+ if (waitForEditorFocus(editor)) return;
+ click(editor);
+ if (!waitForEditorFocus(editor)) fail(@"The Codex composer could not be focused.");
+}
 static void output(NSDictionary *value) {NSData *data=[NSJSONSerialization dataWithJSONObject:value options:0 error:nil];fwrite(data.bytes,1,data.length,stdout);}
 int main(int argc,const char **argv) { @autoreleasepool { @try {
  if(argc<2)fail(@"Missing Point operation.");NSString *operation=@(argv[1]);
@@ -139,6 +208,7 @@ int main(int argc,const char **argv) { @autoreleasepool { @try {
  if(!AXIsProcessTrusted())fail(@"Allow Laplace in System Settings > Privacy & Security > Accessibility, then retry.");
  if([operation isEqual:@"identify"]) {
   NSMutableDictionary<NSNumber *, NSArray *> *windowsByPid = [NSMutableDictionary dictionary];
+  NSMutableDictionary<NSNumber *, id> *preferredByPid = [NSMutableDictionary dictionary];
   bool sawCodexWindow = false;
   for (NSDictionary *info in windowInfo()) {
    if ([info[(id)kCGWindowLayer] intValue] != 0 || ![info[(id)kCGWindowIsOnscreen] boolValue]) continue;
@@ -150,8 +220,15 @@ int main(int argc,const char **argv) { @autoreleasepool { @try {
    if (!windows) {
     windows = accessibilityWindows(pid);
     windowsByPid[@(pid)] = windows;
+    AXUIElementRef application = AXUIElementCreateApplication(pid);
+    id preferred = attr(application, kAXFocusedWindowAttribute) ?: attr(application, kAXMainWindowAttribute);
+    if (preferred) preferredByPid[@(pid)] = preferred;
+    CFRelease(application);
    }
-   AXUIElementRef window = matchingWindow(info, windows);
+   // Floating panels may precede the chat in WindowServer's ordering.
+   // Bind the capture to the app's last focused window before raising anything.
+   id preferred = preferredByPid[@(pid)];
+   AXUIElementRef window = matchingWindow(info, preferred ? @[preferred] : windows);
    if (!window) continue;
    CFRelease(window);
    output(@{@"window":[info[(id)kCGWindowNumber] stringValue], @"pid":@(pid), @"version":version(app)});
@@ -171,6 +248,6 @@ int main(int argc,const char **argv) { @autoreleasepool { @try {
  else if([operation isEqual:@"stage"]){activate();click(unique(^bool(id e){return stage(e);}));}
  else if([operation isEqual:@"focus-composer"])focusComposer();
  else if([operation isEqual:@"focus-annotation"]){activate();id e=unique(^bool(id x){return editor(x);});if(AXUIElementSetAttributeValue((__bridge AXUIElementRef)e,kAXFocusedAttribute,kCFBooleanTrue)!=kAXErrorSuccess)fail(@"Could not focus the annotation comment.");id f=focused();if(!f||!CFEqual((__bridge CFTypeRef)e,(__bridge CFTypeRef)f))fail(@"Annotation comment focus could not be verified.");}
- else if([operation isEqual:@"paste-image"]){foreground();id e=unique(^bool(id x){return composer(x);});id f=focused();if(!f||!CFEqual((__bridge CFTypeRef)e,(__bridge CFTypeRef)f))fail(@"The Codex composer lost focus.");if(![NSPasteboard.generalPasteboard availableTypeFromArray:@[NSPasteboardTypePNG,NSPasteboardTypeTIFF]])fail(@"Screenshot clipboard is unavailable.");key(125,kCGEventFlagMaskCommand);key(9,kCGEventFlagMaskCommand);}
+ else if([operation isEqual:@"paste-image"]){foreground();id e=unique(^bool(id x){return composer(x);});if(!focusWithin(e))fail(@"The Codex composer lost focus.");if(![NSPasteboard.generalPasteboard availableTypeFromArray:@[NSPasteboardTypePNG,NSPasteboardTypeTIFF]])fail(@"Screenshot clipboard is unavailable.");key(125,kCGEventFlagMaskCommand);key(9,kCGEventFlagMaskCommand);}
  else fail(@"Unsupported Point operation.");output(@{@"ok":@YES});return 0;
  } @catch(NSException *e) {output(@{@"error":e.reason ?: @"Codex handoff failed."});return 1;} } }
