@@ -1,6 +1,10 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { expect, it } from "vitest";
 
-import { inspectApplicationZip } from "../src/update/binary";
+import { extractWindowsApplicationZip, inspectApplicationZip } from "../src/update/binary";
 function zip(files: Array<{ name: string; data: string; mode?: number }>) {
 	const local: Buffer[] = [],
 		central: Buffer[] = [];
@@ -48,6 +52,19 @@ it("accepts a regular application tree", async () => {
 	await inspectApplicationZip(
 		zip([{ name: "Laplace.app/Contents/MacOS/Laplace", data: "fixture", mode: 0o100755 }]),
 	);
+});
+it("extracts deep Windows paths and rejects escaping archives before writing", async () => {
+	const root = await mkdtemp(join(tmpdir(), "laplace-extract-"));
+	try {
+		const name = `resources/${"long-directory/".repeat(25)}file.txt`;
+		await extractWindowsApplicationZip(zip([{ name, data: "exact bytes" }]), root);
+		expect(await readFile(join(root, name), "utf8")).toBe("exact bytes");
+		await expect(
+			extractWindowsApplicationZip(zip([{ name: "../escape", data: "bad" }]), root),
+		).rejects.toThrow();
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
 });
 it("rejects escaping paths and duplicate case-insensitive paths", async () => {
 	await expect(inspectApplicationZip(zip([{ name: "../outside", data: "bad" }]))).rejects.toThrow();

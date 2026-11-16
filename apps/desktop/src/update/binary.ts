@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
 import { writeFile, constants } from "node:fs/promises";
 import { userInfo } from "node:os";
-import { dirname, join, resolve, relative, isAbsolute, posix } from "node:path";
+import { dirname, join, resolve, isAbsolute, posix } from "node:path";
+import { pipeline } from "node:stream/promises";
 
 import { fromBuffer, type ZipFile, type Entry } from "yauzl";
 
@@ -110,7 +112,10 @@ export async function inspectApplicationZip(bytes: Buffer) {
 						const chunks: Buffer[] = [];
 						for await (const chunk of stream) chunks.push(Buffer.from(chunk));
 						const target = Buffer.concat(chunks).toString("utf8");
-						const resolved = posix.relative("/archive", posix.resolve("/archive", posix.dirname(name), target));
+						const resolved = posix.relative(
+							"/archive",
+							posix.resolve("/archive", posix.dirname(name), target),
+						);
 						if (
 							isAbsolute(target) ||
 							/[\\:\x00-\x1f]/.test(target) ||
@@ -128,6 +133,43 @@ export async function inspectApplicationZip(bytes: Buffer) {
 		for (const path of paths)
 			for (const link of links)
 				if (path.startsWith(link + "/")) throw Error("Archive writes through a symbolic link");
+	} finally {
+		zip.close();
+	}
+}
+
+/** Extract the already-inspected Windows archive without PowerShell path limits. */
+export async function extractWindowsApplicationZip(bytes: Buffer, destination: string) {
+	await inspectApplicationZip(bytes);
+	const zip = await new Promise<ZipFile>((accept, reject) =>
+		fromBuffer(bytes, { lazyEntries: true, strictFileNames: true }, (error, zip) =>
+			error || !zip ? reject(error ?? Error("Invalid ZIP")) : accept(zip),
+		),
+	);
+	try {
+		await new Promise<void>((done, reject) => {
+			zip.on("error", reject);
+			zip.on("end", done);
+			zip.on("entry", (entry: Entry) => {
+				void (async () => {
+					if (((entry.externalFileAttributes >>> 16) & 0o170000) === 0o120000)
+						throw Error("Windows application archive cannot contain symlinks");
+					const path = join(destination, entry.fileName);
+					if (entry.fileName.endsWith("/")) await mkdir(path, { recursive: true });
+					else {
+						await mkdir(dirname(path), { recursive: true });
+						const stream = await new Promise<NodeJS.ReadableStream>((accept, fail) =>
+							zip.openReadStream(entry, (error, stream) =>
+								error || !stream ? fail(error) : accept(stream),
+							),
+						);
+						await pipeline(stream, createWriteStream(path, { flags: "wx" }));
+					}
+					zip.readEntry();
+				})().catch(reject);
+			});
+			zip.readEntry();
+		});
 	} finally {
 		zip.close();
 	}
@@ -184,19 +226,7 @@ export async function prepareBinary(
 		await writeFile(archive, bytes, { mode: 0o600, flag: "wx" });
 		if (process.platform === "darwin")
 			await run("/usr/bin/ditto", ["-x", "-k", archive, extracted], { signal });
-		else {
-			const script = join(directory, "extract.ps1");
-			await writeFile(
-				script,
-				'param([string]$archive,[string]$destination)\n$ErrorActionPreference = "Stop"\nExpand-Archive -LiteralPath $archive -DestinationPath $destination\n',
-				{ mode: 0o600, flag: "wx" },
-			);
-			await run(
-				"powershell.exe",
-				["-NoProfile", "-NonInteractive", "-File", script, archive, extracted],
-				{ signal },
-			);
-		}
+		else await extractWindowsApplicationZip(bytes, extracted);
 		const app = installation.target.startsWith("darwin")
 			? join(extracted, "Laplace.app")
 			: extracted;
