@@ -139,8 +139,10 @@ try {
 		probeOptions,
 	);
 	const isolatedProfile = join(scratch, "user-profile");
-	cleanupProfile = () =>
-		api.cleanupProbeCredentials(originalPackage, target, isolatedProfile, keychainHome);
+	cleanupProfile = async () => {
+		await api.stopVerificationRuntime(isolatedProfile);
+		await api.cleanupProbeCredentials(originalPackage, target, isolatedProfile, keychainHome);
+	};
 	await mkdir(isolatedProfile);
 	await writeFile(join(isolatedProfile, "preserved.txt"), "User settings remain unchanged");
 	const host = {
@@ -166,6 +168,7 @@ try {
 			});
 			return {
 				async stop() {
+					await api.stopVerificationRuntime(isolatedProfile);
 					child.kill();
 					await delay(1500);
 				},
@@ -180,6 +183,7 @@ try {
 	);
 	for (const child of children) child.kill();
 	await delay(2000);
+	await api.stopVerificationRuntime(isolatedProfile);
 	const current = await api.readJson(join(root, "installation.json"));
 	const recoveryId = randomUUID(),
 		recoveryPackage = api.stagedPackage(root, recoveryId);

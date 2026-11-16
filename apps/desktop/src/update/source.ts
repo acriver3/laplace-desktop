@@ -3,6 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { stopRuntime } from "@repo/local-runtime/lifecycle";
+
 import packageJson from "../../package.json";
 import type { DesktopUpdateState } from "../shared/update-contracts";
 import { adoptDownloadedApp, prepareBinary } from "./binary";
@@ -36,6 +38,11 @@ const { releaseSigningPublicKey } = packageJson as typeof packageJson & {
 };
 
 type ProbeOptions = { stderr?: NodeJS.WriteStream; home?: string };
+
+/** Verification profiles own their runtime; normal Desktop quits leave it running. */
+export async function stopVerificationRuntime(profile: string) {
+	await stopRuntime(join(profile, "profiles", "hosted"));
+}
 
 export async function probePackage(
 	path: string,
@@ -104,6 +111,7 @@ export async function probePackage(
 		)
 			await delay(100);
 		if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+		await stopVerificationRuntime(profile);
 		await cleanupProbeCredentials(path, target, profile, options?.home);
 		await rm(profile, { recursive: true, force: true });
 	}
