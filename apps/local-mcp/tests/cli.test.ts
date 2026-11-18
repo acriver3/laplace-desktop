@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { afterEach, expect, it } from "vitest";
 
@@ -88,17 +88,19 @@ it("requires review before changing state", async () => {
 	const confirmed = await harness(["remove", "fixture", "--confirm"], {
 		"portable.manage": [{ removed: true }],
 	});
-	expect(confirmed.calls).toEqual([{ method: "portable.manage", input: { action: "remove", id: "fixture" } }]);
+	expect(confirmed.calls).toEqual([
+		{ method: "portable.manage", input: { action: "remove", id: "fixture" } },
+	]);
 });
 
 it("imports with the reviewed fingerprint and opens headless approvals", async () => {
-	const { calls } = await harness(["import", "/tmp/mcp.json", "--select", "a,b", "--confirm"], {
+	const { calls } = await harness(["import", "mcp.json", "--select", "a,b", "--confirm"], {
 		"import.preview": [{ fingerprint: "f1", servers: [] }],
 		"import.apply": [{ added: 2 }],
 	});
 	expect(calls[1]).toEqual({
 		method: "import.apply",
-		input: { file: "/tmp/mcp.json", selected: ["a", "b"], fingerprint: "f1" },
+		input: { file: resolve("mcp.json"), selected: ["a", "b"], fingerprint: "f1" },
 	});
 	const approvals = await harness(["approvals", "open", "4b8d9a7e-34b1-4f0c-8f5e-2c4b6f6d3a10"], {
 		"browser.page": [{ url: "http://127.0.0.1:1/x" }],

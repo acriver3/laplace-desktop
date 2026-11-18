@@ -44,7 +44,7 @@ Run launcher and configuration checks with `node --test plugins/laplace/scripts/
 
 The package retains `laplace` as its identity and workflow skill, with `Laplace` as its display name. Hosted authorization and local bridge setup are independent.
 
-The workflow uses `list_apps`, `list_connections`, `search_actions`, `get_action_guide`, and `execute_action`, as defined in the Laplace server source. App building and browser connections are paused by the current product policy. Saving the plugin is separate from authenticating and verifying live tools.
+The workflow uses `list_apps`, `list_connections`, `search_actions`, `get_action_guide`, and `execute_action`. See the [public guide](https://withlaplace.com/docs) for setup, [CLI automation](https://withlaplace.com/docs#laplace-cli-automation), and [hosted Chrome browser connections](https://withlaplace.com/docs#set-up-the-laplace-chrome-extension) in eligible workspaces.
 
 ## Installing Desktop connectors through an agent
 
