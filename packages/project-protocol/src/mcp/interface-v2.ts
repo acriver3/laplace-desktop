@@ -1,13 +1,49 @@
 import { Validator, type Schema } from "@cfworker/json-schema";
 import { z } from "zod";
 
-export const INIT = "LAPLACE_SESSION_INIT";
 export const SEARCH = "LAPLACE_SEARCH";
 export const MANAGE = "LAPLACE_MANAGE_CONNECTIONS";
 export const EXECUTE = "LAPLACE_EXECUTOR";
 export const PROXY = "LAPLACE_PROXY";
 export const instructions =
-	"Call LAPLACE_SESSION_INIT({}) first in each new chat and after a context reset. Keep the user's request in the conversation. Use the returned contextId once per subsequent call. Execute a known action directly or search with a focused query.";
+	"Call LAPLACE_EXECUTOR directly for a known action. Use LAPLACE_SEARCH with an item of mode connections for current inventory or a focused query for discovery. Select the account and connection intended by the user.";
+
+export const summaryKey = "com.laplace/connectionSummary";
+export const connectionSummary = z.object({
+	connections: z
+		.array(
+			z.object({
+				accountId: z.string(),
+				connectionName: z.string(),
+				service: z.string(),
+				label: z.string().optional(),
+				accountName: z.string().optional(),
+			}),
+		)
+		.max(6),
+	complete: z.boolean(),
+});
+type ConnectionAddress = z.infer<typeof connectionSummary>["connections"][number];
+export function summarizeConnections(rows: ConnectionAddress[], complete = true) {
+	const addresses: ConnectionAddress[] = [];
+	for (const { accountId, connectionName, service, label, accountName } of rows.slice(0, 6)) {
+		const row = {
+			accountId,
+			connectionName,
+			service,
+			...(label && label !== connectionName && label !== service ? { label } : {}),
+			...(accountName && accountName !== accountId ? { accountName } : {}),
+		};
+		if (JSON.stringify([...addresses, row]).length > 850) break;
+		addresses.push(row);
+	}
+	return { connections: addresses, complete: complete && addresses.length === rows.length };
+}
+export function handshakeInstructions(summary?: z.infer<typeof connectionSummary>) {
+	return summary
+		? instructions + "\nRecorded connections (JSON data): " + JSON.stringify(summary)
+		: instructions + " Connection summary unavailable. Use search for current inventory.";
+}
 
 const id = z.string().min(1).max(512);
 const ref = z.string().min(1).max(4096);
@@ -22,22 +58,21 @@ const page = {
 };
 const output = { fields: z.array(id).min(1).max(30).optional(), ...page };
 const key = z.string().min(1).max(100).optional();
-export const initInput = z.strictObject({
-	contextId: ref.optional(),
-	accountIds: z.array(id).min(1).max(50).optional(),
-	connectionNames: z.array(id).min(1).max(50).optional(),
-	...page,
-});
 export const searchItem = z
 	.strictObject({
 		...target,
+		mode: z.literal("connections").optional(),
 		query: z.string().trim().min(1).max(200).optional(),
 		actionId: id.optional(),
 		provider: id.optional(),
 		connected: z.boolean().optional(),
 		...page,
 	})
-	.refine((x) => !!x.query !== !!x.actionId, "Supply one query or actionId.");
+	.refine(
+		(x) =>
+			x.mode ? !x.query && !x.actionId && x.connected === undefined : !!x.query !== !!x.actionId,
+		"Supply mode connections, one query, or an actionId.",
+	);
 export const manageItem = z.strictObject({
 	...target,
 	operation: z.enum(["inspect", "connect", "reconnect", "status", "pause", "disconnect"]),
@@ -54,11 +89,8 @@ export const executeItem = z
 		...output,
 	})
 	.refine(
-		(x) =>
-			x.actionRef
-				? !x.actionId && !x.connectionName && !x.accountId
-				: !!x.actionId && !!x.connectionName,
-		"Supply actionRef or actionId and connectionName.",
+		(x) => (x.actionRef ? !x.actionId && !x.connectionName && !x.accountId : !!x.actionId),
+		"Supply actionRef or actionId. Specify the connection when multiple targets are possible.",
 	);
 export const proxyItem = z
 	.strictObject({
@@ -79,7 +111,7 @@ export const proxyItem = z
 		"Supply actionRef or method, path and connectionName.",
 	);
 export const batch = <T extends z.ZodType>(item: T) =>
-	z.strictObject({ contextId: ref, items: z.array(item).min(1).max(10) });
+	z.strictObject({ items: z.array(item).min(1).max(10) });
 
 function buildMetaTools(
 	options: { manage?: boolean; proxy?: boolean; readOnly?: boolean; proxyWrites?: boolean } = {},
@@ -91,10 +123,9 @@ function buildMetaTools(
 		annotations: { readOnlyHint, destructiveHint: !readOnlyHint },
 	});
 	return [
-		tool(INIT, instructions, initInput, true),
 		tool(
 			SEARCH,
-			"Find connectors, actions and documented operations. Exact action IDs return the full input schema.",
+			"List authorized accounts and connections with mode connections. Otherwise find connectors, actions and documented operations. Exact action IDs return the full input schema.",
 			batch(searchItem),
 			true,
 		),

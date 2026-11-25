@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -6,9 +6,11 @@ import type { Tool } from "@modelcontextprotocol/server";
 import { scopedToolName } from "@repo/project-protocol/local-mcp";
 import type { ToolCatalog } from "@repo/project-protocol/mcp/catalog";
 import {
+	handshakeInstructions,
+	summarizeConnections,
+	type connectionSummary,
 	v2McpResult,
 	batch,
-	initInput,
 	searchItem,
 	manageItem,
 	executeItem,
@@ -19,7 +21,6 @@ import {
 	presentRead,
 	runBatch,
 	validateArguments,
-	INIT,
 	SEARCH,
 	MANAGE,
 	EXECUTE,
@@ -108,30 +109,7 @@ const hostedResult = z
 		content: z.array(z.object({ text: z.string().optional() }).passthrough()).optional(),
 	})
 	.passthrough();
-export async function desktopV2(
-	manager: DesktopManager,
-	client: string,
-	secret: string,
-	transport: string,
-	catalog: () => ToolCatalog<Tool>,
-	call: Call,
-	name: string,
-	input: Record<string, unknown>,
-) {
-	const token = sessionTokens(secret, [client, transport]);
-	const ctxSchema = z.object({ session: z.string(), upstream: z.string().optional() });
-	let ctx: { session: string; upstream?: string };
-	if (name === INIT && !Object.keys(input).length) ctx = { session: randomUUID() };
-	else {
-		try {
-			ctx = ctxSchema.parse(token.open(String(input.contextId)));
-		} catch {
-			throw Error("SESSION_INIT_REQUIRED");
-		}
-	}
-	const localToken = sessionTokens(secret, [client, transport, ctx.session]);
-	const current = catalog();
-	if (!desktopMetaTools(current).some((t) => t.name === name)) throw Error("TOOL_UNAVAILABLE");
+function publishedActions(manager: DesktopManager, current: ToolCatalog<Tool>) {
 	const native = new Map(
 		manager.supervisor.states().flatMap((s) =>
 			s.tools.map(
@@ -150,7 +128,9 @@ export async function desktopV2(
 			),
 		),
 	);
-	const upstreamAvailable = current.tools().some((t) => t.name === INIT);
+	const upstreamAvailable = current
+		.tools()
+		.some((t) => t.name === SEARCH && current.resolve(t.name).route.executor === "hosted");
 	const legacyHosted = (t: Tool) =>
 		!upstreamAvailable && current.resolve(t.name).route.executor === "hosted";
 	const published = current
@@ -187,6 +167,76 @@ export async function desktopV2(
 							status: "ready",
 						})),
 		}));
+	return { published, upstreamAvailable };
+}
+function localInventory(
+	published: ReturnType<typeof publishedActions>["published"],
+	q: z.infer<typeof searchItem>,
+) {
+	const groups = new Map<
+		string,
+		{
+			accountId: string;
+			connectionName: string;
+			label: string;
+			service: string;
+			status: string;
+			exampleActions: string[];
+		}
+	>();
+	for (const row of published) {
+		const g = groups.get(row.connectionName) ?? {
+			accountId: "desktop",
+			connectionName: row.connectionName,
+			label: row.label,
+			service: row.provider,
+			status: row.status,
+			exampleActions: [],
+		};
+		if (g.exampleActions.length < 3) g.exampleActions.push(row.actionId);
+		groups.set(row.connectionName, g);
+	}
+	return [...groups.values()]
+		.filter(
+			(c) =>
+				(!q.accountId || q.accountId === c.accountId) &&
+				(!q.provider || c.service === q.provider) &&
+				(!q.connectionName || c.connectionName === q.connectionName),
+		)
+		.sort((a, b) => a.connectionName.localeCompare(b.connectionName));
+}
+
+export async function desktopHandshake(
+	manager: DesktopManager,
+	catalog: ToolCatalog<Tool>,
+	preview: () => Promise<z.infer<typeof connectionSummary> | undefined>,
+) {
+	const { published, upstreamAvailable } = publishedActions(manager, catalog);
+	const local = localInventory(published, { accountId: "desktop" });
+	const hosted =
+		upstreamAvailable && local.length < 6 ? await preview().catch(() => undefined) : undefined;
+	return handshakeInstructions(
+		summarizeConnections(
+			[...local, ...(hosted?.connections ?? [])],
+			!upstreamAvailable || hosted?.complete === true,
+		),
+	);
+}
+
+export async function desktopV2(
+	manager: DesktopManager,
+	client: string,
+	secret: string,
+	transport: string,
+	catalog: () => ToolCatalog<Tool>,
+	call: Call,
+	name: string,
+	input: Record<string, unknown>,
+) {
+	const localToken = sessionTokens(secret, [client, transport]);
+	const current = catalog();
+	if (!desktopMetaTools(current).some((t) => t.name === name)) throw Error("TOOL_UNAVAILABLE");
+	const { published, upstreamAvailable } = publishedActions(manager, current);
 	async function upstream(
 		tool: string,
 		args: Record<string, unknown>,
@@ -198,86 +248,36 @@ export async function desktopV2(
 		return { ...result.structuredContent, ...(result._meta ? { _meta: result._meta } : {}) };
 	}
 	const envelope = v2McpResult;
-	if (name === INIT) {
-		const options = initInput.parse(input);
-		const { contextId: _old, ...filters } = options;
-		let hosted: Record<string, unknown> | undefined;
-		if (
-			upstreamAvailable &&
-			(!filters.accountIds || filters.accountIds.some((id) => id !== "desktop"))
-		) {
-			const remote = {
-				...filters,
-				...(filters.accountIds
-					? { accountIds: filters.accountIds.filter((id) => id !== "desktop") }
-					: {}),
-			};
-			hosted = await upstream(INIT, ctx.upstream ? { ...remote, contextId: ctx.upstream } : {});
-			ctx.upstream = z.string().parse(hosted.contextId);
-		}
-		const groups = new Map<
-			string,
-			{
-				accountId: string;
-				connectionName: string;
-				label: string;
-				service: string;
-				status: string;
-				exampleActions: string[];
-			}
-		>();
-		for (const row of published) {
-			if (
-				(filters.accountIds && !filters.accountIds.includes("desktop")) ||
-				(filters.connectionNames && !filters.connectionNames.includes(row.connectionName))
-			)
-				continue;
-			const g = groups.get(row.connectionName) ?? {
-				accountId: "desktop",
-				connectionName: row.connectionName,
-				label: row.label,
-				service: row.provider,
-				status: row.status,
-				exampleActions: [],
-			};
-			if (g.exampleActions.length < 3) g.exampleActions.push(row.actionId);
-			groups.set(row.connectionName, g);
-		}
-		if (hosted) {
-			const { contextId: _up, ...summary } = hosted;
-			hosted = summary;
-		}
-		return envelope({
-			contextId: token.action(ctx),
-			accounts:
-				!filters.accountIds || filters.accountIds.includes("desktop")
-					? [
-							{
-								accountId: "desktop",
-								name: "Laplace Desktop",
-								freshness: "runtime_snapshot",
-								observedAt: new Date().toISOString(),
-							},
-						]
-					: [],
-			connections: pageOf([...groups.values()], filters),
-			...(hosted ? { hosted } : {}),
-			setup: "Open Laplace Desktop to connect a service.",
-		});
-	}
 	if (name === SEARCH) {
 		const { items } = batch(searchItem).parse(input);
-		const remoteQueries = items
-			.map((q, i) => ({ q, i }))
-			.filter(
-				({ q }) =>
-					ctx.upstream && q.accountId !== "desktop" && !q.connectionName?.startsWith("desktop"),
-			);
+		const remoteQueries = items.flatMap((q, i) => {
+			if (
+				!upstreamAvailable ||
+				q.accountId === "desktop" ||
+				(!q.accountId &&
+					(q.connectionName === "desktop" || q.connectionName?.startsWith("desktop:")))
+			)
+				return [];
+			if (q.mode !== "connections") return [{ q, i }];
+			const count = localInventory(published, q).length,
+				start = Number(q.cursor ?? 0),
+				limit = q.limit ?? 20;
+			const localCount = Math.min(limit, Math.max(0, count - start));
+			return [
+				{
+					i,
+					q: {
+						...q,
+						cursor: String(Math.max(0, start - count)),
+						limit: Math.max(1, limit - localCount),
+					},
+				},
+			];
+		});
 		const remote = remoteQueries.length
 			? z.array(z.unknown()).parse(
 					(
 						await upstream(SEARCH, {
-							contextId: ctx.upstream,
 							items: remoteQueries.map((r) => r.q),
 						})
 					).items,
@@ -285,6 +285,60 @@ export async function desktopV2(
 			: [];
 		return envelope({
 			items: items.map((q, i) => {
+				const r = remoteQueries.findIndex((r) => r.i === i);
+				if (q.mode === "connections") {
+					const local = localInventory(published, q),
+						limit = q.limit ?? 20,
+						start = Number(q.cursor ?? 0);
+					const rows = local.slice(start, start + limit);
+					const remoteResult =
+						r < 0
+							? undefined
+							: z
+									.object({
+										status: z.literal("ok"),
+										result: z.object({
+											accounts: z.array(z.unknown()),
+											connections: z.object({ items: z.array(z.unknown()), complete: z.boolean() }),
+											setup: z.object({ url: z.string() }).optional(),
+										}),
+									})
+									.safeParse(remote[r]);
+					if (remoteResult && !remoteResult.success)
+						return { status: "failed", error: "HOSTED_INVENTORY_UNAVAILABLE" };
+					const extra = remoteResult?.data?.result;
+					const remaining = limit - rows.length;
+					const complete =
+						start + limit >= local.length &&
+						(!extra || (extra.connections.complete && extra.connections.items.length <= remaining));
+					return {
+						status: "ok",
+						result: {
+							accounts: [
+								...(!q.accountId || q.accountId === "desktop"
+									? [
+											{
+												accountId: "desktop",
+												name: "Laplace Desktop",
+												freshness: "runtime_snapshot",
+												observedAt: new Date().toISOString(),
+											},
+										]
+									: []),
+								...(extra?.accounts ?? []),
+							],
+							connections: {
+								items: [...rows, ...(extra?.connections.items.slice(0, remaining) ?? [])],
+								complete,
+								...(complete ? {} : { nextCursor: String(start + limit) }),
+							},
+							setup: {
+								desktop: "Open Laplace Desktop to connect a service.",
+								...(extra?.setup ? { url: extra.setup.url } : {}),
+							},
+						},
+					};
+				}
 				const found = published.filter(
 					(p) =>
 						(!q.accountId || q.accountId === p.accountId) &&
@@ -317,7 +371,6 @@ export async function desktopV2(
 							version: schemaVersion([p.connectionName, p.tool.inputSchema, p.readOnly]),
 						}),
 				}));
-				const r = remoteQueries.findIndex((r) => r.i === i);
 				return {
 					status: "ok",
 					result: { ...page, items: entries, ...(r >= 0 ? { hosted: remote[r] } : {}) },
@@ -331,31 +384,97 @@ export async function desktopV2(
 			: name === PROXY
 				? batch(proxyItem).parse(input).items
 				: batch(executeItem).parse(input).items;
+	// Resolve omitted targets against both catalogs before dispatching any item.
+	if (name === EXECUTE) {
+		for (const [index, x] of items.entries()) {
+			if (!("actionId" in x) || !x.actionId || x.connectionName) continue;
+			const local = published.filter(
+				(p) => p.actionId === x.actionId && (!x.accountId || x.accountId === p.accountId),
+			);
+			if (!local.length) continue;
+			let remote: { accountId: string; connectionName: string }[] = [],
+				more = false;
+			if (upstreamAvailable && x.accountId !== "desktop") {
+				const hit = await upstream(SEARCH, {
+					items: [
+						{
+							actionId: x.actionId,
+							connected: true,
+							...(x.accountId ? { accountId: x.accountId } : {}),
+						},
+					],
+				});
+				const page = z
+					.object({
+						items: z
+							.array(
+								z.object({
+									result: z.object({
+										items: z.array(z.object({ accountId: z.string(), connectionName: z.string() })),
+										complete: z.boolean(),
+									}),
+								}),
+							)
+							.length(1),
+					})
+					.parse(hit).items[0]!.result;
+				remote = page.items;
+				more = !page.complete;
+			}
+			const choices = [
+				...local.map(({ accountId, connectionName }) => ({ accountId, connectionName })),
+				...remote,
+			];
+			if (choices.length !== 1 || more)
+				return envelope({
+					items: items.map((_, i) =>
+						i === index
+							? {
+									status: "user_action_required",
+									error: "AMBIGUOUS_CONNECTION",
+									choices: choices.slice(0, 10),
+									complete: !more && choices.length <= 10,
+									nextTool: SEARCH,
+								}
+							: { status: "skipped" },
+					),
+				});
+			x.connectionName = local[0]!.connectionName;
+			x.accountId = "desktop";
+		}
+	}
 	const isLocal = (x: (typeof items)[number]) =>
 		x.accountId === "desktop" ||
-		x.connectionName === "desktop" ||
-		x.connectionName?.startsWith("desktop:") ||
+		(!x.accountId &&
+			(x.connectionName === "desktop" || x.connectionName?.startsWith("desktop:"))) ||
 		("actionRef" in x && x.actionRef?.startsWith("local.")) ||
-		(name === MANAGE && !x.accountId && !x.connectionName && !ctx.upstream);
+		(name === MANAGE && !x.accountId && !x.connectionName && !upstreamAvailable);
 	if (items.every((x) => !isLocal(x))) {
-		if (!ctx.upstream) throw Error("CONNECTION_UNAVAILABLE");
-		return envelope(await upstream(name, { contextId: ctx.upstream, items }));
+		if (!upstreamAvailable) throw Error("CONNECTION_UNAVAILABLE");
+		return envelope(await upstream(name, { items }));
 	}
 	const remoteItems = items.filter((x) => !isLocal(x));
-	const preflight =
-		remoteItems.length && ctx.upstream
-			? z
-					.array(z.object({ write: z.boolean() }))
-					.parse(
-						(await upstream(name, { contextId: ctx.upstream, items: remoteItems }, true)).items,
-					)
-			: [];
+	const checked =
+		remoteItems.length && upstreamAvailable
+			? await upstream(name, { items: remoteItems }, true)
+			: undefined;
+	if (
+		checked &&
+		Array.isArray(checked.items) &&
+		checked.items.some((x) => x?.error === "AMBIGUOUS_CONNECTION")
+	)
+		return envelope({
+			items: items.map((x) =>
+				isLocal(x) ? { status: "skipped" } : (checked.items as unknown[])[remoteItems.indexOf(x)],
+			),
+		});
+	const preflight = checked ? z.array(z.object({ write: z.boolean() })).parse(checked.items) : [];
 	if (remoteItems.length !== preflight.length) throw Error("CONNECTION_UNAVAILABLE");
 	const prepared: Prepared[] = items.map((x) => {
 		if (!isLocal(x)) {
 			const index = remoteItems.indexOf(x);
 			const forward = async (): Promise<Outcome> => {
-				const value = await upstream(name, { contextId: ctx.upstream, items: [x] });
+				const value = await upstream(name, { items: [x] });
 				const result = z
 					.object({
 						status: z.enum(["ok", "failed", "user_action_required", "outcome_unknown", "skipped"]),

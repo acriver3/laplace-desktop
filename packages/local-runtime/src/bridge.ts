@@ -127,13 +127,16 @@ export async function runBridge() {
 	);
 	const wire = new StdioServerTransport();
 	const stdio = serveStdio(
-		() => {
+		async () => {
+			const instructions = await connection
+				.ready()
+				.then(async (client) => client.getInstructions() ?? (await client.discover()).instructions)
+				.catch(() => undefined);
 			const server = new Server(
 				{ name: "Laplace Desktop", version: desktopVersion },
 				{
 					capabilities: { tools: { listChanged: true }, resources: {} },
-					instructions:
-						"When LAPLACE_SESSION_INIT is available, call it with {} first in each new chat and after a context reset.",
+					instructions,
 				},
 			);
 			front = server;

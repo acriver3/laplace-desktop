@@ -10,10 +10,6 @@ export function sessionTokens(secret: string, binding: unknown) {
 		createHmac("sha256", secret)
 			.update(canonical(["laplace-mcp-v2", binding, payload]))
 			.digest("base64url");
-	const contextId = sign("context");
-	function check(id: unknown) {
-		if (typeof id !== "string" || !equal(id, contextId)) throw Error("SESSION_INIT_REQUIRED");
-	}
 	function action(value: unknown) {
 		const body = Buffer.from(canonical(value)).toString("base64url");
 		return body + "." + sign(body);
@@ -24,7 +20,7 @@ export function sessionTokens(secret: string, binding: unknown) {
 			throw Error("INVALID_ACTION_REF");
 		return JSON.parse(Buffer.from(body, "base64url").toString());
 	}
-	return { contextId, check, action, open };
+	return { action, open };
 }
 function equal(a: string, b: string) {
 	const aa = Buffer.from(a),

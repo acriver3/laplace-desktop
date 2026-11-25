@@ -40,7 +40,7 @@ import { desktopManagementTool, manageDesktop, type DesktopSection } from "./des
 import type { Discovery } from "./discovery";
 import type { HostedConnections } from "./hosted-oauth";
 import type { DesktopManager } from "./manager";
-import { appOnly, desktopMetaTools, desktopV2 } from "./mcp-v2";
+import { appOnly, desktopHandshake, desktopMetaTools, desktopV2 } from "./mcp-v2";
 import { NpmSourceError } from "./npm-source";
 import { BROWSER_APPROVAL_URI } from "./shared/browser-approval";
 import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
@@ -74,7 +74,12 @@ type Call = {
 export async function startMcpServer(
 	manager: DesktopManager,
 	hosted: Pick<HostedConnections, "tools" | "call"> &
-		Partial<Pick<HostedConnections, "refreshTools" | "status" | "connect" | "disconnect">>,
+		Partial<
+			Pick<
+				HostedConnections,
+				"refreshTools" | "status" | "connect" | "disconnect" | "connectionSummary"
+			>
+		>,
 	credentials?: CredentialBroker,
 	connectors?: ConnectorManagement,
 	openDesktop?: (section: DesktopSection) => void,
@@ -192,14 +197,25 @@ export async function startMcpServer(
 	let closing = false;
 	const v2Secret = randomUUID();
 	const handler = createMcpHandler(
-		({ authInfo, era }) => {
+		async ({ authInfo, era }) => {
 			const clientId = authInfo!.clientId;
 			const v2 = manager.client(clientId).catalogVersion === 2;
+			const instructions =
+				v2 && authInfo?.extra?.handshake
+					? await desktopHandshake(manager, catalog(clientId), async () =>
+							hosted.connectionSummary?.(clientId),
+						)
+					: v2Instructions;
 			const server = new Server(
 				{ name: "Laplace Desktop", version: desktopVersion },
 				{
 					capabilities: { tools: { listChanged: era === "modern" }, resources: {} },
-					...(v2 ? { instructions: v2Instructions } : {}),
+					...(v2
+						? {
+								instructions,
+								cacheHints: { "server/discover": { ttlMs: 0, cacheScope: "private" as const } },
+							}
+						: {}),
 				},
 			);
 			server.setRequestHandler("resources/list", async () => ({
@@ -627,6 +643,9 @@ export async function startMcpServer(
 							.clone()
 							.json()
 							.catch(() => null);
+						if (request.auth?.extra)
+							request.auth.extra.handshake =
+								message?.method === "initialize" || message?.method === "server/discover";
 						if (session && message?.method === "initialize" && !presented)
 							issued = session.action(randomUUID());
 						exchange.subscription = message?.method === "subscriptions/listen";

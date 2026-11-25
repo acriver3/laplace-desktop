@@ -158,7 +158,7 @@ it.each([false, true])(
 );
 
 it.each([false, true])(
-	"uses session-first v2 over the real local transport (modern=%s)",
+	"returns scoped handshake inventory and executes directly over the real local transport (modern=%s)",
 	async (modern) => {
 		vi.stubEnv("LAPLACE_MCP_V2", "true");
 		try {
@@ -174,11 +174,10 @@ it.each([false, true])(
 				arguments: {},
 				idempotencyKey: "request-1",
 			};
-			expect((await call("LAPLACE_EXECUTOR", { items: [item] })).isError).toBe(true);
-			const init = await call("LAPLACE_SESSION_INIT", {});
-			expect(init.isError, JSON.stringify(init)).not.toBe(true);
+			const info = modern ? await client.discover() : undefined;
+			expect(info?.instructions ?? client.getInstructions()).toContain("desktop:fixture");
+			if (info) expect(info).toMatchObject({ cacheScope: "private", ttlMs: 0 });
 			const answer = await call("LAPLACE_EXECUTOR", {
-				contextId: (init.structuredContent as { contextId: string }).contextId,
 				items: [item],
 			});
 			expect(answer.structuredContent, JSON.stringify(answer)).toMatchObject({

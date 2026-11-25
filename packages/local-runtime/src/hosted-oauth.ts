@@ -12,6 +12,7 @@ import { OAuthTokensSchema } from "@modelcontextprotocol/core";
 import { EncryptedStore } from "@repo/local-mcp-core/encrypted-store";
 import { closeMcpConnection } from "@repo/local-mcp-core/mcp-lifecycle";
 import { connectorOriginSchema } from "@repo/project-protocol/local-mcp";
+import { connectionSummary, summaryKey } from "@repo/project-protocol/mcp/interface-v2";
 import { z } from "zod";
 
 import type { DesktopManager } from "./manager";
@@ -408,6 +409,20 @@ export class HostedConnections {
 		}
 		if (before !== JSON.stringify(c.tools)) this.manager.changed();
 		return this.tools(id);
+	}
+	/** Request current handshake metadata under this registration without executing a tool. */
+	async connectionSummary(id: string) {
+		this.manager.client(id);
+		const c = this.connections.get(id);
+		if (c?.status !== "connected" || !c.client) return;
+		const client = c.client,
+			generation = c.generation;
+		const page = await client.listTools(
+			{ _meta: { [summaryKey]: true } },
+			{ cacheMode: "refresh", timeout: 5000 },
+		);
+		if (c.client !== client || c.generation !== generation || c.status !== "connected") return;
+		return connectionSummary.safeParse(page._meta?.[summaryKey]).data;
 	}
 	tools(id: string) {
 		this.manager.client(id);
