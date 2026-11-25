@@ -251,7 +251,14 @@ export async function desktopV2(
 			contextId: token.action(ctx),
 			accounts:
 				!filters.accountIds || filters.accountIds.includes("desktop")
-					? [{ accountId: "desktop", name: "Laplace Desktop" }]
+					? [
+							{
+								accountId: "desktop",
+								name: "Laplace Desktop",
+								freshness: "runtime_snapshot",
+								observedAt: new Date().toISOString(),
+							},
+						]
 					: [],
 			connections: pageOf([...groups.values()], filters),
 			...(hosted ? { hosted } : {}),
