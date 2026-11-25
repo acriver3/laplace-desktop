@@ -158,6 +158,7 @@ export class HostedConnections {
 			get clientMetadata() {
 				return {
 					client_name: `Laplace Desktop · ${registration.name}`,
+					laplace_catalog_version: registration.catalogVersion ?? 1,
 					redirect_uris: [redirectUrl.href],
 					grant_types: ["authorization_code", "refresh_token"],
 					response_types: ["code"],
@@ -413,14 +414,24 @@ export class HostedConnections {
 		const c = this.connections.get(id);
 		return c?.status === "connected" ? c.tools : [];
 	}
-	async call(id: string, name: string, input: Record<string, unknown>, signal: AbortSignal) {
+	async call(
+		id: string,
+		name: string,
+		input: Record<string, unknown>,
+		signal: AbortSignal,
+		validateOnly = false,
+	) {
 		this.manager.client(id);
 		const c = this.connections.get(id);
 		if (!c?.client || c.status !== "connected" || !c.tools.some((t) => t.name === name))
 			throw new Error("Hosted tool unavailable; reconnect this AI client");
 		try {
 			return await c.client.callTool(
-				{ name, arguments: input },
+				{
+					name,
+					arguments: input,
+					...(validateOnly ? { _meta: { "com.laplace/validateOnly": true } } : {}),
+				},
 				{
 					timeout: 180_000,
 					signal,

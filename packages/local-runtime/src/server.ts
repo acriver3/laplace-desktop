@@ -18,12 +18,14 @@ import { localCredentialTool } from "@repo/project-protocol/credentials";
 import { brokerApprovalResource } from "@repo/project-protocol/mcp/broker-approval-resource";
 import { browserApprovalResource } from "@repo/project-protocol/mcp/browser-approval-resource";
 import { ToolCatalog, type CatalogEntry } from "@repo/project-protocol/mcp/catalog";
+import { instructions as v2Instructions } from "@repo/project-protocol/mcp/interface-v2";
 import {
 	isLocalConnectorToolName,
 	laplaceDiscoveryTools,
 	discoverySetupSchema,
 	localBootstrapTools,
 } from "@repo/project-protocol/mcp/local-tools";
+import { sessionTokens } from "@repo/project-protocol/mcp/v2-tokens";
 import { ycUiResource } from "@repo/project-protocol/mcp/yc-resource";
 import { ycUiTools, YC_UI_URI } from "@repo/project-protocol/mcp/yc-schema";
 import { z } from "zod";
@@ -38,6 +40,7 @@ import { desktopManagementTool, manageDesktop, type DesktopSection } from "./des
 import type { Discovery } from "./discovery";
 import type { HostedConnections } from "./hosted-oauth";
 import type { DesktopManager } from "./manager";
+import { appOnly, desktopMetaTools, desktopV2 } from "./mcp-v2";
 import { NpmSourceError } from "./npm-source";
 import { BROWSER_APPROVAL_URI } from "./shared/browser-approval";
 import { credentialBrokeringEnabled } from "./shared/credential-broker-feature";
@@ -187,13 +190,17 @@ export async function startMcpServer(
 	};
 	let endpoint = "";
 	let closing = false;
+	const v2Secret = randomUUID();
 	const handler = createMcpHandler(
 		({ authInfo, era }) => {
 			const clientId = authInfo!.clientId;
-			manager.client(clientId);
+			const v2 = manager.client(clientId).catalogVersion === 2;
 			const server = new Server(
 				{ name: "Laplace Desktop", version: desktopVersion },
-				{ capabilities: { tools: { listChanged: era === "modern" }, resources: {} } },
+				{
+					capabilities: { tools: { listChanged: era === "modern" }, resources: {} },
+					...(v2 ? { instructions: v2Instructions } : {}),
+				},
 			);
 			server.setRequestHandler("resources/list", async () => ({
 				resources: [
@@ -247,177 +254,225 @@ export async function startMcpServer(
 			server.setRequestHandler("tools/list", async () => {
 				await manager.refresh();
 				await hosted.refreshTools?.(clientId);
-				return { tools: catalog(clientId).tools() };
+				const current = catalog(clientId);
+				return {
+					tools: v2
+						? [
+								...desktopMetaTools(current).map((t) => ToolSchema.parse(t)),
+								...current.tools().filter(appOnly),
+							]
+						: current.tools(),
+				};
 			});
 			server.setRequestHandler("tools/call", async (request, ctx) => {
+				const dispatch = async (
+					name: string,
+					arguments_: Record<string, unknown>,
+					validateOnly = false,
+				) => {
+					if (
+						manager.supervisor.maintenanceActive ||
+						manager.updateMaintenance?.() ||
+						calls.size >= 128 ||
+						[...calls.values()].filter((call) => call.clientId === clientId).length >= 32
+					) {
+						record("busy");
+						return {
+							isError: true,
+							content: [
+								{
+									type: "text" as const,
+									text: "Laplace Desktop is busy. This tool call was not started. Try again after running calls finish.",
+								},
+							],
+							_meta: { "com.laplace/dispatch": "not_started" },
+						};
+					}
+					const invocationId = randomUUID();
+					const controller = new AbortController(),
+						abort = () => controller.abort();
+					ctx.mcpReq.signal.addEventListener("abort", abort, { once: true });
+					if (ctx.mcpReq.signal.aborted) abort();
+					try {
+						const currentCatalog = catalog(clientId);
+						const entry = currentCatalog.resolve(name);
+						const input = z.record(z.string(), z.unknown()).parse(arguments_);
+						calls.set(invocationId, {
+							clientId,
+							controller,
+							name: entry.tool.name,
+							executor: entry.route.executor,
+							localTools:
+								entry.route.executor === "yc-ui"
+									? ycInvocationTools(manager, clientId, input)
+									: undefined,
+						});
+						return await currentCatalog.dispatch<Awaited<ReturnType<DesktopManager["callNamed"]>>>(
+							name,
+							input,
+							{
+								desktop: async (_route, args) => {
+									try {
+										const result = await manageDesktop(
+											manager,
+											hosted as HostedConnections,
+											clientId,
+											args,
+											openDesktop!,
+										);
+										return {
+											content: [{ type: "text" as const, text: JSON.stringify(result) }],
+											structuredContent: result,
+										};
+									} catch {
+										return {
+											isError: true,
+											content: [
+												{
+													type: "text" as const,
+													text: "Desktop operation failed. Inspect status and permissions before retrying. No operation was automatically replayed.",
+												},
+											],
+										};
+									}
+								},
+								broker: async (route, args) => {
+									const input = brokerToolInput.parse(args);
+									checkBrokerTool(route.target, input);
+									if (
+										!credentials!.connectionBroker &&
+										!credentials!.allowed(principal(clientId))
+									) {
+										return brokerMcpResult(
+											await credentials!.call(principal(clientId), {
+												action: "status",
+												requestId: input.requestId,
+											}),
+											input,
+											route.target,
+										);
+									}
+
+									const result = await credentials!.call(
+										principal(clientId),
+										input.poll
+											? { action: "result", requestId: input.requestId }
+											: { action: "broker", requestId: input.requestId, command: input.command },
+									);
+									return brokerMcpResult(result, input, route.target);
+								},
+								laplace: async (route, args) => {
+									const result =
+										route.target === "laplace_setup"
+											? await discovery!.setup(clientId, discoverySetupSchema.parse(args).target)
+											: route.target === "laplace_local_setup"
+												? await discovery!.setup(clientId, "browser")
+												: await discovery!.status(clientId);
+									return {
+										content: [{ type: "text" as const, text: JSON.stringify(result) }],
+										structuredContent: result as Record<string, unknown>,
+									};
+								},
+								"yc-ui": async (route, args) => {
+									const view = await desktopYcView(
+										manager,
+										clientId,
+										route.target,
+										args,
+										controller.signal,
+									);
+									return {
+										content: [{ type: "text" as const, text: JSON.stringify(view) }],
+										structuredContent: view,
+									};
+								},
+								setup: async (route, args) => {
+									try {
+										return await connectors!.call(clientId, route.target, args);
+									} catch (error) {
+										// npm outcomes are fixed messages without credentials; agents act on them.
+										if (error instanceof NpmSourceError)
+											return {
+												isError: true,
+												content: [
+													{ type: "text" as const, text: `${error.code}: ${error.message}` },
+												],
+											};
+										return {
+											isError: true,
+											content: [
+												{
+													type: "text" as const,
+													text: "Connector setup request failed. Check the tool schema, catalog fields, existing connector/job status, and client permissions. Existing IDs are never replaced. Review Desktop diagnostics if needed; secret values are not returned.",
+												},
+											],
+										};
+									}
+								},
+								credentials: async (_route, args) => {
+									try {
+										if (
+											args.action === "broker" ||
+											credentials!.isBrokerRequest(principal(clientId), String(args.requestId))
+										)
+											throw Error("Use the broker tool.");
+										const result = await credentials!.call(principal(clientId), args);
+										return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+									} catch {
+										return {
+											isError: true,
+											content: [
+												{
+													type: "text" as const,
+													text: "Credential request unavailable. Review Bitwarden settings and client access in Laplace Desktop.",
+												},
+											],
+										};
+									}
+								},
+								local: (route, args) =>
+									manager.callNamed(route.target, args, controller.signal, clientId),
+								hosted: (route, args) =>
+									hosted.call(clientId, route.target, args, controller.signal, validateOnly),
+							},
+							controller.signal,
+						);
+					} catch (error) {
+						const message = error instanceof Error ? error.message : "Tool call failed";
+						return { isError: true, content: [{ type: "text" as const, text: message }] };
+					} finally {
+						calls.delete(invocationId);
+						if (controller.signal.aborted) record("call_cancelled");
+						ctx.mcpReq.signal.removeEventListener("abort", abort);
+					}
+				};
+				const name = request.params.name,
+					input = request.params.arguments ?? {};
 				if (
-					manager.supervisor.maintenanceActive ||
-					manager.updateMaintenance?.() ||
-					calls.size >= 128 ||
-					[...calls.values()].filter((call) => call.clientId === clientId).length >= 32
-				) {
-					record("busy");
+					!v2 ||
+					catalog(clientId)
+						.tools()
+						.some((t) => t.name === name && appOnly(t))
+				)
+					return dispatch(name, input);
+				try {
+					return await desktopV2(
+						manager,
+						clientId,
+						v2Secret,
+						String(authInfo?.extra?.transport ?? ""),
+						() => catalog(clientId),
+						dispatch,
+						name,
+						input,
+					);
+				} catch (e) {
 					return {
 						isError: true,
 						content: [
-							{
-								type: "text",
-								text: "Laplace Desktop is busy. This tool call was not started. Try again after running calls finish.",
-							},
+							{ type: "text" as const, text: e instanceof Error ? e.message : "OPERATION_FAILED" },
 						],
-						_meta: { "com.laplace/dispatch": "not_started" },
 					};
-				}
-				const invocationId = randomUUID();
-				const controller = new AbortController(),
-					abort = () => controller.abort();
-				ctx.mcpReq.signal.addEventListener("abort", abort, { once: true });
-				if (ctx.mcpReq.signal.aborted) abort();
-				try {
-					const currentCatalog = catalog(clientId);
-					const entry = currentCatalog.resolve(request.params.name);
-					const input = z.record(z.string(), z.unknown()).parse(request.params.arguments ?? {});
-					calls.set(invocationId, {
-						clientId,
-						controller,
-						name: entry.tool.name,
-						executor: entry.route.executor,
-						localTools:
-							entry.route.executor === "yc-ui"
-								? ycInvocationTools(manager, clientId, input)
-								: undefined,
-					});
-					return await currentCatalog.dispatch<Awaited<ReturnType<DesktopManager["callNamed"]>>>(
-						request.params.name,
-						input,
-						{
-							desktop: async (_route, args) => {
-								try {
-									const result = await manageDesktop(
-										manager,
-										hosted as HostedConnections,
-										clientId,
-										args,
-										openDesktop!,
-									);
-									return {
-										content: [{ type: "text" as const, text: JSON.stringify(result) }],
-										structuredContent: result,
-									};
-								} catch {
-									return {
-										isError: true,
-										content: [
-											{
-												type: "text" as const,
-												text: "Desktop operation failed. Inspect status and permissions before retrying. No operation was automatically replayed.",
-											},
-										],
-									};
-								}
-							},
-							broker: async (route, args) => {
-								const input = brokerToolInput.parse(args);
-								checkBrokerTool(route.target, input);
-								if (!credentials!.connectionBroker && !credentials!.allowed(principal(clientId))) {
-									return brokerMcpResult(
-										await credentials!.call(principal(clientId), {
-											action: "status",
-											requestId: input.requestId,
-										}),
-										input,
-										route.target,
-									);
-								}
-
-								const result = await credentials!.call(
-									principal(clientId),
-									input.poll
-										? { action: "result", requestId: input.requestId }
-										: { action: "broker", requestId: input.requestId, command: input.command },
-								);
-								return brokerMcpResult(result, input, route.target);
-							},
-							laplace: async (route, args) => {
-								const result =
-									route.target === "laplace_setup"
-										? await discovery!.setup(clientId, discoverySetupSchema.parse(args).target)
-										: route.target === "laplace_local_setup"
-											? await discovery!.setup(clientId, "browser")
-											: await discovery!.status(clientId);
-								return {
-									content: [{ type: "text" as const, text: JSON.stringify(result) }],
-									structuredContent: result as Record<string, unknown>,
-								};
-							},
-							"yc-ui": async (route, args) => {
-								const view = await desktopYcView(
-									manager,
-									clientId,
-									route.target,
-									args,
-									controller.signal,
-								);
-								return {
-									content: [{ type: "text" as const, text: JSON.stringify(view) }],
-									structuredContent: view,
-								};
-							},
-							setup: async (route, args) => {
-								try {
-									return await connectors!.call(clientId, route.target, args);
-								} catch (error) {
-									// npm outcomes are fixed messages without credentials; agents act on them.
-									if (error instanceof NpmSourceError)
-										return {
-											isError: true,
-											content: [{ type: "text", text: `${error.code}: ${error.message}` }],
-										};
-									return {
-										isError: true,
-										content: [
-											{
-												type: "text",
-												text: "Connector setup request failed. Check the tool schema, catalog fields, existing connector/job status, and client permissions. Existing IDs are never replaced. Review Desktop diagnostics if needed; secret values are not returned.",
-											},
-										],
-									};
-								}
-							},
-							credentials: async (_route, args) => {
-								try {
-									if (
-										args.action === "broker" ||
-										credentials!.isBrokerRequest(principal(clientId), String(args.requestId))
-									)
-										throw Error("Use the broker tool.");
-									const result = await credentials!.call(principal(clientId), args);
-									return { content: [{ type: "text", text: JSON.stringify(result) }] };
-								} catch {
-									return {
-										isError: true,
-										content: [
-											{
-												type: "text",
-												text: "Credential request unavailable. Review Bitwarden settings and client access in Laplace Desktop.",
-											},
-										],
-									};
-								}
-							},
-							local: (route, args) =>
-								manager.callNamed(route.target, args, controller.signal, clientId),
-							hosted: (route, args) => hosted.call(clientId, route.target, args, controller.signal),
-						},
-						controller.signal,
-					);
-				} catch (error) {
-					const message = error instanceof Error ? error.message : "Tool call failed";
-					return { isError: true, content: [{ type: "text", text: message }] };
-				} finally {
-					calls.delete(invocationId);
-					if (controller.signal.aborted) record("call_cancelled");
-					ctx.mcpReq.signal.removeEventListener("abort", abort);
 				}
 			});
 
@@ -521,7 +576,27 @@ export async function startMcpServer(
 			response.writeHead(503).end();
 			return;
 		}
-		request.auth = { token: "", clientId: client.id, scopes: [] };
+		const version2 = manager.client(client.id).catalogVersion === 2;
+		const session = version2 ? sessionTokens(v2Secret, ["transport", client.id]) : undefined;
+		const presented = request.headers["mcp-session-id"];
+		let transport = String(request.headers["x-laplace-agent-session"] ?? "");
+		if (session && presented) {
+			try {
+				transport = z
+					.string()
+					.uuid()
+					.parse(session.open(String(presented)));
+			} catch {
+				response.writeHead(404).end("Unknown session");
+				return;
+			}
+		}
+		request.auth = {
+			token: "",
+			clientId: client.id,
+			scopes: [],
+			extra: { transport },
+		};
 		const id = randomUUID(),
 			controller = new AbortController();
 		const exchange: Exchange = {
@@ -543,22 +618,31 @@ export async function startMcpServer(
 		const serve = toNodeHandler(
 			{
 				fetch: async (web, options) => {
+					let issued: string | undefined;
 					// Diagnostics use a bounded method/version label, never request arguments.
 					if (web.method === "POST") {
 						const message = await web
 							.clone()
 							.json()
 							.catch(() => null);
+						if (session && message?.method === "initialize" && !presented)
+							issued = session.action(randomUUID());
 						exchange.subscription = message?.method === "subscriptions/listen";
 						if (
 							message?.params?._meta?.["io.modelcontextprotocol/protocolVersion"] === "2026-07-28"
 						)
 							exchange.protocol = "2026-07-28";
 					}
-					return handler.fetch(
-						new Request(web, { signal: AbortSignal.any([web.signal, controller.signal]) }),
+					const headers = new Headers(web.headers);
+					if (session) headers.delete("mcp-session-id");
+					const result = await handler.fetch(
+						new Request(web, { headers, signal: AbortSignal.any([web.signal, controller.signal]) }),
 						options,
 					);
+					if (!issued || !result.ok) return result;
+					const reply = new Response(result.body, result);
+					reply.headers.set("mcp-session-id", issued);
+					return reply;
 				},
 			},
 			{ maxRequestBodySize: MAX_BODY, onerror: () => record("transport_error") },

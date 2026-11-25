@@ -75,6 +75,7 @@ const desktopState = z
 						name: z.string().min(1).max(80),
 						enabled: z.boolean(),
 						tokenHash: z.string(),
+						catalogVersion: z.literal(2).optional(),
 						createdAt: z.string(),
 						allowedLocalTools: z.array(z.string()).max(15000).optional(),
 					})
@@ -1170,6 +1171,7 @@ export class DesktopManager {
 					name: z.string().trim().min(1).max(80).parse(name),
 					enabled: true,
 					tokenHash: credentialDigest(token),
+					...(process.env.LAPLACE_MCP_V2 === "true" ? { catalogVersion: 2 as const } : {}),
 					createdAt: new Date().toISOString(),
 				});
 			});
@@ -1183,7 +1185,14 @@ export class DesktopManager {
 	client(id: string) {
 		const value = this.state.clients.find((c) => c.id === id && c.enabled);
 		if (!value) throw new Error("AI client disabled or unknown");
-		return { id: value.id, name: value.name };
+		return {
+			id: value.id,
+			name: value.name,
+			...(value.catalogVersion === 2 ||
+			(process.env.LAPLACE_MCP_V2_CLIENT_IDS ?? "").split(",").includes(value.id)
+				? { catalogVersion: 2 as const }
+				: {}),
+		};
 	}
 	authenticateClient(token: string) {
 		const value = this.state.clients.find(

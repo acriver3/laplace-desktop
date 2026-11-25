@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve, join, isAbsolute } from "node:path";
@@ -86,6 +87,7 @@ export async function runBridge() {
 		throw new Error("This AI client is not registered. Connect it again in Laplace Desktop.");
 	let closed = false;
 	let front: Server | undefined;
+	const agentSession = randomUUID();
 	const connection = new BridgeConnection(
 		async () => {
 			const client = new Client(
@@ -93,7 +95,10 @@ export async function runBridge() {
 				{ capabilities: {}, versionNegotiation: { mode: { pin: "2026-07-28" } } },
 			);
 			const transport = new StreamableHTTPClientTransport(new URL(await endpoint(root)), {
-				requestInit: { headers: { Authorization: `Bearer ${token}` }, redirect: "error" },
+				requestInit: {
+					headers: { Authorization: `Bearer ${token}`, "x-laplace-agent-session": agentSession },
+					redirect: "error",
+				},
 				reconnectionOptions: {
 					maxRetries: 0,
 					initialReconnectionDelay: 1000,
@@ -125,7 +130,11 @@ export async function runBridge() {
 		() => {
 			const server = new Server(
 				{ name: "Laplace Desktop", version: desktopVersion },
-				{ capabilities: { tools: { listChanged: true }, resources: {} } },
+				{
+					capabilities: { tools: { listChanged: true }, resources: {} },
+					instructions:
+						"When LAPLACE_SESSION_INIT is available, call it with {} first in each new chat and after a context reset.",
+				},
 			);
 			front = server;
 			server.onclose = () => {
