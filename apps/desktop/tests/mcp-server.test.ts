@@ -157,6 +157,39 @@ it.each([false, true])(
 	},
 );
 
+it.each([false, true])(
+	"uses session-first v2 over the real local transport (modern=%s)",
+	async (modern) => {
+		vi.stubEnv("LAPLACE_MCP_V2", "true");
+		try {
+			const f = await fixture();
+			const { client } = await f.connect("v2 client", modern);
+			expect((await client.listTools()).tools.map((t) => t.name)).toContain("LAPLACE_EXECUTOR");
+			const call = (name: string, args: Record<string, unknown>) =>
+				client.callTool({ name, arguments: args });
+			const item = {
+				accountId: "desktop",
+				connectionName: "desktop:fixture",
+				actionId: "read",
+				arguments: {},
+				idempotencyKey: "request-1",
+			};
+			expect((await call("LAPLACE_EXECUTOR", { items: [item] })).isError).toBe(true);
+			const init = await call("LAPLACE_SESSION_INIT", {});
+			expect(init.isError, JSON.stringify(init)).not.toBe(true);
+			const answer = await call("LAPLACE_EXECUTOR", {
+				contextId: (init.structuredContent as { contextId: string }).contextId,
+				items: [item],
+			});
+			expect(answer.structuredContent, JSON.stringify(answer)).toMatchObject({
+				items: [{ status: "ok", result: { content: [{ type: "text" }] } }],
+			});
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	},
+);
+
 async function setupCall(client: Client, name: string, args: Record<string, unknown> = {}) {
 	const result: any = await client.callTool({
 		name: `local_connectors_${name}`,

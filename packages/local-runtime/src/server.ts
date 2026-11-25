@@ -433,7 +433,9 @@ export async function startMcpServer(
 								local: (route, args) =>
 									manager.callNamed(route.target, args, controller.signal, clientId),
 								hosted: (route, args) =>
-									hosted.call(clientId, route.target, args, controller.signal, validateOnly),
+									validateOnly
+										? hosted.call(clientId, route.target, args, controller.signal, true)
+										: hosted.call(clientId, route.target, args, controller.signal),
 							},
 							controller.signal,
 						);
