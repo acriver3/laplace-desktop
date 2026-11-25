@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { serverConfig } from "@repo/local-mcp-core/config";
 import type { EntryFactory } from "@repo/local-mcp-core/store";
 import { BrowserApprovals } from "@repo/local-runtime/browser-approvals";
@@ -101,14 +102,14 @@ async function fixture(
 		setup ? new ConnectorManagement(manager, installer, undefined, browserApprovals) : undefined,
 	);
 	cleanup.push(() => server.close());
-	async function connect(name: string, modern = true) {
+	async function connect(name: string, modern = true, preload?: unknown) {
 		const registration = await manager.registerClient(name),
 			token = secrets.get(`client:${registration.id}`)!;
 		const client = new Client(
 			{ name, version: "1" },
 			modern
 				? { capabilities: {}, versionNegotiation: { mode: { pin: "2026-07-28" } } }
-				: { capabilities: {} },
+				: { capabilities: {}, versionNegotiation: { mode: "legacy" } },
 		);
 		const transport = new StreamableHTTPClientTransport(new URL(server.endpoint), {
 			requestInit: { headers: { Authorization: `Bearer ${token}` } },
@@ -119,6 +120,21 @@ async function fixture(
 				reconnectionDelayGrowFactor: 1,
 			},
 		});
+		if (preload) {
+			const send = transport.send.bind(transport);
+			transport.send = (message, options) => {
+				if (
+					!Array.isArray(message) &&
+					"method" in message &&
+					(message.method === "initialize" || message.method === "server/discover")
+				)
+					message.params = {
+						...message.params,
+						_meta: { ...message.params?._meta, "com.laplace/preload": preload },
+					};
+				return send(message, options);
+			};
+		}
 		await client.connect(transport);
 		if (modern) await client.listen({ toolsListChanged: true });
 		cleanup.push(() => client.close());
@@ -187,6 +203,191 @@ it.each([false, true])(
 			vi.unstubAllEnvs();
 		}
 	},
+);
+
+it.each([false, true])(
+	"uses a preloaded action as the first tool call (modern=%s)",
+	async (modern) => {
+		vi.stubEnv("LAPLACE_MCP_V2", "true");
+		try {
+			const f = await fixture();
+			const key = "com.laplace/preload";
+			const { client } = await f.connect("preload client", modern, {
+				items: [{ accountId: "desktop", actionId: "read" }, { query: "missing" }],
+			});
+			const info = modern ? (await client.discover()).instructions : client.getInstructions();
+			const matches = JSON.parse(info!.split("\n").at(-1)!);
+			expect(matches.items[1].result.items).toEqual([]);
+			const action = matches.items[0].result.items[0];
+			expect(action).toMatchObject({
+				actionId: "read",
+				connectionName: "desktop:fixture",
+				inputSchema: { type: "object" },
+			});
+			const result = await client.callTool({
+				name: action.nextTool,
+				arguments: {
+					items: [{ actionRef: action.actionRef, arguments: {}, idempotencyKey: "preload-read" }],
+				},
+			});
+			expect(result.structuredContent, JSON.stringify(result)).toMatchObject({
+				items: [{ status: "ok" }],
+			});
+			const page = await client.listTools(
+				{ _meta: { [key]: { items: [{ query: "read", connectionName: "desktop:fixture" }] } } },
+				{ cacheMode: "refresh" },
+			);
+			expect(page._meta?.[key]).toMatchObject({
+				items: [{ result: { items: [{ actionId: "read" }] } }],
+			});
+			expect(page.tools.find((t) => t.name === "LAPLACE_EXECUTOR")?.description).toContain(
+				'"actionRef"',
+			);
+			const plain = await client.listTools(undefined, { cacheMode: "refresh" });
+			expect(plain._meta?.[key]).toBeUndefined();
+			expect(plain.tools.find((t) => t.name === "LAPLACE_EXECUTOR")?.description).not.toContain(
+				'"actionRef"',
+			);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	},
+);
+
+it("uses hosted tool-list metadata for federated preload and dispatches only the selected action", async () => {
+	vi.stubEnv("LAPLACE_MCP_V2", "true");
+	try {
+		const action = {
+			provider: "test",
+			accountId: "hosted",
+			connectionName: "work",
+			actionId: "read",
+			actionRef: "hosted-ref",
+			nextTool: "LAPLACE_EXECUTOR" as const,
+			effect: "read" as const,
+		};
+		const preload = vi.fn(async () => ({
+			items: [{ status: "ok" as const, result: { items: [action], complete: true } }],
+		}));
+		const call = vi.fn(async () => ({
+			content: [],
+			structuredContent: { items: [{ status: "ok" }] },
+		}));
+		const f = await fixture({
+			tools: () =>
+				["LAPLACE_SEARCH", "LAPLACE_EXECUTOR"].map((name) => ({
+					name,
+					inputSchema: { type: "object" },
+				})),
+			preload,
+			call,
+		});
+		const { id, client } = await f.connect("federated", true);
+		const key = "com.laplace/preload";
+		const page = await client.listTools(
+			{ _meta: { [key]: { items: [{ actionId: "read" }] } } },
+			{ cacheMode: "refresh" },
+		);
+		expect(preload).toHaveBeenCalledWith(id, [{ actionId: "read" }], expect.any(AbortSignal));
+		expect(call).not.toHaveBeenCalled();
+		expect(page._meta?.[key]).toMatchObject({
+			items: [{ result: { items: [{ accountId: "desktop" }, action], complete: true } }],
+		});
+		const first = await client.callTool({
+			name: action.nextTool,
+			arguments: { items: [{ actionRef: action.actionRef }] },
+		});
+		expect(first.structuredContent).toMatchObject({ items: [{ status: "ok" }] });
+		expect(call.mock.calls[0]).toEqual([
+			id,
+			action.nextTool,
+			{ items: [{ actionRef: action.actionRef, arguments: {} }] },
+			expect.any(AbortSignal),
+		]);
+	} finally {
+		vi.unstubAllEnvs();
+	}
+});
+
+it.each([false, true])(
+	"forwards preload through the stdio bridge (modern=%s)",
+	async (modern) => {
+		vi.stubEnv("LAPLACE_MCP_V2", "true");
+		try {
+			const f = await fixture();
+			const { id, token } = await f.connect("bridge registration");
+			const binary = join(f.root, "bridge.cjs");
+			await build({
+				entryPoints: [resolve("../../packages/local-runtime/src/bridge.ts")],
+				outfile: binary,
+				bundle: true,
+				platform: "node",
+				format: "cjs",
+				target: "node24",
+				plugins: [
+					{
+						name: "fixture-keyring",
+						setup(b) {
+							b.onResolve({ filter: /^@napi-rs\/keyring$/ }, () => ({
+								path: "fixture",
+								namespace: "keyring",
+							}));
+							b.onLoad({ filter: /.*/, namespace: "keyring" }, () => ({
+								contents:
+									"export class Entry { getPassword() {return process.env.LAPLACE_FIXTURE_TOKEN} }",
+							}));
+						},
+					},
+				],
+			});
+			const client = new Client(
+				{ name: "stdio fixture", version: "1" },
+				{ versionNegotiation: { mode: modern ? { pin: "2026-07-28" } : "legacy" } },
+			);
+			const transport = new StdioClientTransport({
+				command: process.execPath,
+				args: [binary, "--root", f.root, "--client-id", id],
+				env: { LAPLACE_FIXTURE_TOKEN: token },
+			});
+			cleanup.push(() => client.close());
+			const key = "com.laplace/preload";
+			const send = transport.send.bind(transport);
+			transport.send = (message) => {
+				if (
+					"method" in message &&
+					(message.method === "initialize" || message.method === "server/discover")
+				)
+					message.params = {
+						...message.params,
+						_meta: {
+							...message.params?._meta,
+							[key]: { items: [{ actionId: "read", accountId: "desktop" }] },
+						},
+					};
+				return send(message);
+			};
+			await client.connect(transport);
+			const instructions = modern
+				? (await client.discover()).instructions
+				: client.getInstructions();
+			const action = JSON.parse(instructions!.split("\n").at(-1)!).items[0].result.items[0];
+			const first = await client.callTool({
+				name: action.nextTool,
+				arguments: { items: [{ actionRef: action.actionRef, idempotencyKey: "stdio-direct" }] },
+			});
+			expect(first.structuredContent).toMatchObject({ items: [{ status: "ok" }] });
+			const list = await client.listTools(
+				{ _meta: { [key]: { items: [{ query: "missing" }] } } },
+				{ cacheMode: "refresh" },
+			);
+			expect(list._meta?.[key]).toMatchObject({
+				items: [{ result: { items: [], complete: true } }],
+			});
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	},
+	30_000,
 );
 
 async function setupCall(client: Client, name: string, args: Record<string, unknown> = {}) {

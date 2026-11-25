@@ -8,6 +8,7 @@
 		"./connector-artwork": "./src/connector-artwork.ts",
 		"./provider-discovery": "./src/provider-discovery.ts",
 		"./mcp/interface-v2": "./src/mcp/interface-v2.ts",
+		"./mcp/preload": "./src/mcp/preload.ts",
 		"./mcp/v2-tokens": "./src/mcp/v2-tokens.ts",
 		"./mcp/catalog": "./src/mcp/catalog.ts",
 		"./mcp/provider-tools": "./src/mcp/provider-tools.ts",

@@ -4,13 +4,15 @@ import { homedir } from "node:os";
 import { resolve, join, isAbsolute } from "node:path";
 
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { Server } from "@modelcontextprotocol/server";
+import type { Server } from "@modelcontextprotocol/server";
 import { serveStdio, StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { systemEntry } from "@repo/local-mcp-core/store";
+import { preloadKey, readPreload, readPreloadResult } from "@repo/project-protocol/mcp/preload";
 import { z } from "zod";
 
 import { BridgeConnection } from "./bridge-connection";
 import { bridgeConnectionMessage, bridgeCallMessage } from "./bridge-errors";
+import { DiscoveryServer } from "./discovery-server";
 import { startRuntime } from "./lifecycle";
 import { desktopVersion } from "./shared/version";
 
@@ -132,20 +134,40 @@ export async function runBridge() {
 				.ready()
 				.then(async (client) => client.getInstructions() ?? (await client.discover()).instructions)
 				.catch(() => undefined);
-			const server = new Server(
+			const server = new DiscoveryServer(
 				{ name: "Laplace Desktop", version: desktopVersion },
 				{
 					capabilities: { tools: { listChanged: true }, resources: {} },
 					instructions,
 				},
 			);
+			server.preload = async (hint, signal) => {
+				try {
+					const page = await (
+						await connection.ready()
+					).listTools(
+						{ _meta: { [preloadKey]: hint } },
+						{ cacheMode: "refresh", signal, timeout: 30_000 },
+					);
+					return readPreloadResult(page._meta);
+				} catch {
+					signal.throwIfAborted();
+					return undefined;
+				}
+			};
 			front = server;
 			server.onclose = () => {
 				if (front === server) front = undefined;
 			};
-			server.setRequestHandler("tools/list", async (request) => {
+			server.setRequestHandler("tools/list", async (request, ctx) => {
 				try {
-					return await (await connection.ready()).listTools(request.params, { timeout: 30_000 });
+					return await (
+						await connection.ready()
+					).listTools(request.params, {
+						timeout: 30_000,
+						signal: ctx.mcpReq.signal,
+						...(readPreload(request.params) === undefined ? {} : { cacheMode: "refresh" as const }),
+					});
 				} catch (error) {
 					throw new Error(bridgeConnectionMessage(error));
 				}

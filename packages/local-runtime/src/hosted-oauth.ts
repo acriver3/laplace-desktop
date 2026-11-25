@@ -13,6 +13,7 @@ import { EncryptedStore } from "@repo/local-mcp-core/encrypted-store";
 import { closeMcpConnection } from "@repo/local-mcp-core/mcp-lifecycle";
 import { connectorOriginSchema } from "@repo/project-protocol/local-mcp";
 import { connectionSummary, summaryKey } from "@repo/project-protocol/mcp/interface-v2";
+import { preloadKey, readPreloadResult } from "@repo/project-protocol/mcp/preload";
 import { z } from "zod";
 
 import type { DesktopManager } from "./manager";
@@ -423,6 +424,19 @@ export class HostedConnections {
 		);
 		if (c.client !== client || c.generation !== generation || c.status !== "connected") return;
 		return connectionSummary.safeParse(page._meta?.[summaryKey]).data;
+	}
+	async preload(id: string, items: unknown, signal: AbortSignal) {
+		this.manager.client(id);
+		const c = this.connections.get(id);
+		if (c?.status !== "connected" || !c.client) return;
+		const { client, generation } = c;
+		const page = await client.listTools(
+			{ _meta: { [preloadKey]: { items } } },
+			{ cacheMode: "refresh", timeout: 10_000, signal },
+		);
+		this.manager.client(id);
+		if (c.client === client && c.generation === generation && c.status === "connected")
+			return readPreloadResult(page._meta);
 	}
 	tools(id: string) {
 		this.manager.client(id);

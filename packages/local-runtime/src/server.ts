@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { ToolSchema } from "@modelcontextprotocol/core";
 import { toNodeHandler } from "@modelcontextprotocol/node";
-import { Server, createMcpHandler, type AuthInfo } from "@modelcontextprotocol/server";
+import { createMcpHandler, type AuthInfo } from "@modelcontextprotocol/server";
 import type { Tool } from "@modelcontextprotocol/server";
 import {
 	brokerTools,
@@ -18,13 +18,14 @@ import { localCredentialTool } from "@repo/project-protocol/credentials";
 import { brokerApprovalResource } from "@repo/project-protocol/mcp/broker-approval-resource";
 import { browserApprovalResource } from "@repo/project-protocol/mcp/browser-approval-resource";
 import { ToolCatalog, type CatalogEntry } from "@repo/project-protocol/mcp/catalog";
-import { instructions as v2Instructions } from "@repo/project-protocol/mcp/interface-v2";
+import { instructions as v2Instructions, SEARCH } from "@repo/project-protocol/mcp/interface-v2";
 import {
 	isLocalConnectorToolName,
 	laplaceDiscoveryTools,
 	discoverySetupSchema,
 	localBootstrapTools,
 } from "@repo/project-protocol/mcp/local-tools";
+import { readPreload, resolvePreload, withPreload } from "@repo/project-protocol/mcp/preload";
 import { sessionTokens } from "@repo/project-protocol/mcp/v2-tokens";
 import { ycUiResource } from "@repo/project-protocol/mcp/yc-resource";
 import { ycUiTools, YC_UI_URI } from "@repo/project-protocol/mcp/yc-schema";
@@ -38,6 +39,7 @@ import {
 import type { CredentialBroker, CredentialPrincipal } from "./credentials";
 import { desktopManagementTool, manageDesktop, type DesktopSection } from "./desktop-tools";
 import type { Discovery } from "./discovery";
+import { DiscoveryServer } from "./discovery-server";
 import type { HostedConnections } from "./hosted-oauth";
 import type { DesktopManager } from "./manager";
 import { appOnly, desktopHandshake, desktopMetaTools, desktopV2 } from "./mcp-v2";
@@ -77,7 +79,7 @@ export async function startMcpServer(
 		Partial<
 			Pick<
 				HostedConnections,
-				"refreshTools" | "status" | "connect" | "disconnect" | "connectionSummary"
+				"refreshTools" | "status" | "connect" | "disconnect" | "connectionSummary" | "preload"
 			>
 		>,
 	credentials?: CredentialBroker,
@@ -206,7 +208,7 @@ export async function startMcpServer(
 							hosted.connectionSummary?.(clientId),
 						)
 					: v2Instructions;
-			const server = new Server(
+			const server = new DiscoveryServer(
 				{ name: "Laplace Desktop", version: desktopVersion },
 				{
 					capabilities: { tools: { listChanged: era === "modern" }, resources: {} },
@@ -218,6 +220,37 @@ export async function startMcpServer(
 						: {}),
 				},
 			);
+			if (v2)
+				server.preload = (raw, signal) =>
+					resolvePreload(raw, async (items) => {
+						const reply = await desktopV2(
+							manager,
+							clientId,
+							v2Secret,
+							String(authInfo?.extra?.transport ?? ""),
+							() => catalog(clientId),
+							async (_name, args) => {
+								// The hosted v2 catalog resolves its own authenticated references on tools/list.
+								// connected is implicit in a preload request.
+								const hints = (args.items as typeof items).map(
+									({ connected: _connected, ...hint }) => hint,
+								);
+								const remote = await hosted
+									.preload?.(clientId, hints, signal)
+									.catch(() => undefined);
+								return {
+									content: [],
+									structuredContent:
+										remote && "items" in remote
+											? remote
+											: { items: hints.map(() => ({ status: "failed" })) },
+								};
+							},
+							SEARCH,
+							{ items },
+						);
+						return reply.structuredContent;
+					});
 			server.setRequestHandler("resources/list", async () => ({
 				resources: [
 					...(credentialBrokeringEnabled() && credentials?.allowed(principal(clientId))
@@ -267,18 +300,24 @@ export async function startMcpServer(
 					throw Error("Resource unavailable.");
 				return { contents: [ycUiResource("https://apply.ycombinator.com")] };
 			});
-			server.setRequestHandler("tools/list", async () => {
+			server.setRequestHandler("tools/list", async (request, ctx) => {
 				await manager.refresh();
 				await hosted.refreshTools?.(clientId);
 				const current = catalog(clientId);
-				return {
-					tools: v2
-						? [
-								...desktopMetaTools(current).map((t) => ToolSchema.parse(t)),
-								...current.tools().filter(appOnly),
-							]
-						: current.tools(),
-				};
+				const hint = readPreload(request.params);
+				const preload =
+					hint === undefined ? undefined : await server.preload?.(hint, ctx.mcpReq.signal);
+				return withPreload(
+					{
+						tools: v2
+							? [
+									...desktopMetaTools(current).map((t) => ToolSchema.parse(t)),
+									...current.tools().filter(appOnly),
+								]
+							: current.tools(),
+					},
+					preload,
+				);
 			});
 			server.setRequestHandler("tools/call", async (request, ctx) => {
 				const dispatch = async (
@@ -646,8 +685,11 @@ export async function startMcpServer(
 						if (request.auth?.extra)
 							request.auth.extra.handshake =
 								message?.method === "initialize" || message?.method === "server/discover";
-						if (session && message?.method === "initialize" && !presented)
-							issued = session.action(randomUUID());
+						if (session && message?.method === "initialize" && !presented && request.auth?.extra) {
+							const id = randomUUID();
+							request.auth.extra.transport = id;
+							issued = session.action(id);
+						}
 						exchange.subscription = message?.method === "subscriptions/listen";
 						if (
 							message?.params?._meta?.["io.modelcontextprotocol/protocolVersion"] === "2026-07-28"
