@@ -37,10 +37,13 @@ or advertise a Desktop update.
 
 ## Management
 
-Run `laplace --help` for the complete command list.
+Run `laplace --help` for the command list. See the
+[CLI automation guide](https://withlaplace.com/docs#laplace-cli-automation) for
+setup, browser approval, verification, and timeout recovery.
 
 ```sh
 laplace connectors list
+laplace connectors catalog
 laplace connectors show <id>
 laplace connectors fields <id>
 laplace connectors install <catalog-id> --config ./settings.json --confirm --wait
@@ -59,6 +62,7 @@ laplace connectors devices
 laplace connectors copy <source-id> --confirm
 laplace jobs list
 laplace jobs show|wait|retry|cancel <operation-id>
+laplace jobs show|wait <catalog-job-id> --catalog
 laplace clients list
 laplace clients register <name> --confirm
 laplace clients revoke <id> --confirm
@@ -79,6 +83,8 @@ clients access: selected-client authorization still applies.
 Configuration files are JSON objects containing string values for catalog settings,
 for example `{"canvas_url":"https://school.instructure.com"}`. Put credentials in
 protected configuration files instead of command-line arguments.
+Read the selected entry’s `fields` from `connectors catalog` before installing.
+Use `connectors fields` with the ID of an existing connector.
 
 For Canvas and Yale SOM EMS, configure `{"background_session_checks":"on"}`
 to opt in on this device. The default is `"off"`. Checks run only for a
@@ -91,10 +97,20 @@ or timed-out waits exit nonzero without replaying an install.
 `--timeout <seconds>` defaults to 600. Use `--idempotency-key <key>` to retry
 the same install/copy/manage request durably.
 
-Results are JSON objects; help/version are text. Preview/progress commands can
-print multiple objects. Errors/prompts go to stderr; `serve` reserves stdout for
-MCP frames. Credential approvals and capture/clipboard stay in Desktop/browser
-surfaces. Local connectors work without signing into Laplace.
+Starting with CLI 0.1.50, append `--jsonl` to write one JSON line per result with `type: "result"` and
+`data`. A failure adds a final `type: "error"` record with `code` and
+`message` and keeps the nonzero exit code. A wait timeout includes the last
+known receipt before the error. The default output can contain several
+pretty-printed JSON values. Prompts and diagnostics go to stderr. MCP stdio
+commands reserve stdout for protocol frames.
+
+Install and copy receipts expose `id` for `jobs show` and `jobs wait`, and
+`connectorId` for connector commands. For catalog authentication or
+verification, use the job ID in the management receipt’s `items[].id` with
+`jobs show|wait <catalog-job-id> --catalog`. The catalog wait returns for
+completion or browser approval. Use `approvalRequestId` with
+`approvals open`, let the user approve, then wait again on the same job. Check
+the resulting connection with a read from the intended MCP client.
 
 ## Compatibility
 

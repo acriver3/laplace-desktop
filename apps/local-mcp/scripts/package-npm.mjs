@@ -89,9 +89,15 @@ await json(join(runtime, "package.json"), {
 	dependencies: { "@napi-rs/keyring": "2.1.0", [native]: "2.1.0" },
 	bundledDependencies: ["@napi-rs/keyring", native],
 });
+const npmCli =
+	process.platform === "win32"
+		? (process.env.LAPLACE_SMOKE_NPM_CLI ??
+			join(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js"))
+		: undefined;
 run(
-	"npm",
+	npmCli ? process.execPath : "npm",
 	[
+		...(npmCli ? [npmCli] : []),
 		"install",
 		...(platform !== process.platform || arch !== process.arch ? ["--force"] : []),
 		"--omit=dev",

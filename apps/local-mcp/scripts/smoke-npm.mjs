@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 const [cliTar, runtimeTar] = process.argv.slice(2).map((p) => resolve(p));
 if (!cliTar || !runtimeTar) throw Error("Provide CLI and native runtime npm tarballs");
+const { version } = JSON.parse(
+	readFileSync(new URL("../../desktop/package.json", import.meta.url)),
+);
 const root = mkdtempSync(join(tmpdir(), "laplace-npm-smoke-"));
 const home = join(root, "home");
 mkdirSync(home);
@@ -51,12 +54,27 @@ function command(...args) {
 	assert.equal(result.status, 0, result.stderr + result.stdout);
 	return result.stdout.trim();
 }
-assert.equal(command("--version"), "0.1.49");
-assert.match(command("--help"), /connectors/);
+assert.equal(command("--version"), version);
+assert.match(command("--help"), /withlaplace\.com\/docs#laplace-cli-automation/);
+assert.deepEqual(JSON.parse(command("--version", "--jsonl")), {
+	type: "result",
+	data: command("--version"),
+});
+const reserved = spawnSync(process.execPath, [cli, "serve", "--jsonl"], { env, encoding: "utf8" });
+assert.notEqual(reserved.status, 0);
+assert.equal(reserved.stdout, "");
+assert.match(reserved.stderr, /MCP stdio/);
 const absent = spawnSync(process.execPath, [cli, "status"], { env, encoding: "utf8" });
 assert.notEqual(absent.status, 0);
 assert.match(absent.stderr, /setup/);
-assert.equal(JSON.parse(command("setup")).installed, "0.1.49");
+const absentJson = spawnSync(process.execPath, [cli, "status", "--jsonl"], {
+	env,
+	encoding: "utf8",
+});
+assert.equal(absentJson.status, absent.status);
+assert.equal(JSON.parse(absentJson.stdout).type, "error");
+assert.equal(absentJson.stderr, absent.stderr);
+assert.equal(JSON.parse(command("setup")).installed, version);
 assert.equal(JSON.parse(command("status")).running, false);
 assert.equal(JSON.parse(command("doctor")).keychain, true);
 try {
@@ -66,7 +84,7 @@ try {
 	assert.equal(second.pid, first.pid, "CLI must reuse the existing runtime");
 	assert.deepEqual(JSON.parse(command("connectors", "list")), []);
 	assert.deepEqual(JSON.parse(command("clients", "list")), []);
-	assert.equal(JSON.parse(command("runtime", "info")).version, "0.1.49");
+	assert.equal(JSON.parse(command("runtime", "info")).version, version);
 	const client = JSON.parse(command("clients", "register", "npm smoke", "--confirm"));
 	assert.ok(client.id);
 	command("clients", "permissions", client.id, "--tools", "none", "--confirm");
@@ -85,7 +103,13 @@ try {
 			enabled: false,
 		}),
 	);
-	command("connectors", "add", "--config", fixture, "--confirm");
+	const add = command("connectors", "add", "--config", fixture, "--confirm", "--jsonl")
+		.split(/\r?\n/)
+		.map((line) => JSON.parse(line));
+	assert.deepEqual(
+		add.map(({ type }) => type),
+		["result", "result"],
+	);
 	assert.equal(JSON.parse(command("connectors", "show", "npm-smoke")).id, "npm-smoke");
 	command("connectors", "permissions", "npm-smoke", "--tools", "none", "--confirm");
 	command("connectors", "remove", "npm-smoke", "--confirm");

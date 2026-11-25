@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { PortableOperation } from "@repo/project-protocol/portable-connectors";
+import type { CatalogJob } from "@repo/local-runtime/catalog";
 import { helperInputs, type HelperMethod } from "@repo/local-runtime/shared/helper-contracts";
 import type { CliIo } from "./cli";
 
@@ -18,6 +19,7 @@ connectors permissions <id> --tools <comma-separated-names|none>
 connectors access <id> --visible true|false --remote true|false
 connectors devices | copy <source-id> [--wait]
 jobs list | show|wait|retry|cancel <operation-id>
+jobs show|wait <catalog-job-id> --catalog
 clients list | register <name> | revoke <id>
 clients permissions <id> --tools <comma-separated-names|none|all>
 clients connect <id> [--desktop-management] | disconnect <id>
@@ -54,6 +56,16 @@ function boolean(args: string[], name: string) {
 	return value === "true";
 }
 
+export class WaitTimeout extends Error {
+	constructor(
+		readonly receipt: { id: string; status: string },
+		catalog: boolean,
+	) {
+		const command = catalog ? `jobs show ${receipt.id} --catalog` : "jobs show";
+		super(`Timed out waiting for operation ${receipt.id}; inspect ${command} before retrying.`);
+	}
+}
+
 /** Wait for the durable operation, not a browser approval ID. User-action states are returned. */
 export async function waitOperation(
 	result: PortableOperation,
@@ -62,20 +74,36 @@ export async function waitOperation(
 	io: CliIo,
 ) {
 	if (!args.includes("--wait")) return result;
+	return waitForJob(
+		result,
+		args,
+		async (id) => {
+			const rows = (await request("portable.status", { id })) as PortableOperation[];
+			return rows[0];
+		},
+		io,
+	);
+}
+
+async function waitForJob<T extends { id: string; status: string; approvalRequestId?: string }>(
+	result: T,
+	args: string[],
+	read: (id: string) => Promise<T | undefined>,
+	io: CliIo,
+) {
 	const seconds = Number(option(args, "--timeout") ?? 600);
 	if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 86400)
 		throw new Error("--timeout must be between 0 and 86400 seconds");
 	const deadline = Date.now() + seconds * 1000;
 	let current = result;
-	while (current.status === "running") {
-		if (Date.now() >= deadline)
-			throw new Error(
-				`Timed out waiting for operation ${current.id}; inspect jobs show before retrying.`,
-			);
-		await (io.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(1000);
-		const rows = (await request("portable.status", { id: current.id })) as PortableOperation[];
-		if (!rows[0]) throw new Error(`Operation ${current.id} is unavailable; inspect jobs list.`);
-		current = rows[0];
+	while (current.status === "running" && !current.approvalRequestId) {
+		const remaining = deadline - Date.now();
+		if (remaining <= 0) throw new WaitTimeout(current, args.includes("--catalog"));
+		await (io.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(Math.min(remaining, 1000));
+		const next = await read(current.id);
+		if (!next)
+			throw new Error(`Operation ${current.id} is unavailable; inspect the connector state.`);
+		current = next;
 	}
 	if (["failed", "cancelled", "interrupted"].includes(current.status)) {
 		io.print(current);
@@ -84,6 +112,20 @@ export async function waitOperation(
 		);
 	}
 	return current;
+}
+
+async function readCatalogJob(request: Request, id: string) {
+	const { jobs } = (await request("status")) as { jobs?: CatalogJob[] };
+	const job = jobs?.find((job) => job.id === id);
+	if (!job) return;
+	return {
+		id: job.id,
+		connectorId: job.serverId,
+		kind: job.kind,
+		status: job.status,
+		stage: job.stage,
+		approvalRequestId: job.status === "running" ? job.browserApproval?.requestId : undefined,
+	};
 }
 
 export async function manage(args: string[], rawRequest: Request, io: CliIo) {
@@ -199,6 +241,16 @@ export async function manage(args: string[], rawRequest: Request, io: CliIo) {
 		}
 	}
 	if (group === "jobs") {
+		if (args.includes("--catalog")) {
+			if (action !== "show" && action !== "wait")
+				throw new Error("--catalog is supported by jobs show and jobs wait");
+			const jobId = required(id, "Provide a catalog job ID");
+			const read = (id: string) => readCatalogJob(request, id);
+			const job = await read(jobId);
+			if (!job)
+				throw new Error(`Catalog job ${jobId} is unavailable; inspect the connector state.`);
+			return action === "show" ? job : waitForJob(job, args, read, io);
+		}
 		if (action === "list") return request("portable.status");
 		const jobId = required(id, "Provide an operation ID");
 		if (action === "show") return request("portable.status", { id: jobId });

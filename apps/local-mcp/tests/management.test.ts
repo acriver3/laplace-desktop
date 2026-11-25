@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { runCli } from "../src/cli";
+import desktopPackage from "../../desktop/package.json";
 
 const cleanup: string[] = [];
 afterEach(async () => {
@@ -132,10 +133,57 @@ it("reports operation failure with a failing command and retains the receipt", a
 	await expect(h.run()).rejects.toThrow("failed");
 	expect(h.printed[0].id).toBe(id);
 });
+it("follows catalog authentication through approval and verification by job ID", async () => {
+	const id = "6c1c39b4-3c35-4f6b-9b6d-3b0b4b0f1c11";
+	const job = { id, serverId: "pc_fixture", kind: "authenticate", status: "running" };
+	const approval = {
+		...job,
+		stage: "approval",
+		browserApproval: { requestId: "approval-request" },
+	};
+	const waiting = harness(["jobs", "wait", id, "--catalog"], { status: { jobs: [approval] } });
+	await waiting.run();
+	expect(waiting.calls).toEqual([{ method: "status", input: {} }]);
+	expect(waiting.printed[0]).toMatchObject({
+		id,
+		connectorId: "pc_fixture",
+		kind: "authenticate",
+		status: "running",
+		stage: "approval",
+		approvalRequestId: "approval-request",
+	});
+
+	const verify = { ...job, kind: "verify", stage: "checking" };
+	const done = { ...verify, status: "completed", stage: "verified" };
+	const shown = harness(["jobs", "show", id, "--catalog"], { status: { jobs: [done] } });
+	await shown.run();
+	expect(shown.printed[0]).toMatchObject({ id, kind: "verify", status: "completed" });
+
+	const snapshots = [{ jobs: [verify] }, { jobs: [done] }];
+	const resumed = harness(["jobs", "wait", id, "--catalog"], { status: () => snapshots.shift() });
+	await resumed.run();
+	expect(resumed.printed[0]).toMatchObject({ id, status: "completed" });
+});
+
+it("keeps the last operation receipt when waiting times out", async () => {
+	const id = "6c1c39b4-3c35-4f6b-9b6d-3b0b4b0f1c11";
+	const receipt = { id, connectorId: "pc_fixture", status: "running" };
+	const waiting = harness(["jobs", "wait", id, "--timeout", "1"], {
+		"portable.status": [receipt],
+	});
+	const time = vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(1000);
+	try {
+		await expect(waiting.run()).rejects.toMatchObject({ receipt });
+		expect(waiting.printed).toEqual([]);
+	} finally {
+		time.mockRestore();
+	}
+});
+
 it("provides version/help offline without starting the runtime", async () => {
 	const h = harness(["--version"]);
 	await h.run();
-	expect(h.printed).toEqual(["0.1.49"]);
+	expect(h.printed).toEqual([desktopPackage.version]);
 	expect(h.calls).toEqual([]);
 	const help = harness(["connectors", "--help"]);
 	await help.run();
